@@ -2,6 +2,7 @@ import { forceSimulation, type Force, type SimulationNodeDatum } from 'd3-force'
 import { attachmentPoint, effectiveBodyId } from './geometry';
 import type { Board, BoardNode, Point } from './types';
 
+/** Tension-only tether. Tuned to nudge stretched links without rearranging the board. */
 export const TENSION = {
   stiffness: 0.045,
   tolerance: 0.75,
@@ -9,6 +10,7 @@ export const TENSION = {
   maxBodyForce: 14,
   maxSpeed: 18,
   velocityDecay: 0.4,
+  maxTicks: 40,
 };
 
 export type TensionBody = SimulationNodeDatum & {
@@ -46,6 +48,7 @@ export function relaxBoard(board: Board, pinnedNodeIds: readonly string[], ticks
     .stop();
   for (let step = 0; step < ticks; step += 1) {
     simulation.tick();
+    for (const body of system.bodies) clampVelocity(body);
     if (step > 2 && settled(system.bodies)) break;
   }
   return applyBodyPositions(board, system.bodies);
@@ -66,11 +69,7 @@ export function stepTension(bodies: readonly TensionBody[], links: readonly Tens
     }
     body.vx *= 1 - TENSION.velocityDecay;
     body.vy *= 1 - TENSION.velocityDecay;
-    const speed = Math.hypot(body.vx, body.vy);
-    if (speed > TENSION.maxSpeed) {
-      body.vx = (body.vx / speed) * TENSION.maxSpeed;
-      body.vy = (body.vy / speed) * TENSION.maxSpeed;
-    }
+    clampVelocity(body);
     body.x += body.vx;
     body.y += body.vy;
   }
@@ -208,12 +207,27 @@ function applyBodyPositions(board: Board, bodies: readonly TensionBody[]): Board
   let changed = false;
   const nodes = board.nodes.map((node) => {
     const body = positions.get(node.id);
-    if (!body || (body.x === node.x && body.y === node.y)) return node;
+    if (!body || !Number.isFinite(body.x) || !Number.isFinite(body.y) || (body.x === node.x && body.y === node.y)) return node;
     changed = true;
     return { ...node, x: body.x, y: body.y };
   });
   if (!changed) return board;
   return { ...board, nodes };
+}
+
+export function clampVelocity(body: TensionBody): void {
+  if (!Number.isFinite(body.x) || !Number.isFinite(body.y)) {
+    body.x = 0;
+    body.y = 0;
+    body.vx = 0;
+    body.vy = 0;
+    return;
+  }
+  const speed = Math.hypot(body.vx ?? 0, body.vy ?? 0);
+  if (speed > TENSION.maxSpeed) {
+    body.vx = ((body.vx ?? 0) / speed) * TENSION.maxSpeed;
+    body.vy = ((body.vy ?? 0) / speed) * TENSION.maxSpeed;
+  }
 }
 
 function settled(bodies: readonly TensionBody[]): boolean {

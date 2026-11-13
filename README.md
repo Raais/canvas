@@ -4,7 +4,7 @@
 
 canvas is a local-first spatial notebook and moodboard. Arrange plain-text notes, images, undirected links, and rigid clusters on an infinite, zoomable canvas. The board lives in this browser. There is no account, backend, or upload server.
 
-This release adds graph links, rigid clusters, tension-only physics, undo/redo, a dark canvas, and a live world-space coordinate readout. Project archives and ZIP export are not available yet.
+This release adds graph links, rigid clusters, tension-only physics, undo/redo, a dark canvas, world-space coordinates, and ZIP project archives.
 
 ## What you can do
 
@@ -13,14 +13,26 @@ This release adds graph links, rigid clusters, tension-only physics, undo/redo, 
 - Group notes from a selection or with the Frame tool. Groups stay flat, move as one body, and keep their children at the same world position when grouped or ungrouped.
 - Undo and redo recent edits until the page reloads. History is not stored in IndexedDB.
 - Read the cursor and the selected object in world coordinates.
+- Export the open board as a `.canvas.zip` archive, start a blank board, or import an archive in place of the current one.
+- See an approximate size for canvas data, plus the browser's estimate for this whole origin.
+
+## Storage
+
+Notes, image bytes, positions, dimensions, links, groups, and the viewport are stored in IndexedDB in a database named `raais-canvas-db`. Saves are automatic. If a save fails, the open board stays on screen and the toolbar reports the failure.
+
+`localStorage` is not used. GitHub Pages sites on `raais.github.io` share one origin, so the browser quota shown in the project menu is not exclusive to canvas.
+
+The browser can still delete site data. An exported archive is the copy to keep. canvas does not upload the board anywhere. External image links are recorded as URLs only; their bytes are not included.
+
+A second tab becomes read-only when another tab already has the board open. A save is refused if the stored board identity or revision changed since this tab last saved, so an older tab cannot silently replace a newer project.
 
 ## Known limitations
 
 - Groups cannot contain other groups.
 - Physics is a weak tension-only tether. It does not run a force-directed layout, and links inside one group do not move that group.
 - Deleting a group frame keeps the notes. Delete contents is the separate action that removes the notes too.
-- Undo cannot survive a reload. Image bytes for an undone deletion stay available only while that history entry does.
-- There is no ZIP export, project reset, or storage dashboard yet.
+- Undo cannot survive a reload, an import, or a new board.
+- There is no cloud backup, account, or multi-project library.
 
 ## Requirements
 
@@ -48,7 +60,7 @@ Notes, image bytes, positions, dimensions, and the viewport are stored in Indexe
 
 `localStorage` is not used.
 
-Browser storage can be cleared by the browser or by site-data controls. This version cannot export a board yet. Do not treat the stored board as a permanent archive.
+Browser storage can be cleared by the browser or by site-data controls. Export a `.canvas.zip` archive if you need a copy you can keep. Do not treat the stored board as a permanent archive by itself.
 
 An image pasted or dropped as a file is stored as the original bytes. An image that arrives only as an `http` or `https` link stays a link. canvas does not download it. That picture can disappear later if the remote host changes or refuses to be displayed. A broken link stays on the board so the URL is not thrown away.
 

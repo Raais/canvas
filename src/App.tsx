@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { BoardView } from './components/BoardView';
+import { CanvasErrorBoundary } from './components/ErrorBoundary';
 import { openSession } from './persistence/db';
 import { errorMessage } from './persistence/save-queue';
 import type { AssetRecord, Board } from './domain/types';
@@ -40,5 +41,5 @@ export function App() {
 
   if (!session) return <main className="boot">Loading canvas…</main>;
 
-  return <BoardView session={session} />;
+  return <CanvasErrorBoundary><BoardView session={session} /></CanvasErrorBoundary>;
 }

@@ -49,17 +49,63 @@ export async function readSession(database: CanvasDatabase): Promise<{ board: Bo
   return { board, assets };
 }
 
+export class RevisionConflictError extends Error {
+  constructor() {
+    super('Another tab changed the stored board. This tab kept the open edits and did not overwrite them.');
+    this.name = 'RevisionConflictError';
+  }
+}
+
+export type StoredExpectation = { id: string; revision: number };
+
+export function storedRevisionConflicts(stored: Board | undefined, expected: StoredExpectation): boolean {
+  if (!stored) return false;
+  return stored.id !== expected.id || stored.revision !== expected.revision;
+}
+
 export async function writeBoardSnapshot(
   database: CanvasDatabase,
   board: Board,
   upserts: readonly AssetRecord[],
   deleteIds: readonly string[],
+  expected?: StoredExpectation,
 ): Promise<void> {
   const transaction = database.transaction(['board', 'assets'], 'readwrite');
+  const boardStore = transaction.objectStore('board');
+  if (expected) {
+    const current = await boardStore.get(ACTIVE_BOARD_KEY);
+    if (storedRevisionConflicts(current, expected)) {
+      transaction.abort();
+      throw new RevisionConflictError();
+    }
+  }
   const assets = transaction.objectStore('assets');
   for (const asset of upserts) assets.put(asset);
   for (const id of deleteIds) assets.delete(id);
-  transaction.objectStore('board').put(board, ACTIVE_BOARD_KEY);
+  boardStore.put(board, ACTIVE_BOARD_KEY);
+  await transaction.done;
+}
+
+export async function replaceStoredBoard(
+  database: CanvasDatabase,
+  board: Board,
+  assets: readonly AssetRecord[],
+  expected: StoredExpectation,
+): Promise<void> {
+  const transaction = database.transaction(['board', 'assets'], 'readwrite');
+  const boardStore = transaction.objectStore('board');
+  const assetStore = transaction.objectStore('assets');
+  const current = await boardStore.get(ACTIVE_BOARD_KEY);
+  if (storedRevisionConflicts(current, expected)) {
+    transaction.abort();
+    throw new RevisionConflictError();
+  }
+  const keep = new Set(assets.map((asset) => asset.id));
+  for (const key of await assetStore.getAllKeys()) {
+    if (!keep.has(String(key))) assetStore.delete(key);
+  }
+  for (const asset of assets) assetStore.put(asset);
+  boardStore.put(board, ACTIVE_BOARD_KEY);
   await transaction.done;
 }
 

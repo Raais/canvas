@@ -310,3 +310,42 @@ button:disabled { opacity: 0.45; cursor: default; }
 }
 
 .selection-bar select { color: var(--text); }
+
+.project-menu { position: absolute; z-index: 22; top: 12px; right: 12px; }
+.project-menu > button, .project-panel button, .file-action {
+  border: 0;
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+.project-panel {
+  position: absolute;
+  top: 40px;
+  right: 0;
+  width: min(22rem, calc(100vw - 24px));
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.project-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.project-panel dl { display: grid; gap: 8px; margin: 0; }
+.project-panel dt { color: var(--muted); font-size: 12px; }
+.project-panel dd { margin: 2px 0 0; }
+.project-note { margin: 0; color: var(--muted); font-size: 12px; }
+.file-action { display: inline-flex; }
+.file-action input { display: none; }
+.confirm-banner { top: 148px; }
+.storage-error button {
+  margin-top: 12px;
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: var(--surface-2, #313947);
+  color: var(--text, #e7edf4);
+  cursor: pointer;
+}

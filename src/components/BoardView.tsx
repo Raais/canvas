@@ -8,13 +8,15 @@ import {
   useReactFlow,
   type Connection,
   type Edge,
+  type EdgeChange,
   type NodeChange,
   type Viewport,
 } from '@xyflow/react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import {
   addNodes,
   commitInteraction,
+  createEmptyBoard,
   createEmbeddedImageNode,
   createExternalImageNode,
   createTextNode,
@@ -27,6 +29,7 @@ import {
   updateText,
 } from '../domain/board';
 import { contentExtent, isContentNode, normalizeRect, worldTopLeft } from '../domain/geometry';
+import { gesturePhase, sameSelection } from '../editor/interaction';
 import { connectNodes, deleteEdges, hasUndirectedLink } from '../domain/graph';
 import {
   createTextInside,
@@ -57,7 +60,12 @@ import {
 } from '../domain/types';
 import { ingestClipboard, ingestFileList, type PreparedItem } from '../ingest/browser';
 import { captureClipboardData } from '../ingest/clipboard';
-import { createAssetRecord, type CanvasDatabase } from '../persistence/db';
+import { archiveFilename } from '../archive/format';
+import { buildArchive, readArchive } from '../archive/zip';
+import { downloadBytes } from '../project/download';
+import { logicalUsage, snapshotAssets, type LogicalUsage } from '../project/storage';
+import { openBoardChannel, type BoardChannel } from '../project/tabs';
+import { createAssetRecord, replaceStoredBoard, RevisionConflictError, type CanvasDatabase } from '../persistence/db';
 import { createObjectUrlRegistry, type ObjectUrlRegistry } from '../persistence/object-urls';
 import { errorMessage, SaveQueue, type SaveStatus } from '../persistence/save-queue';
 import { BoardActionsProvider, type BoardActions } from './board-context';
@@ -66,6 +74,7 @@ import { GroupNode, type GroupFlowNode } from './GroupNode';
 import { ImageNoteNode, type ImageFlowNode } from './ImageNoteNode';
 import { SelectionBar } from './SelectionBar';
 import { TextNoteNode, type TextFlowNode } from './TextNoteNode';
+import { ProjectMenu } from './ProjectMenu';
 import { Toolbar } from './Toolbar';
 
 type CanvasFlowNode = TextFlowNode | ImageFlowNode | GroupFlowNode;
@@ -76,6 +85,8 @@ const nodeTypes = {
   image: ImageNoteNode,
   group: GroupNode,
 };
+
+const DEFAULT_EDGE_OPTIONS = { interactionWidth: 18 };
 
 type SessionProps = {
   database: CanvasDatabase;
@@ -92,7 +103,8 @@ export function BoardView({ session }: { session: SessionProps }) {
 }
 
 function BoardSurface({ session }: { session: SessionProps }) {
-  const { screenToFlowPosition } = useReactFlow();
+  const flow = useReactFlow();
+  const { screenToFlowPosition } = flow;
   const [board, setBoard] = useState(session.board);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [selectedEdgeIds, setSelectedEdgeIds] = useState<string[]>([]);
@@ -103,14 +115,27 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const [urlEpoch, setUrlEpoch] = useState(0);
   const [tool, setTool] = useState<Tool>('select');
   const [draft, setDraft] = useState<Rect | null>(null);
+  const [projectOpen, setProjectOpen] = useState(false);
+  const [usage, setUsage] = useState<LogicalUsage | null>(null);
+  const [estimate, setEstimate] = useState<{ usage?: number; quota?: number } | null>(null);
+  const [persisted, setPersisted] = useState<boolean | null>(null);
+  const [readOnly, setReadOnly] = useState(false);
+  const [confirming, setConfirming] = useState<
+    | null
+    | { kind: 'blank' | 'clear' | 'exported-clear' }
+    | { kind: 'export'; thenClear: boolean; summary: string; unsaved: boolean }
+    | { kind: 'import'; summary: string; board: Board; assets: AssetRecord[] }
+  >(null);
 
   const boardRef = useRef(session.board);
   const selectedRef = useRef<string[]>([]);
+  const selectedEdgeRef = useRef<string[]>([]);
   const editingRef = useRef<string | null>(null);
   const pointerRef = useRef<Point | null>(null);
   const dragDepth = useRef(0);
   const initialViewport = useRef(session.board.viewport);
   const toWorldRef = useRef(screenToFlowPosition);
+  const flowRef = useRef(flow);
   const gestureRef = useRef<Board | null>(null);
   const textBefore = useRef<Board | null>(null);
   const renameBefore = useRef<Board | null>(null);
@@ -119,7 +144,18 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const toolRef = useRef<Tool>('select');
   const frameRef = useRef<Point | null>(null);
   const coordinatesRef = useRef<CoordinatesHandle>(null);
+  const channelRef = useRef<BoardChannel | null>(null);
+  const blockedRef = useRef(false);
+  const foreignRef = useRef(false);
+  const exportHold = useRef<{ board: Board; assets: AssetRecord[]; unsaved: boolean } | null>(null);
+  const flowCache = useRef<{ nodeKey: string; nodes: CanvasFlowNode[]; edgeKey: string; edges: Edge[] }>({
+    nodeKey: '',
+    nodes: [],
+    edgeKey: '',
+    edges: [],
+  });
   toWorldRef.current = screenToFlowPosition;
+  flowRef.current = flow;
   toolRef.current = tool;
 
   if (libraryRef.current.size === 0) {
@@ -135,11 +171,17 @@ function BoardSurface({ session }: { session: SessionProps }) {
 
   const queueRef = useRef<SaveQueue | null>(null);
   if (!queueRef.current) {
-    queueRef.current = new SaveQueue(session.database, () => boardRef.current, (next, message) => {
-      setStatus((current) => (current === next ? current : next));
-      if (next === 'error' && message) setNotice({ text: message, source: 'save' });
-      if (next === 'saved') setNotice((current) => (current?.source === 'save' ? null : current));
-    });
+    queueRef.current = new SaveQueue(
+      session.database,
+      () => boardRef.current,
+      (next, message) => {
+        setStatus((current) => (current === next ? current : next));
+        if (next === 'error' && message) setNotice({ text: message, source: 'save' });
+        if (next === 'saved') setNotice((current) => (current?.source === 'save' ? null : current));
+      },
+      (saved) => channelRef.current?.announce(saved.id, saved.revision),
+    );
+    queueRef.current.adopt(session.board);
   }
   const queue = queueRef.current;
 
@@ -160,8 +202,30 @@ function BoardSurface({ session }: { session: SessionProps }) {
   }
 
   function replaceSelection(ids: string[]) {
+    if (sameSelection(ids, selectedRef.current)) return;
     selectedRef.current = ids;
     setSelectedIds(ids);
+  }
+
+  function replaceEdgeSelection(ids: string[]) {
+    if (sameSelection(ids, selectedEdgeRef.current)) return;
+    selectedEdgeRef.current = ids;
+    setSelectedEdgeIds(ids);
+  }
+
+  function onEdgesChange(changes: EdgeChange[]) {
+    if (blockedRef.current) return;
+    let selection = selectedEdgeRef.current;
+    let changed = false;
+    for (const change of changes) {
+      if (change.type !== 'select') continue;
+      const set = new Set(selection);
+      if (change.selected) set.add(change.id);
+      else set.delete(change.id);
+      selection = [...set];
+      changed = true;
+    }
+    if (changed) replaceEdgeSelection(selection);
   }
 
   function liveAssetIds(value: Board): Set<string> {
@@ -195,6 +259,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
   }
 
   function publish(next: Board, before: Board | null, mode: 'save' | 'schedule' | 'live') {
+    if (blockedRef.current) return;
     if (before) historyRef.current = pushHistory(historyRef.current, before);
     const previous = boardRef.current;
     replaceBoard(next);
@@ -301,10 +366,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
 
   function groupSelected() {
     const before = boardRef.current;
-    const ids = before.nodes
-      .filter((node) => selectedRef.current.includes(node.id) && isContentNode(node) && !node.parentId)
-      .map((node) => node.id);
-    const result = groupSelection(before, ids);
+    const result = groupSelection(before, selectedRef.current);
     if ('error' in result) {
       setNotice({ text: result.error, source: 'ingest' });
       return;
@@ -371,6 +433,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
         setTool('select');
         return;
       }
+      if (blockedRef.current) return;
       if (!event.metaKey && !event.ctrlKey) return;
       const key = event.key.toLowerCase();
       if (key === 'z' && !event.shiftKey) {
@@ -476,23 +539,30 @@ function BoardSurface({ session }: { session: SessionProps }) {
 
   const nodes = useMemo(() => {
     const ordered = [...board.nodes].sort((left, right) => Number(left.kind !== 'group') - Number(right.kind !== 'group'));
-    return ordered.map((node) => toFlowNode(node, board.nodes, selectedIds.includes(node.id), editingId === node.id, registryRef.current));
+    const projected = ordered.map((node) => toFlowNode(node, board.nodes, selectedIds.includes(node.id), editingId === node.id, registryRef.current));
+    const nodeKey = JSON.stringify(projected.map((node) => [node.id, node.position, node.width, node.height, node.selected, node.parentId, node.data, node.draggable]));
+    if (nodeKey === flowCache.current.nodeKey) return flowCache.current.nodes;
+    flowCache.current = { ...flowCache.current, nodeKey, nodes: projected };
+    return projected;
   }, [board.nodes, editingId, selectedIds, urlEpoch]);
 
-  const edges = useMemo<Edge[]>(
-    () =>
-      board.edges.map((edge) => ({
-        id: edge.id,
-        source: edge.sourceId,
-        target: edge.targetId,
-        sourceHandle: edge.sourceHandle,
-        targetHandle: edge.targetHandle,
-        selected: selectedEdgeIds.includes(edge.id),
-      })),
-    [board.edges, selectedEdgeIds],
-  );
+  const edges = useMemo<Edge[]>(() => {
+    const projected = board.edges.map((edge) => ({
+      id: edge.id,
+      source: edge.sourceId,
+      target: edge.targetId,
+      sourceHandle: edge.sourceHandle,
+      targetHandle: edge.targetHandle,
+      selected: selectedEdgeIds.includes(edge.id),
+    }));
+    const edgeKey = JSON.stringify(projected);
+    if (edgeKey === flowCache.current.edgeKey) return flowCache.current.edges;
+    flowCache.current = { ...flowCache.current, edgeKey, edges: projected };
+    return projected;
+  }, [board.edges, selectedEdgeIds]);
 
   function onNodesChange(changes: NodeChange<CanvasFlowNode>[]) {
+    if (blockedRef.current) return;
     const draggingParents = new Set(
       changes.flatMap((change) =>
         change.type === 'position' && change.dragging && boardRef.current.nodes.some((node) => node.id === change.id && node.kind === 'group')
@@ -548,15 +618,22 @@ function BoardSurface({ session }: { session: SessionProps }) {
       }
     }
 
-    const finish = dragFinished || resizeFinished || (barePosition && !resizeActive);
     if (sawDrag && !document.hidden) geometry = relaxBoard(geometry, pinned, 4);
-    if (finish && dragFinished && !document.hidden) geometry = relaxBoard(geometry, pinned, 40);
-
-    if (finish) {
+    if (dragFinished && !document.hidden) geometry = relaxBoard(geometry, pinned, 40);
+    const phase = gesturePhase({
+      sawDrag,
+      dragFinished,
+      resizeActive,
+      resizeFinished,
+      barePosition,
+      changed: geometry !== boardRef.current,
+      tracking: gestureRef.current !== null,
+    });
+    if (phase === 'commit') {
       const before = gestureRef.current;
       gestureRef.current = null;
       if (before) publish(commitInteraction(geometry), before, 'save');
-    } else if (geometry !== boardRef.current) {
+    } else if (phase === 'live') {
       replaceBoard(geometry);
       if (sawDrag || resizeActive) queue.markUnsaved();
     }
@@ -564,6 +641,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
   }
 
   function createNote(origin: Point) {
+    if (blockedRef.current) return;
     const before = boardRef.current;
     const node = createTextNode(origin);
     publish(addNodes(before, [node]), before, 'save');
@@ -591,12 +669,258 @@ function BoardSurface({ session }: { session: SessionProps }) {
     if (created) replaceSelection([created.id]);
   }
 
+  useEffect(() => {
+    const openedAt = Date.now();
+    const tabId = crypto.randomUUID();
+    const channel = openBoardChannel(
+      { tabId, openedAt },
+      () => {
+        foreignRef.current = true;
+        blockedRef.current = true;
+        queue.suspend();
+        setReadOnly(true);
+      },
+      (message) => {
+        const expected = queue.expectation();
+        if (message.boardId === expected.id && message.revision === expected.revision) return;
+        foreignRef.current = true;
+        blockedRef.current = true;
+        queue.suspend();
+        setReadOnly(true);
+        setNotice({
+          text: 'Another tab saved this board. Reload before editing so this tab does not overwrite it.',
+          source: 'save',
+        });
+      },
+    );
+    channelRef.current = channel;
+    return () => channel.close();
+  }, [queue]);
+
+  async function refreshStorage() {
+    setUsage(logicalUsage(boardRef.current, [...libraryRef.current.values()]));
+    const storage = navigator.storage;
+    if (!storage?.estimate) {
+      setEstimate(null);
+      setPersisted(null);
+      return;
+    }
+    const next = await storage.estimate();
+    setEstimate({ usage: next.usage, quota: next.quota });
+    setPersisted(storage.persisted ? await storage.persisted() : null);
+  }
+
+  function captureExport() {
+    const board = structuredClone(boardRef.current);
+    const snapshot = snapshotAssets(board, libraryRef.current);
+    return { board, ...snapshot, unsaved: status !== 'saved' };
+  }
+
+  async function stageExport(thenClear: boolean) {
+    const captured = captureExport();
+    if (captured.missing.length > 0) {
+      setNotice({ text: 'An embedded image is missing, so the archive was not created.', source: 'ingest' });
+      return;
+    }
+    const summary = logicalUsage(captured.board, captured.assets);
+    setConfirming({
+      kind: 'export',
+      thenClear,
+      unsaved: captured.unsaved,
+      summary: `${summary.embeddedAssets} embedded images, ${summary.externalImages} external references, about ${summary.totalBytes} bytes of board and image data.`,
+    });
+    exportHold.current = captured;
+  }
+
+  async function runExport() {
+    const captured = exportHold.current;
+    const pending = confirming?.kind === 'export' ? confirming : null;
+    if (!captured || !pending) return;
+    try {
+      const bytes = await buildArchive(captured.board, captured.assets, new Date().toISOString());
+      downloadBytes(bytes, archiveFilename(captured.board.title));
+      setConfirming(pending.thenClear ? { kind: 'exported-clear' } : null);
+      setProjectOpen(false);
+    } catch (error) {
+      setNotice({ text: errorMessage(error), source: 'ingest' });
+      setConfirming(null);
+    }
+  }
+
+  async function replaceActive(nextBoard: Board, assets: AssetRecord[]) {
+    if (foreignRef.current) {
+      setNotice({ text: 'Reload this tab before replacing the board.', source: 'save' });
+      return;
+    }
+    blockedRef.current = true;
+    queue.suspend();
+    await queue.idle();
+    try {
+      await replaceStoredBoard(session.database, nextBoard, assets, queue.expectation());
+    } catch (error) {
+      blockedRef.current = foreignRef.current;
+      if (!foreignRef.current) queue.resume();
+      setNotice({ text: error instanceof RevisionConflictError ? error.message : errorMessage(error), source: 'save' });
+      return;
+    }
+    historyRef.current = createHistory();
+    textBefore.current = null;
+    renameBefore.current = null;
+    gestureRef.current = null;
+    libraryRef.current = new Map(assets.map((asset) => [asset.id, asset]));
+    registryRef.current?.revokeAll();
+    for (const asset of assets) registryRef.current?.remember(asset);
+    queue.adopt(nextBoard);
+    blockedRef.current = false;
+    replaceBoard(nextBoard);
+    replaceSelection([]);
+    replaceEdgeSelection([]);
+    editingRef.current = null;
+    setEditingId(null);
+    setUrlEpoch((value) => value + 1);
+    setStatus('saved');
+    setConfirming(null);
+    setProjectOpen(false);
+    flowRef.current.setViewport(nextBoard.viewport);
+  }
+
+  async function stageImport(file: File) {
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const result = await readArchive(bytes);
+      if ('error' in result) {
+        setNotice({ text: result.error, source: 'ingest' });
+        return;
+      }
+      setConfirming({
+        kind: 'import',
+        board: result.board,
+        assets: result.assets,
+        summary: `${result.summary.embedded} embedded images and ${result.summary.external} external references will replace the current board.`,
+      });
+    } catch (error) {
+      setNotice({ text: errorMessage(error), source: 'ingest' });
+    }
+  }
+
   const selectedNodes = board.nodes.filter((node) => selectedIds.includes(node.id));
   const groupTargets = board.nodes.filter((node) => node.kind === 'group' && !selectedNodes.every((entry) => isContentNode(entry) && entry.parentId === node.id));
   const selectionLabel = selectionReadout(board, selectedIds);
   const canGroup = selectedNodes.some((node) => isContentNode(node) && !node.parentId);
   const canUngroup = selectedNodes.some((node) => node.kind === 'group');
   const canDetach = selectedNodes.some((node) => isContentNode(node) && node.parentId);
+
+  const handlers = useRef({
+    onNodesChange,
+    onEdgesChange,
+    onMoveEnd(viewport: Viewport) {
+      const next = setViewport(boardRef.current, viewport);
+      if (next === boardRef.current) return;
+      replaceBoard(next);
+      queue.schedule(300);
+    },
+    onConnect(connection: Connection) {
+      if (blockedRef.current || !connection.source || !connection.target) return;
+      const before = boardRef.current;
+      const next = connectNodes(before, connection.source, connection.target, asHandle(connection.sourceHandle), asHandle(connection.targetHandle));
+      if (!next) return;
+      publish(next, before, 'save');
+    },
+    isValidConnection(connection: Connection | { source: string | null; target: string | null }) {
+      if (!connection.source || !connection.target || connection.source === connection.target) return false;
+      return !hasUndirectedLink(boardRef.current, connection.source, connection.target);
+    },
+    onSelectionChange(nodeIds: string[], edgeIds: string[]) {
+      replaceSelection(nodeIds);
+      replaceEdgeSelection(edgeIds);
+    },
+    async onBeforeDelete(doomed: { id: string }[], doomedEdges: { id: string }[]) {
+      if (blockedRef.current) return false;
+      const before = boardRef.current;
+      const withoutEdges = deleteEdges(before, doomedEdges.map((edge) => edge.id));
+      const result = deleteSelection(withoutEdges, doomed.map((node) => node.id));
+      if (result.board !== before) {
+        publish(result.board, before, 'save');
+        const live = new Set(result.board.nodes.map((node) => node.id));
+        replaceSelection(selectedRef.current.filter((id) => live.has(id)));
+        replaceEdgeSelection(selectedEdgeRef.current.filter((id) => result.board.edges.some((edge) => edge.id === id)));
+        setUrlEpoch((value) => value + 1);
+      }
+      return false;
+    },
+    onPointerMove(world: Point) {
+      pointerRef.current = world;
+      coordinatesRef.current?.setCursor(Math.round(world.x), Math.round(world.y));
+      if (frameRef.current) setDraft(normalizeRect(frameRef.current, world));
+    },
+  });
+  handlers.current.onNodesChange = onNodesChange;
+  handlers.current.onEdgesChange = onEdgesChange;
+  handlers.current.onMoveEnd = (viewport) => {
+    const next = setViewport(boardRef.current, viewport);
+    if (next === boardRef.current) return;
+    replaceBoard(next);
+    queue.schedule(300);
+  };
+  handlers.current.onConnect = (connection) => {
+    if (blockedRef.current || !connection.source || !connection.target) return;
+    const before = boardRef.current;
+    const next = connectNodes(before, connection.source, connection.target, asHandle(connection.sourceHandle), asHandle(connection.targetHandle));
+    if (!next) return;
+    publish(next, before, 'save');
+  };
+  handlers.current.isValidConnection = (connection) => {
+    if (!connection.source || !connection.target || connection.source === connection.target) return false;
+    return !hasUndirectedLink(boardRef.current, connection.source, connection.target);
+  };
+  handlers.current.onSelectionChange = (nodeIds, edgeIds) => {
+    replaceSelection(nodeIds);
+    replaceEdgeSelection(edgeIds);
+  };
+  handlers.current.onBeforeDelete = async (doomed, doomedEdges) => {
+    if (blockedRef.current) return false;
+    const before = boardRef.current;
+    const withoutEdges = deleteEdges(before, doomedEdges.map((edge) => edge.id));
+    const result = deleteSelection(withoutEdges, doomed.map((node) => node.id));
+    if (result.board !== before) {
+      publish(result.board, before, 'save');
+      const live = new Set(result.board.nodes.map((node) => node.id));
+      replaceSelection(selectedRef.current.filter((id) => live.has(id)));
+      replaceEdgeSelection(selectedEdgeRef.current.filter((id) => result.board.edges.some((edge) => edge.id === id)));
+      setUrlEpoch((value) => value + 1);
+    }
+    return false;
+  };
+  handlers.current.onPointerMove = (world) => {
+    pointerRef.current = world;
+    coordinatesRef.current?.setCursor(Math.round(world.x), Math.round(world.y));
+    if (frameRef.current) setDraft(normalizeRect(frameRef.current, world));
+  };
+
+  const onNodesChangeStable = useCallback((changes: NodeChange<CanvasFlowNode>[]) => {
+    handlers.current.onNodesChange(changes);
+  }, []);
+  const onEdgesChangeStable = useCallback((changes: EdgeChange[]) => {
+    handlers.current.onEdgesChange(changes);
+  }, []);
+  const onMoveEndStable = useCallback((_: unknown, viewport: Viewport) => {
+    handlers.current.onMoveEnd(viewport);
+  }, []);
+  const onConnectStable = useCallback((connection: Connection) => {
+    handlers.current.onConnect(connection);
+  }, []);
+  const isValidConnectionStable = useCallback((connection: Connection | { source: string | null; target: string | null }) => {
+    return handlers.current.isValidConnection(connection);
+  }, []);
+  const onSelectionChangeStable = useCallback((params: { nodes: { id: string }[]; edges: { id: string }[] }) => {
+    handlers.current.onSelectionChange(params.nodes.map((node) => node.id), params.edges.map((edge) => edge.id));
+  }, []);
+  const onBeforeDeleteStable = useCallback((params: { nodes: { id: string }[]; edges: { id: string }[] }) => {
+    return handlers.current.onBeforeDelete(params.nodes, params.edges);
+  }, []);
+  const onPointerMoveStable = useCallback((event: ReactPointerEvent) => {
+    handlers.current.onPointerMove(flowRef.current.screenToFlowPosition({ x: event.clientX, y: event.clientY }));
+  }, []);
 
   return (
     <BoardActionsProvider value={actions}>
@@ -671,6 +995,70 @@ function BoardSurface({ session }: { session: SessionProps }) {
               });
           }}
         />
+        <ProjectMenu
+          open={projectOpen}
+          usage={usage}
+          estimate={estimate}
+          persisted={persisted}
+          onToggle={() => {
+            setProjectOpen((open) => {
+              const next = !open;
+              if (next) void refreshStorage();
+              return next;
+            });
+          }}
+          onExport={() => void stageExport(false)}
+          onExportNew={() => void stageExport(true)}
+          onImport={(file) => void stageImport(file)}
+          onBlank={() => setConfirming({ kind: 'blank' })}
+          onClear={() => setConfirming({ kind: 'clear' })}
+          onPersist={() => {
+            const storage = navigator.storage;
+            if (!storage?.persist) {
+              setPersisted(null);
+              return;
+            }
+            void storage.persist().then((granted) => setPersisted(granted));
+          }}
+        />
+        {readOnly ? (
+          <div className="banner" role="status">
+            <p>This board is open in another tab. Reload before editing so this tab does not overwrite it.</p>
+            <button type="button" onClick={() => window.location.reload()}>
+              Reload
+            </button>
+          </div>
+        ) : null}
+        {confirming ? (
+          <div className="banner confirm-banner" role="alertdialog" aria-label="Confirm project change">
+            <p>
+              {confirming.kind === 'export'
+                ? `${confirming.summary} External image addresses are not downloaded and may change later.${confirming.unsaved ? ' Some edits are not in IndexedDB yet; this archive uses the open board.' : ''}`
+                : confirming.kind === 'import'
+                  ? confirming.summary
+                  : confirming.kind === 'exported-clear'
+                    ? 'The download was started. The browser cannot confirm that the file was kept. Clear the current board only if you have the archive.'
+                    : confirming.kind === 'clear'
+                      ? 'This removes the canvas board and its embedded images from this site. It does not clear other data stored for raais.github.io.'
+                      : 'Replace this board with an empty one? Notes, groups, links, and embedded images will be removed.'}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                if (confirming.kind === 'export') void runExport();
+                else if (confirming.kind === 'import') void replaceActive(confirming.board, confirming.assets);
+                else if (confirming.kind === 'blank' || confirming.kind === 'clear' || confirming.kind === 'exported-clear') {
+                  void replaceActive(createEmptyBoard(), []);
+                }
+              }}
+            >
+              {confirming.kind === 'export' ? 'Download' : 'Continue'}
+            </button>
+            <button type="button" onClick={() => setConfirming(null)}>
+              Cancel
+            </button>
+          </div>
+        ) : null}
         <SelectionBar
           canGroup={canGroup}
           canUngroup={canUngroup}
@@ -708,19 +1096,10 @@ function BoardSurface({ session }: { session: SessionProps }) {
           edges={edges}
           nodeTypes={nodeTypes}
           defaultViewport={initialViewport.current}
-          onNodesChange={onNodesChange}
-          onMoveEnd={(_, viewport: Viewport) => {
-            const next = setViewport(boardRef.current, viewport);
-            if (next === boardRef.current) return;
-            replaceBoard(next);
-            queue.schedule(300);
-          }}
-          onPointerMove={(event) => {
-            const world = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-            pointerRef.current = world;
-            coordinatesRef.current?.setCursor(Math.round(world.x), Math.round(world.y));
-            if (frameRef.current) setDraft(normalizeRect(frameRef.current, world));
-          }}
+          onNodesChange={onNodesChangeStable}
+          onEdgesChange={onEdgesChangeStable}
+          onMoveEnd={onMoveEndStable}
+          onPointerMove={onPointerMoveStable}
           onPointerDown={(event) => {
             if (toolRef.current !== 'frame') return;
             if (!(event.target instanceof Element) || !event.target.classList.contains('react-flow__pane')) return;
@@ -736,36 +1115,10 @@ function BoardSurface({ session }: { session: SessionProps }) {
             if (!(event.target instanceof Element) || !event.target.classList.contains('react-flow__pane')) return;
             createNote(screenToFlowPosition({ x: event.clientX, y: event.clientY }));
           }}
-          onConnect={(connection: Connection) => {
-            if (!connection.source || !connection.target) return;
-            const before = boardRef.current;
-            const next = connectNodes(before, connection.source, connection.target, asHandle(connection.sourceHandle), asHandle(connection.targetHandle));
-            if (!next) return;
-            publish(next, before, 'save');
-          }}
-          isValidConnection={(connection) => {
-            if (!connection.source || !connection.target || connection.source === connection.target) return false;
-            return !hasUndirectedLink(boardRef.current, connection.source, connection.target);
-          }}
-          onBeforeDelete={async ({ nodes: doomed, edges: doomedEdges }) => {
-            const before = boardRef.current;
-            const withoutEdges = deleteEdges(before, doomedEdges.map((edge) => edge.id));
-            const result = deleteSelection(withoutEdges, doomed.map((node) => node.id));
-            if (result.board !== before) {
-              publish(result.board, before, 'save');
-              const live = new Set(result.board.nodes.map((node) => node.id));
-              replaceSelection(selectedRef.current.filter((id) => live.has(id)));
-              setSelectedEdgeIds((current) => current.filter((id) => result.board.edges.some((edge) => edge.id === id)));
-              setUrlEpoch((value) => value + 1);
-            }
-            return false;
-          }}
-          onSelectionChange={({ nodes: picked, edges: pickedEdges }) => {
-            const nodeIds = picked.map((node) => node.id);
-            const edgeIds = pickedEdges.map((edge) => edge.id);
-            if (!sameIds(nodeIds, selectedRef.current)) replaceSelection(nodeIds);
-            setSelectedEdgeIds((current) => (sameIds(edgeIds, current) ? current : edgeIds));
-          }}
+          onConnect={onConnectStable}
+          isValidConnection={isValidConnectionStable}
+          onBeforeDelete={onBeforeDeleteStable}
+          onSelectionChange={onSelectionChangeStable}
           minZoom={0.1}
           maxZoom={6}
           zoomOnDoubleClick={false}
@@ -786,7 +1139,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
           colorMode="dark"
           proOptions={{ hideAttribution: false }}
           fitView={false}
-          defaultEdgeOptions={{ interactionWidth: 18 }}
+          defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
         >
           <Background variant={BackgroundVariant.Dots} gap={20} size={1.4} color="#4c596b" />
           {draft ? (
@@ -860,10 +1213,6 @@ function selectionReadout(board: Board, ids: readonly string[]): string | null {
 function asHandle(value: string | null | undefined): HandleSide {
   if (value === 'top' || value === 'right' || value === 'bottom' || value === 'left') return value;
   return 'right';
-}
-
-function sameIds(left: readonly string[], right: readonly string[]): boolean {
-  return left.length === right.length && left.every((id, index) => id === right[index]);
 }
 
 function hasFiles(data: DataTransfer | null): boolean {

@@ -28,8 +28,8 @@ export function groupSelection(board: Board, ids: readonly string[], now?: strin
   for (const id of unique) {
     const node = board.nodes.find((entry) => entry.id === id);
     if (!node) return { error: 'The selection no longer exists.' };
-    if (node.kind === 'group') return { error: 'Groups cannot contain other groups.' };
-    if (node.parentId) return { error: 'Remove a note from its group before grouping it again.' };
+    if (node.kind === 'group') return { error: 'Groups cannot be placed inside other groups.' };
+    if (node.parentId) return { error: 'That selection includes a note that already belongs to a group.' };
     chosen.push(node);
   }
   if (chosen.length === 0) return { error: 'Select a note to group.' };
