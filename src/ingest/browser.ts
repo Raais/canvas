@@ -5,10 +5,12 @@ import {
 } from '../domain/types';
 import {
   canonicalRasterMime,
+  captureClipboardData,
   contentSignature,
   interpretClipboard,
   mimeFromFileName,
   type ClipboardImageRef,
+  type ClipboardSnapshot,
   type IngestAction,
 } from './clipboard';
 
@@ -35,7 +37,11 @@ export type IngestBundle = {
 };
 
 export async function ingestDataTransfer(data: DataTransfer, kind: 'clipboard' | 'files'): Promise<IngestBundle> {
-  const collected = await collectFiles(fileList(data, kind));
+  return ingestClipboard(captureClipboardData(data), kind);
+}
+
+export async function ingestClipboard(snapshot: ClipboardSnapshot, kind: 'clipboard' | 'files'): Promise<IngestBundle> {
+  const collected = await collectFiles(snapshot.files.map((entry) => entry.file));
   if (kind === 'files') {
     const actions: IngestAction[] = collected.refs.map((image) => ({ type: 'file-image', fileKey: image.key }));
     const prepared = await prepareActions(actions, collected.files);
@@ -43,8 +49,8 @@ export async function ingestDataTransfer(data: DataTransfer, kind: 'clipboard' |
   }
   const interpreted = interpretClipboard({
     imageKeys: collected.refs,
-    html: data.getData('text/html') || null,
-    plainText: data.getData('text/plain') || null,
+    html: snapshot.html,
+    plainText: snapshot.plainText,
   });
   const prepared = await prepareActions(interpreted.actions, collected.files);
   return {
@@ -86,19 +92,6 @@ async function collectFiles(list: FileList | readonly File[]): Promise<{
     refs.push({ key, mimeType });
   }
   return { refs, files, warnings };
-}
-
-function fileList(data: DataTransfer, kind: 'clipboard' | 'files'): File[] {
-  const files: File[] = [];
-  if (data.files) files.push(...Array.from(data.files));
-  if (kind === 'clipboard') {
-    for (const item of Array.from(data.items ?? [])) {
-      if (item.kind !== 'file') continue;
-      const file = item.getAsFile();
-      if (file) files.push(file);
-    }
-  }
-  return files;
 }
 
 async function prepareActions(actions: readonly IngestAction[], files: Map<string, File>): Promise<IngestBundle> {

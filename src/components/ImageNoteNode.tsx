@@ -2,6 +2,7 @@ import { NodeResizer, type Node, type NodeProps } from '@xyflow/react';
 import { useEffect, useState } from 'react';
 import type { ImageDisplayMode } from '../domain/types';
 import { useBoardActions } from './board-context';
+import { PortHandles } from './PortHandles';
 
 export type ImageNodeData = {
   mode: ImageDisplayMode;
@@ -33,12 +34,13 @@ export function ImageNoteNode({ id, data, selected }: NodeProps<ImageFlowNode>) 
     <div className={className}>
       <NodeResizer
         isVisible={selected}
-        minWidth={48}
-        minHeight={48}
+        minWidth={data.mode === 'aspect' ? 1 : 48}
+        minHeight={data.mode === 'aspect' ? 1 : 48}
         keepAspectRatio={data.mode === 'aspect'}
-        color="#2f6f9f"
-        lineStyle={{ borderColor: '#2f6f9f' }}
+        color="#7aa2c4"
+        lineStyle={{ borderColor: '#7aa2c4' }}
       />
+      <PortHandles />
       {selected ? (
         <div className="image-tools nodrag nopan nowheel" onPointerDown={(event) => event.stopPropagation()}>
           <button

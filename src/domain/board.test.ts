@@ -22,7 +22,7 @@ describe('board model', () => {
   test('round-trips an empty board', () => {
     const board = createEmptyBoard(now);
     expect(parseBoard(board)?.id).toBe(board.id);
-    expect(parseBoard({ ...board, schemaVersion: 2 })).toBeNull();
+    expect(parseBoard({ ...board, schemaVersion: 99 })).toBeNull();
   });
 
   test('rejects unsafe image urls and duplicate ids', () => {
@@ -46,12 +46,12 @@ describe('board model', () => {
     expect(parseBoard({ ...stored, nodes: [{ ...image, x: Number.NaN }] })).toBeNull();
   });
 
-  test('keeps a future edge rest length', () => {
+  test('rejects an edge whose endpoints are missing', () => {
     const board = parseBoard({
       ...createEmptyBoard(now),
-      edges: [{ id: 'e1', sourceId: 'a', targetId: 'b', restLength: 120 }],
+      edges: [{ id: 'e1', sourceId: 'a', targetId: 'b', sourceHandle: 'right', targetHandle: 'left', restLength: 120 }],
     });
-    expect(board?.edges[0]?.restLength).toBe(120);
+    expect(board).toBeNull();
   });
 
   test('places text on the requested point and clamps tiny notes', () => {
@@ -68,6 +68,27 @@ describe('board model', () => {
   test('fits images inside the initial cap and grows tiny ones', () => {
     expect(fitDisplaySize(4000, 2000)).toEqual({ width: 360, height: 180 });
     expect(fitDisplaySize(16, 16)).toEqual({ width: 72, height: 72 });
+  });
+
+  test('keeps extreme image ratios instead of padding both sides to the minimum', () => {
+    const panorama = fitDisplaySize(8000, 40);
+    const portrait = fitDisplaySize(40, 8000);
+    expect(panorama.width).toBe(360);
+    expect(panorama.height < 48).toBe(true);
+    expect(panorama.width / panorama.height).toBeGreaterThan(40);
+    expect(portrait.height).toBe(280);
+    expect(portrait.width < 48).toBe(true);
+    expect(portrait.height / portrait.width).toBeGreaterThan(40);
+    const image = createEmbeddedImageNode({
+      center: { x: 0, y: 0 },
+      assetId: 'wide',
+      intrinsicWidth: 8000,
+      intrinsicHeight: 40,
+    });
+    image.width = 200;
+    image.height = 200;
+    const aspect = setImageMode(addNodes(createEmptyBoard(now), [{ ...image, mode: 'contain' }], now), image.id, 'aspect', now);
+    expect(aspect.nodes[0]?.height).toBe(1);
   });
 
   test('staggers pasted items', () => {
@@ -116,7 +137,16 @@ describe('board model', () => {
       sizedFromImage: true,
     });
     const board = addNodes(createEmptyBoard(now), [first, second, external], now);
-    board.edges = [{ id: 'edge', sourceId: first.id, targetId: external.id }];
+    board.edges = [
+      {
+        id: 'edge',
+        sourceId: first.id,
+        targetId: external.id,
+        sourceHandle: 'right',
+        targetHandle: 'left',
+        restLength: 10,
+      },
+    ];
     const one = deleteNodes(board, [first.id], now);
     expect(one.removedAssetIds).toEqual([]);
     expect(referencedAssetIds(one.board).has('shared')).toBe(true);

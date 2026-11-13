@@ -7,6 +7,10 @@ export type BoardActions = {
   endEditing: () => void;
   setMode: (id: string, mode: ImageDisplayMode) => void;
   noteIntrinsicSize: (id: string, width: number, height: number) => void;
+  renameGroup: (id: string, label: string) => void;
+  endRename: () => void;
+  createNoteIn: (groupId: string) => void;
+  deleteContents: (groupId: string) => void;
 };
 
 const BoardActionsContext = createContext<BoardActions | null>(null);

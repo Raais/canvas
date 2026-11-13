@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 1 as const;
+export const SCHEMA_VERSION = 2 as const;
 
 export const TEXT_NOTE_WIDTH = 240;
 export const TEXT_NOTE_HEIGHT = 140;
@@ -8,8 +8,13 @@ export const IMAGE_MIN_SIZE = 48;
 export const IMAGE_MAX_WIDTH = 360;
 export const IMAGE_MAX_HEIGHT = 280;
 export const IMAGE_MIN_EDGE = 72;
+export const ASPECT_MIN_SIZE = 1;
 export const FALLBACK_IMAGE_WIDTH = 320;
 export const FALLBACK_IMAGE_HEIGHT = 200;
+export const GROUP_PAD = 20;
+export const GROUP_MIN_WIDTH = 120;
+export const GROUP_MIN_HEIGHT = 88;
+export const DUPLICATE_OFFSET = 32;
 
 export type Viewport = {
   x: number;
@@ -19,9 +24,12 @@ export type Viewport = {
 
 export type ImageDisplayMode = 'aspect' | 'contain';
 
+export type HandleSide = 'top' | 'right' | 'bottom' | 'left';
+
 export type TextNode = {
   id: string;
   kind: 'text';
+  parentId?: string;
   x: number;
   y: number;
   width: number;
@@ -42,6 +50,7 @@ export type ExternalImageSource = {
 export type ImageNode = {
   id: string;
   kind: 'image';
+  parentId?: string;
   x: number;
   y: number;
   width: number;
@@ -53,13 +62,27 @@ export type ImageNode = {
   source: EmbeddedImageSource | ExternalImageSource;
 };
 
-export type BoardNode = TextNode | ImageNode;
+export type GroupNode = {
+  id: string;
+  kind: 'group';
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  label: string;
+};
+
+export type ContentNode = TextNode | ImageNode;
+
+export type BoardNode = ContentNode | GroupNode;
 
 export type BoardEdge = {
   id: string;
   sourceId: string;
   targetId: string;
-  restLength?: number;
+  sourceHandle: HandleSide;
+  targetHandle: HandleSide;
+  restLength: number;
 };
 
 export type Board = {
@@ -85,4 +108,9 @@ export type AssetRecord = {
 export type Point = {
   x: number;
   y: number;
+};
+
+export type Rect = Point & {
+  width: number;
+  height: number;
 };

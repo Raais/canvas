@@ -1,6 +1,7 @@
 import { NodeResizer, type Node, type NodeProps } from '@xyflow/react';
 import { useEffect, useRef } from 'react';
 import { useBoardActions } from './board-context';
+import { PortHandles } from './PortHandles';
 
 export type TextNodeData = {
   text: string;
@@ -36,9 +37,10 @@ export function TextNoteNode({ id, data, selected }: NodeProps<TextFlowNode>) {
         isVisible={selected && !data.editing}
         minWidth={160}
         minHeight={72}
-        color="#2f6f9f"
-        lineStyle={{ borderColor: '#2f6f9f' }}
+        color="#7aa2c4"
+        lineStyle={{ borderColor: '#7aa2c4' }}
       />
+      <PortHandles />
       {data.editing ? (
         <textarea
           ref={editorRef}

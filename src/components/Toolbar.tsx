@@ -12,13 +12,32 @@ const STATUS_LABEL: Record<SaveStatus, string> = {
 type ToolbarProps = {
   title: string;
   status: SaveStatus;
+  tool: 'select' | 'frame';
+  canGroup: boolean;
+  canUngroup: boolean;
   onTitle: (title: string) => void;
   onNewNote: () => void;
   onAddImages: (files: FileList) => void;
   onViewport: (viewport: { x: number; y: number; zoom: number }) => void;
+  onTool: (tool: 'select' | 'frame') => void;
+  onGroup: () => void;
+  onUngroup: () => void;
 };
 
-export function Toolbar({ title, status, onTitle, onNewNote, onAddImages, onViewport }: ToolbarProps) {
+export function Toolbar({
+  title,
+  status,
+  tool,
+  canGroup,
+  canUngroup,
+  onTitle,
+  onNewNote,
+  onAddImages,
+  onViewport,
+  onTool,
+  onGroup,
+  onUngroup,
+}: ToolbarProps) {
   const fileRef = useRef<HTMLInputElement>(null);
   const { zoomIn, zoomOut, fitView, getViewport } = useReactFlow();
 
@@ -57,6 +76,17 @@ export function Toolbar({ title, status, onTitle, onNewNote, onAddImages, onView
             event.target.value = '';
           }}
         />
+      </div>
+      <div className="toolbar-group">
+        <button type="button" aria-pressed={tool === 'frame'} onClick={() => onTool(tool === 'frame' ? 'select' : 'frame')}>
+          Frame
+        </button>
+        <button type="button" onClick={onGroup} disabled={!canGroup}>
+          Group
+        </button>
+        <button type="button" onClick={onUngroup} disabled={!canUngroup}>
+          Ungroup
+        </button>
       </div>
       <div className="toolbar-group">
         <button type="button" onClick={() => settle(() => zoomOut({ duration: 150 }))}>

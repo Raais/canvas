@@ -2,9 +2,25 @@
 
 **Implemented by Cursor Grok 4.7.**
 
-canvas is a local-first spatial notebook and moodboard. Arrange plain-text notes and images on an infinite, zoomable canvas. The board lives in this browser. There is no account, backend, or upload server.
+canvas is a local-first spatial notebook and moodboard. Arrange plain-text notes, images, undirected links, and rigid clusters on an infinite, zoomable canvas. The board lives in this browser. There is no account, backend, or upload server.
 
-This release is the foundation: notes, images, and persistence. Links, clusters, physics, and project archives are not in this version.
+This release adds graph links, rigid clusters, tension-only physics, undo/redo, a dark canvas, and a live world-space coordinate readout. Project archives and ZIP export are not available yet.
+
+## What you can do
+
+- Create text notes and embedded or linked images.
+- Draw an undirected link by dragging from one handle to another. A new link remembers its rest length and does not pull until it is stretched.
+- Group notes from a selection or with the Frame tool. Groups stay flat, move as one body, and keep their children at the same world position when grouped or ungrouped.
+- Undo and redo recent edits until the page reloads. History is not stored in IndexedDB.
+- Read the cursor and the selected object in world coordinates.
+
+## Known limitations
+
+- Groups cannot contain other groups.
+- Physics is a weak tension-only tether. It does not run a force-directed layout, and links inside one group do not move that group.
+- Deleting a group frame keeps the notes. Delete contents is the separate action that removes the notes too.
+- Undo cannot survive a reload. Image bytes for an undone deletion stay available only while that history entry does.
+- There is no ZIP export, project reset, or storage dashboard yet.
 
 ## Requirements
 

@@ -2,13 +2,13 @@ import { useEffect, useState } from 'react';
 import { BoardView } from './components/BoardView';
 import { openSession } from './persistence/db';
 import { errorMessage } from './persistence/save-queue';
-import type { Board } from './domain/types';
+import type { AssetRecord, Board } from './domain/types';
 import type { CanvasDatabase } from './persistence/db';
 
 type ReadySession = {
   database: CanvasDatabase;
   board: Board;
-  assets: { id: string; blob: Blob }[];
+  assets: AssetRecord[];
 };
 
 export function App() {

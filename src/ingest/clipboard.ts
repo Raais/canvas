@@ -25,6 +25,47 @@ export type ClipboardImageRef = {
   mimeType: string;
 };
 
+export type ClipboardFileLike = {
+  file: File;
+  mimeType: string | null;
+};
+
+export type ClipboardSnapshot = {
+  html: string | null;
+  plainText: string | null;
+  files: ClipboardFileLike[];
+};
+
+export type ClipboardSource = {
+  getData(type: string): string;
+  files?: ArrayLike<File>;
+  items?: ArrayLike<{ kind: string; type?: string; getAsFile(): File | null }>;
+};
+
+export function captureClipboardData(data: ClipboardSource): ClipboardSnapshot {
+  const files: ClipboardFileLike[] = [];
+  const seen = new Set<File>();
+  const remember = (file: File | null, mimeType?: string) => {
+    if (!file || seen.has(file)) return;
+    seen.add(file);
+    files.push({ file, mimeType: canonicalRasterMime(mimeType || file.type) });
+  };
+  if (data.files) {
+    for (const file of Array.from(data.files)) remember(file);
+  }
+  if (data.items) {
+    for (const item of Array.from(data.items)) {
+      if (item.kind !== 'file') continue;
+      remember(item.getAsFile(), item.type);
+    }
+  }
+  return {
+    html: data.getData('text/html') || null,
+    plainText: data.getData('text/plain') || null,
+    files,
+  };
+}
+
 export type InterpretResult = {
   actions: IngestAction[];
   warnings: string[];

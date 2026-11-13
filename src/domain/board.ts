@@ -1,6 +1,11 @@
+import { contentExtent } from './geometry';
 import {
+  ASPECT_MIN_SIZE,
   FALLBACK_IMAGE_HEIGHT,
   FALLBACK_IMAGE_WIDTH,
+  GROUP_MIN_HEIGHT,
+  GROUP_MIN_WIDTH,
+  GROUP_PAD,
   IMAGE_MAX_HEIGHT,
   IMAGE_MAX_WIDTH,
   IMAGE_MIN_EDGE,
@@ -12,6 +17,7 @@ import {
   type Board,
   type BoardEdge,
   type BoardNode,
+  type HandleSide,
   type ImageDisplayMode,
   type ImageNode,
   type Point,
@@ -23,7 +29,7 @@ const PASTE_STAGGER = 36;
 
 export function createEmptyBoard(now = new Date().toISOString()): Board {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: crypto.randomUUID(),
     title: 'Untitled board',
     createdAt: now,
@@ -61,8 +67,8 @@ export function fitDisplaySize(width: number, height: number): { width: number; 
     nextHeight *= boost;
   }
   return {
-    width: Math.max(IMAGE_MIN_SIZE, Math.round(nextWidth)),
-    height: Math.max(IMAGE_MIN_SIZE, Math.round(nextHeight)),
+    width: Math.max(1, Math.round(nextWidth)),
+    height: Math.max(1, Math.round(nextHeight)),
   };
 }
 
@@ -167,6 +173,13 @@ export function placeNode(
     const height = patch.height === undefined ? node.height : Math.max(minHeight(node), patch.height);
     const x = patch.x ?? node.x;
     const y = patch.y ?? node.y;
+    if (node.kind === 'group') {
+      const extent = contentExtent(board.nodes, node.id);
+      const nextWidth = Math.max(width, GROUP_MIN_WIDTH, extent ? extent.right + GROUP_PAD : 0);
+      const nextHeight = Math.max(height, GROUP_MIN_HEIGHT, extent ? extent.bottom + GROUP_PAD : 0);
+      if (x === node.x && y === node.y && nextWidth === node.width && nextHeight === node.height) return node;
+      return { ...node, x, y, width: nextWidth, height: nextHeight };
+    }
     if (node.kind === 'image') {
       const sizedFromImage = patch.lockImageSize ? true : node.sizedFromImage;
       if (
@@ -195,10 +208,7 @@ export function setImageMode(board: Board, id: string, mode: ImageDisplayMode, n
   return mapNode(board, id, (node) => {
     if (node.kind !== 'image' || node.mode === mode) return node;
     if (mode === 'aspect' && node.intrinsicWidth > 0 && node.intrinsicHeight > 0) {
-      const height = Math.max(
-        IMAGE_MIN_SIZE,
-        Math.round(node.width * (node.intrinsicHeight / node.intrinsicWidth)),
-      );
+      const height = Math.max(1, Math.round(node.width * (node.intrinsicHeight / node.intrinsicWidth)));
       return { ...node, mode, height };
     }
     return { ...node, mode };
@@ -244,9 +254,18 @@ export function deleteNodes(
   return { board: next, removedAssetIds };
 }
 
+export function revise(
+  board: Board,
+  patch: Partial<Pick<Board, 'title' | 'nodes' | 'edges' | 'viewport'>>,
+  now = new Date().toISOString(),
+): Board {
+  return touch(board, patch, now);
+}
+
 export function parseBoard(value: unknown): Board | null {
   if (!isRecord(value)) return null;
-  if (value.schemaVersion !== 1) return null;
+  if (value.schemaVersion === 1) return migrateVersion1(value);
+  if (value.schemaVersion !== 2) return null;
   if (!isNonEmptyString(value.id) || typeof value.title !== 'string') return null;
   if (typeof value.createdAt !== 'string' || typeof value.updatedAt !== 'string') return null;
   if (!isFiniteNumber(value.revision)) return null;
@@ -271,10 +290,10 @@ export function parseBoard(value: unknown): Board | null {
   }
 
   const viewport = parseViewport(value.viewport);
-  if (!viewport) return null;
+  if (!viewport || !validGraph(nodes, edges)) return null;
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: value.id,
     title: value.title,
     createdAt: value.createdAt,
@@ -326,22 +345,44 @@ function touch(
 }
 
 function minWidth(node: BoardNode): number {
-  return node.kind === 'text' ? TEXT_MIN_WIDTH : IMAGE_MIN_SIZE;
+  if (node.kind === 'text') return TEXT_MIN_WIDTH;
+  if (node.kind === 'group') return GROUP_MIN_WIDTH;
+  if (node.mode === 'aspect') return ASPECT_MIN_SIZE;
+  return IMAGE_MIN_SIZE;
 }
 
 function minHeight(node: BoardNode): number {
-  return node.kind === 'text' ? TEXT_MIN_HEIGHT : IMAGE_MIN_SIZE;
+  if (node.kind === 'text') return TEXT_MIN_HEIGHT;
+  if (node.kind === 'group') return GROUP_MIN_HEIGHT;
+  if (node.mode === 'aspect') return ASPECT_MIN_SIZE;
+  return IMAGE_MIN_SIZE;
 }
 
 function parseNode(value: unknown): BoardNode | null {
   if (!isRecord(value) || !isNonEmptyString(value.id)) return null;
   if (!isFiniteNumber(value.x) || !isFiniteNumber(value.y)) return null;
   if (!isPositive(value.width) || !isPositive(value.height)) return null;
+  const parentId = parseParentId(value.parentId);
+  if (parentId === false) return null;
+  if (value.kind === 'group') {
+    if (parentId) return null;
+    if (typeof value.label !== 'string') return null;
+    return {
+      id: value.id,
+      kind: 'group',
+      x: value.x,
+      y: value.y,
+      width: value.width,
+      height: value.height,
+      label: value.label,
+    };
+  }
   if (value.kind === 'text') {
     if (typeof value.text !== 'string') return null;
     return {
       id: value.id,
       kind: 'text',
+      ...(parentId ? { parentId } : {}),
       x: value.x,
       y: value.y,
       width: value.width,
@@ -358,6 +399,7 @@ function parseNode(value: unknown): BoardNode | null {
     return {
       id: value.id,
       kind: 'image',
+      ...(parentId ? { parentId } : {}),
       x: value.x,
       y: value.y,
       width: value.width,
@@ -388,12 +430,89 @@ function parseEdge(value: unknown): BoardEdge | null {
   if (!isNonEmptyString(value.id) || !isNonEmptyString(value.sourceId) || !isNonEmptyString(value.targetId)) {
     return null;
   }
-  const edge: BoardEdge = { id: value.id, sourceId: value.sourceId, targetId: value.targetId };
-  if (value.restLength !== undefined) {
-    if (!isFiniteNumber(value.restLength) || value.restLength < 0) return null;
-    edge.restLength = value.restLength;
+  if (!isHandle(value.sourceHandle) || !isHandle(value.targetHandle)) return null;
+  if (!isFiniteNumber(value.restLength) || value.restLength < 0) return null;
+  if (value.sourceId === value.targetId) return null;
+  return {
+    id: value.id,
+    sourceId: value.sourceId,
+    targetId: value.targetId,
+    sourceHandle: value.sourceHandle,
+    targetHandle: value.targetHandle,
+    restLength: value.restLength,
+  };
+}
+
+function validGraph(nodes: readonly BoardNode[], edges: readonly BoardEdge[]): boolean {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const pairs = new Set<string>();
+  for (const node of nodes) {
+    if (node.kind === 'group' || !node.parentId) continue;
+    const parent = byId.get(node.parentId);
+    if (!parent || parent.kind !== 'group') return false;
   }
-  return edge;
+  for (const edge of edges) {
+    if (!byId.has(edge.sourceId) || !byId.has(edge.targetId)) return false;
+    const key = edge.sourceId < edge.targetId ? `${edge.sourceId}\0${edge.targetId}` : `${edge.targetId}\0${edge.sourceId}`;
+    if (pairs.has(key)) return false;
+    pairs.add(key);
+  }
+  return true;
+}
+
+function migrateVersion1(value: Record<string, unknown>): Board | null {
+  if (!Array.isArray(value.nodes) || !Array.isArray(value.edges)) return null;
+  const nodes: Record<string, unknown>[] = [];
+  for (const entry of value.nodes) {
+    if (!isRecord(entry) || entry.kind === 'group' || entry.parentId !== undefined) return null;
+    nodes.push(entry);
+  }
+  const ids = new Set(nodes.map((node) => (typeof node.id === 'string' ? node.id : '')));
+  const edges: Record<string, unknown>[] = [];
+  const pairs = new Set<string>();
+  for (const entry of value.edges) {
+    if (!isRecord(entry) || typeof entry.sourceId !== 'string' || typeof entry.targetId !== 'string') return null;
+    if (!ids.has(entry.sourceId) || !ids.has(entry.targetId) || entry.sourceId === entry.targetId) continue;
+    const key = entry.sourceId < entry.targetId ? `${entry.sourceId}\0${entry.targetId}` : `${entry.targetId}\0${entry.sourceId}`;
+    if (pairs.has(key)) continue;
+    pairs.add(key);
+    edges.push({
+      id: entry.id,
+      sourceId: entry.sourceId,
+      targetId: entry.targetId,
+      sourceHandle: isHandle(entry.sourceHandle) ? entry.sourceHandle : 'right',
+      targetHandle: isHandle(entry.targetHandle) ? entry.targetHandle : 'left',
+      restLength:
+        isFiniteNumber(entry.restLength) && entry.restLength >= 0
+          ? entry.restLength
+          : centerDistance(nodes, entry.sourceId, entry.targetId),
+    });
+  }
+  return parseBoard({ ...value, schemaVersion: 2, nodes, edges });
+}
+
+function centerDistance(nodes: readonly Record<string, unknown>[], sourceId: string, targetId: string): number {
+  const source = nodes.find((node) => node.id === sourceId);
+  const target = nodes.find((node) => node.id === targetId);
+  if (!source || !target) return 0;
+  if (!isFiniteNumber(source.x) || !isFiniteNumber(source.y) || !isFiniteNumber(source.width) || !isFiniteNumber(source.height)) return 0;
+  if (!isFiniteNumber(target.x) || !isFiniteNumber(target.y) || !isFiniteNumber(target.width) || !isFiniteNumber(target.height)) return 0;
+  const sx = source.x + source.width / 2;
+  const sy = source.y + source.height / 2;
+  const tx = target.x + target.width / 2;
+  const ty = target.y + target.height / 2;
+  const length = Math.hypot(tx - sx, ty - sy);
+  return Number.isFinite(length) ? length : 0;
+}
+
+function parseParentId(value: unknown): string | false | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === 'string' && value.length > 0) return value;
+  return false;
+}
+
+function isHandle(value: unknown): value is HandleSide {
+  return value === 'top' || value === 'right' || value === 'bottom' || value === 'left';
 }
 
 function parseViewport(value: unknown): Viewport | null {

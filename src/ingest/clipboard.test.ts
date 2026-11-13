@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { contentSignature, decodeDataImage, interpretClipboard } from './clipboard';
+import { captureClipboardData, contentSignature, decodeDataImage, interpretClipboard } from './clipboard';
 
 const PNG =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
@@ -83,5 +83,25 @@ describe('clipboard precedence', () => {
     const left = contentSignature('image/png', new Uint8Array([1, 2, 3]));
     const right = contentSignature('image/png', new Uint8Array([1, 2, 4]));
     expect(left === right).toBe(false);
+  });
+
+  test('reads clipboard text and files before the event data expires', () => {
+    let live = true;
+    const file = new File([new Uint8Array([1, 2, 3])], 'shot.png', { type: 'image/png' });
+    const snapshot = captureClipboardData({
+      getData(type: string) {
+        if (!live) throw new Error('clipboard expired');
+        if (type === 'text/plain') return 'hello';
+        if (type === 'text/html') return '<p>hello</p>';
+        return '';
+      },
+      files: [file],
+      items: [{ kind: 'file', type: 'image/png', getAsFile: () => file }],
+    });
+    live = false;
+    expect(snapshot.plainText).toBe('hello');
+    expect(snapshot.html).toBe('<p>hello</p>');
+    expect(snapshot.files).toHaveLength(1);
+    expect(snapshot.files[0]?.mimeType).toBe('image/png');
   });
 });
