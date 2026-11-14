@@ -1,4 +1,5 @@
 import { seedFromProjectName } from '../backgrounds/atlas-seed';
+import { normalizeRotation } from './image-rotation';
 import { contentExtent } from './geometry';
 import { classifyPlainText } from './code';
 import {
@@ -340,13 +341,26 @@ export function migrateStoredAppearance(
   storedAppearance: Appearance | null,
   legacy: Appearance,
 ): Board {
-  if (storedAppearance && (storedSchema === 5 || storedSchema === 6 || storedSchema === SCHEMA_VERSION)) return board;
+  if (storedAppearance && (storedSchema === 5 || storedSchema === 6 || storedSchema === 7 || storedSchema === SCHEMA_VERSION)) return board;
   return { ...board, appearance: storedAppearance ?? legacy };
 }
 
 export function setAppearance(board: Board, appearance: Appearance, now?: string): Board {
   if (board.appearance === appearance) return board;
   return touch(board, { appearance }, now);
+}
+
+export function setImageRotation(board: Board, id: string, rotation: number, now?: string): Board {
+  const angle = normalizeRotation(rotation);
+  if (angle === null) return board;
+  return mapNode(board, id, (node) => {
+    if (node.kind !== 'image') return node;
+    if ((node.rotation ?? 0) === angle) return node;
+    const next = { ...node };
+    if (angle === 0) delete next.rotation;
+    else next.rotation = angle;
+    return next;
+  }, now);
 }
 
 export function toggleImageFlip(board: Board, id: string, axis: 'x' | 'y', now?: string): Board {
@@ -414,8 +428,8 @@ export function parseBoard(value: unknown): Board | null {
   if (!isRecord(value)) return null;
   if (value.schemaVersion === 1) return migrateVersion1(value);
   const version = value.schemaVersion;
-  if (version !== 2 && version !== 3 && version !== 4 && version !== 5 && version !== 6 && version !== SCHEMA_VERSION) return null;
-  const relationshipStrict = version === 6 || version === SCHEMA_VERSION;
+  if (version !== 2 && version !== 3 && version !== 4 && version !== 5 && version !== 6 && version !== 7 && version !== SCHEMA_VERSION) return null;
+  const relationshipStrict = version === 6 || version === 7 || version === SCHEMA_VERSION;
   if (!isNonEmptyString(value.id) || typeof value.title !== 'string') return null;
   if (typeof value.createdAt !== 'string' || typeof value.updatedAt !== 'string') return null;
   if (!isFiniteNumber(value.revision)) return null;
@@ -478,7 +492,11 @@ export function isSafeHttpUrl(value: string): boolean {
 }
 
 function strictDocument(schemaVersion: unknown): boolean {
-  return schemaVersion === 5 || schemaVersion === 6 || schemaVersion === SCHEMA_VERSION;
+  return schemaVersion === 5 || schemaVersion === 6 || schemaVersion === 7 || schemaVersion === SCHEMA_VERSION;
+}
+
+function supportsContours(schemaVersion: unknown): boolean {
+  return schemaVersion === 7 || schemaVersion === SCHEMA_VERSION;
 }
 
 function parseAppearanceField(schemaVersion: unknown, value: unknown): Appearance | null {
@@ -490,14 +508,14 @@ function parseAppearanceField(schemaVersion: unknown, value: unknown): Appearanc
 
 function parsePattern(schemaVersion: unknown, value: unknown): BackgroundPattern | null {
   if (value === 'dots' || value === 'grid' || value === 'cross' || value === 'blank' || value === 'dither-atlas') return value;
-  if (value === 'topographic-contours' && schemaVersion === SCHEMA_VERSION) return value;
+  if (value === 'topographic-contours' && supportsContours(schemaVersion)) return value;
   if (strictDocument(schemaVersion)) return null;
   if (value == null) return 'dots';
   return null;
 }
 
 function parseContours(schemaVersion: unknown, value: unknown): Board['topographicContours'] | null {
-  if (schemaVersion !== SCHEMA_VERSION) return undefined;
+  if (!supportsContours(schemaVersion)) return undefined;
   if (value == null) return undefined;
   if (!isRecord(value) || value.rendererVersion !== 1) return null;
   if (typeof value.seed !== 'number' || !Number.isInteger(value.seed) || value.seed < 0 || value.seed > 4294967295) return null;
@@ -617,6 +635,8 @@ function parseNode(value: unknown): BoardNode | null {
     if (value.flipY != null && value.flipY !== true && value.flipY !== false) return null;
     const cornerStyle = value.cornerStyle == null ? undefined : value.cornerStyle === 'rounded' || value.cornerStyle === 'square' ? value.cornerStyle : null;
     if (cornerStyle === null) return null;
+    const rotation = parseRotation(value.rotation);
+    if (rotation === null) return null;
     const source = parseImageSource(value.source);
     if (!source) return null;
     return {
@@ -635,9 +655,17 @@ function parseNode(value: unknown): BoardNode | null {
       ...(value.flipX === true ? { flipX: true } : {}),
       ...(value.flipY === true ? { flipY: true } : {}),
       ...(cornerStyle === 'square' ? { cornerStyle } : {}),
+      ...(rotation ? { rotation } : {}),
     };
   }
   return null;
+}
+
+function parseRotation(value: unknown): number | undefined | null {
+  if (value == null) return undefined;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < -180 || value > 180) return null;
+  if (value === 0) return undefined;
+  return value;
 }
 
 function parseImageSource(value: unknown): ImageNode['source'] | null {

@@ -8,6 +8,7 @@ const ready: PwaUpdateInput = {
   editingRelationship: false,
   confirming: false,
   ingesting: false,
+  adjustingRotation: false,
   focusedField: false,
   readOnly: false,
   saveStatus: 'saved',

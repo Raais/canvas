@@ -36,11 +36,11 @@ function linked() {
 describe('schema v6', () => {
   test('new boards are atlas v3 with an empty view list', () => {
     const board = createEmptyBoard(now);
-    expect(board.schemaVersion).toBe(7);
+    expect(board.schemaVersion).toBe(8);
     expect(board.backgroundPattern).toBe('dither-atlas');
     expect(board.ditherAtlas).toEqual({ seed: seedFromProjectName('Untitled board'), rendererVersion: 3 });
     expect(board.savedViews).toEqual([]);
-    expect(parseBoard(board)?.schemaVersion).toBe(7);
+    expect(parseBoard(board)?.schemaVersion).toBe(8);
   });
 
   test('older boards keep their background, edges, and gain an empty view list', () => {
@@ -71,7 +71,7 @@ describe('schema v6', () => {
       edges: [],
       viewport: { x: 3, y: 4, zoom: 1.2 },
     });
-    expect(dots?.schemaVersion).toBe(7);
+    expect(dots?.schemaVersion).toBe(8);
     expect(dots?.backgroundPattern).toBe('dots');
     expect(dots?.ditherAtlas).toBe(undefined);
     expect(dots?.savedViews).toEqual([]);

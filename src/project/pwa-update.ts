@@ -5,6 +5,7 @@ export type PwaUpdateInput = {
   editingRelationship: boolean;
   confirming: boolean;
   ingesting: boolean;
+  adjustingRotation: boolean;
   focusedField: boolean;
   readOnly: boolean;
   saveStatus: PwaSaveStatus;
@@ -23,6 +24,7 @@ export function decidePwaUpdate(input: PwaUpdateInput): PwaUpdateDecision {
   if (input.editingRelationship) return { action: 'block', reason: 'Finish the relationship edit before updating.' };
   if (input.confirming) return { action: 'block', reason: 'Finish the open confirmation before updating.' };
   if (input.ingesting) return { action: 'block', reason: 'Wait for the image to finish before updating.' };
+  if (input.adjustingRotation) return { action: 'block', reason: 'Finish the image rotation before updating.' };
   if (input.saveStatus === 'error' || input.hasRecovery) {
     return { action: 'block', reason: 'A save still needs attention. Keep this board, or download a recovery ZIP, before updating.' };
   }

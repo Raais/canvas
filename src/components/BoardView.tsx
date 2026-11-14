@@ -35,6 +35,7 @@ import {
   setPresentation,
   setViewport,
   upgradeAtlasRenderer,
+  setImageRotation,
   toggleImageFlip,
   staggeredPositions,
   updateText,
@@ -109,6 +110,7 @@ import { ATLAS_LAB_ENABLED, clampAtlasTuning, defaultsForAtlasVersion, effective
 import { CONTOURS_V1_DEFAULTS, clampContoursTuning, effectiveContoursTuning, type ContoursPreview, type ContoursTuning } from '../backgrounds/contours-tuning';
 import { PwaUpdateNotice } from './PwaUpdateNotice';
 import { decidePwaUpdate, shouldActivateWorker } from '../project/pwa-update';
+import { pendingRotationBlocksReplacement } from '../domain/image-rotation';
 import { ProjectMenu } from './ProjectMenu';
 
 const DitherAtlasLayer = lazy(() => import('../backgrounds/DitherAtlasLayer'));
@@ -228,6 +230,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const viewsOpenRef = useRef(false);
   const edgeEditorRef = useRef(false);
   const ingestRef = useRef(0);
+  const rotationAdjustRef = useRef(false);
   const ingestGuard = useRef(createBatchGuard());
   const optimizerRef = useRef<ImageOptimizer | null>(null);
   const mountedRef = useRef(true);
@@ -302,6 +305,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
         editingRelationship: edgeEditorRef.current,
         confirming: confirmingRef.current,
         ingesting: ingestRef.current > 0,
+        adjustingRotation: rotationAdjustRef.current,
         focusedField,
         readOnly: blockedRef.current,
         saveStatus: statusRef.current,
@@ -883,6 +887,16 @@ function BoardSurface({ session }: { session: SessionProps }) {
         if (next === before) return;
         publish(next, before, 'save');
       },
+      setRotation(id, rotation) {
+        if (blockedRef.current) return;
+        const before = boardRef.current;
+        const next = setImageRotation(before, id, rotation);
+        if (next === before) return;
+        publish(next, before, 'save');
+      },
+      setRotationAdjusting(active) {
+        rotationAdjustRef.current = active;
+      },
       renameGroup(id, label) {
         if (blockedRef.current) return;
         if (!renameBefore.current) renameBefore.current = structuredClone(boardRef.current);
@@ -1224,6 +1238,10 @@ function BoardSurface({ session }: { session: SessionProps }) {
   }
 
   async function stageExport(thenClear: boolean) {
+    if (pendingRotationBlocksReplacement(rotationAdjustRef.current)) {
+      setNotice({ text: 'Finish the image rotation before exporting.', source: 'ingest' });
+      return;
+    }
     if (!mayReplaceBoard(ingestRef.current > 0)) {
       setNotice({ text: 'Wait for the image to finish before exporting.', source: 'ingest' });
       return;
@@ -1277,6 +1295,10 @@ function BoardSurface({ session }: { session: SessionProps }) {
   }
 
   async function replaceActive(nextBoard: Board, assets: AssetRecord[]) {
+    if (pendingRotationBlocksReplacement(rotationAdjustRef.current)) {
+      setNotice({ text: 'Finish the image rotation before replacing the board.', source: 'ingest' });
+      return;
+    }
     if (!mayReplaceBoard(ingestRef.current > 0)) {
       setNotice({ text: 'Wait for the image to finish before replacing the board.', source: 'ingest' });
       return;
@@ -1933,6 +1955,7 @@ function toFlowNode(
       flipX: image.flipX === true,
       flipY: image.flipY === true,
       cornerStyle: image.cornerStyle === 'square' ? 'square' : 'rounded',
+      rotation: image.rotation ?? 0,
     },
   };
 }

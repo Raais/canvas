@@ -91,6 +91,7 @@ const ready: PwaUpdateInput = {
   editingRelationship: false,
   confirming: false,
   ingesting: false,
+  adjustingRotation: false,
   focusedField: false,
   readOnly: false,
   saveStatus: 'saved',
@@ -122,7 +123,7 @@ describe('image optimization preference', () => {
     writeOptimizeImages(remembered, true);
     expect(JSON.stringify(createEmptyBoard(now)).includes(OPTIMIZE_IMAGES_KEY)).toBe(false);
     expect(readOptimizeImages(remembered)).toBe(true);
-    expect(SCHEMA_VERSION).toBe(7);
+    expect(SCHEMA_VERSION).toBe(8);
     expect(ARCHIVE_VERSION).toBe(1);
     expect(GRAPH_CLIPBOARD_VERSION).toBe(1);
   });

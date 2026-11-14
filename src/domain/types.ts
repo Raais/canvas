@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 7 as const;
+export const SCHEMA_VERSION = 8 as const;
 export const MAX_SAVED_VIEWS = 32;
 export const MAX_SAVED_VIEW_NAME = 60;
 export const MAX_EDGE_LABEL = 80;
@@ -92,6 +92,8 @@ export type ImageNode = {
   flipX?: boolean;
   flipY?: boolean;
   cornerStyle?: CornerStyle;
+  /** Degrees, clockwise. Omitted at 0°. The frame itself stays axis-aligned. */
+  rotation?: number;
 };
 
 export type GroupNode = {

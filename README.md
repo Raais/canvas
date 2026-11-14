@@ -13,7 +13,7 @@ A new board opens on Dither Atlas renderer v3: the finalized Earth-like terrain,
 - Lock an image to its ratio, or stretch it to the frame.
 - Drag a group from its title or from empty space inside the frame. Dragging a note inside the frame moves only that note.
 - Choose dark or light for the open board. The choice is saved with the board and restored from a ZIP archive. A new board starts dark. The operating system does not change it.
-- Flip an image horizontally or vertically. The original image bytes stay unchanged. Rotation is not supported.
+- Flip an image horizontally or vertically. The original image bytes stay unchanged. Rotate turns the picture inside its frame.
 - Draw an undirected link by dragging from one handle to another. A new link remembers its rest length and does not pull until it is stretched. Select one link to give it a short label, or to draw it solid, dashed, or as a red string. The label and style do not change the tether.
 - Press Cmd+K or Ctrl+K, or the search icon, to find note text and group labels and jump to them. Search stays in this browser and is not saved.
 - Save the current camera as a named view and return to it later. Views are part of the board, and they stay put when a note edit is undone.
@@ -31,9 +31,13 @@ The board itself is not stored in `localStorage`. A board's appearance is part o
 
 The browser can still delete site data. An exported archive is the copy to keep. canvas does not upload the board anywhere. External image links are recorded as URLs only; their bytes are not included.
 
-Boards are document schema 7. A ZIP archive is still format 1, and a copied selection is still clipboard format 1. Labels, link styles, saved views, and a Topographic Contours seed travel with the board JSON. Older boards migrate forward without changing their saved background. There is no remote search service.
+Boards are document schema 8. A ZIP archive is still format 1, and a copied selection is still clipboard format 1. Image rotation is stored on the image note in degrees and is omitted at 0°. Labels, link styles, saved views, and a Topographic Contours seed travel with the board JSON. Older boards migrate forward without changing their saved background. There is no remote search service.
 
 One tab owns writing, using a browser lock named `raais-canvas-active-board-v1` when the browser provides it. Other tabs can pan, zoom, search, recall saved views, and inspect, but they do not save. If a tab has open edits when it loses the board, it keeps them in memory and offers **Download recovery ZIP**. Reload asks before discarding those edits. IndexedDB still refuses a stale revision. Embedded images must be 64 MiB or smaller, and a backup must stay within 256 MiB including the manifest. The project menu warns when a board is near or past that limit. Copying a note out of a group pastes it in world coordinates. Escape finishes a note edit and cancels a group rename. Delete contents asks before removing a group and its children. Checklists toggle for unordered, ordered, nested, and quoted tasks.
+
+## Image rotation
+
+Select an image and choose Rotate. A slider sets any angle from −180° to 180°. −15° and +15° step from the current angle, and Reset returns to 0°. The rectangular frame, resize handles, selection outline, and connection handles stay fixed. The picture rotates and scales inside the frame so the corners stay filled, and the extra pixels are clipped. At 0° the picture looks the same as before. Horizontal and vertical flips stay independent of the angle. Existing images start at 0°. The angle is kept across reload, offline use, ZIP export, and copy and paste.
 
 ## Image optimization
 
