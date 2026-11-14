@@ -1,6 +1,6 @@
 import { childrenOf, worldTopLeft } from './geometry';
 import type { Board, BoardEdge, BoardNode, Point } from './types';
-import { parseBoard, revise } from './board';
+import { parseBoard, revise, withInsertedTimestamp } from './board';
 
 export const GRAPH_CLIPBOARD_FORMAT = 'canvas-graph';
 export const GRAPH_CLIPBOARD_VERSION = 1;
@@ -107,14 +107,15 @@ export function pasteGraph(
   }
   const dx = origin.x - minX + repeat * 32;
   const dy = origin.y - minY + repeat * 32;
+  const stampedAt = now ?? new Date().toISOString();
   const copies: BoardNode[] = decoded.nodes.map((node) => {
     const id = idMap.get(node.id) ?? crypto.randomUUID();
     const parentInCopy = node.kind !== 'group' && node.parentId && ids.has(node.parentId);
     if (parentInCopy) {
-      return { ...node, id, parentId: idMap.get(node.parentId!) };
+      return withInsertedTimestamp({ ...node, id, parentId: idMap.get(node.parentId!) }, stampedAt);
     }
     const { parentId: _parent, ...rest } = node.kind === 'group' ? { ...node, parentId: undefined } : node;
-    return { ...rest, id, x: node.x + dx, y: node.y + dy };
+    return withInsertedTimestamp({ ...rest, id, x: node.x + dx, y: node.y + dy }, stampedAt);
   });
   const edges: BoardEdge[] = [];
   for (const edge of decoded.edges) {
@@ -123,6 +124,6 @@ export function pasteGraph(
     if (!sourceId || !targetId) continue;
     edges.push({ ...edge, id: crypto.randomUUID(), sourceId, targetId });
   }
-  const next = revise(board, { nodes: [...board.nodes, ...copies], edges: [...board.edges, ...edges] }, now);
+  const next = revise(board, { nodes: [...board.nodes, ...copies], edges: [...board.edges, ...edges] }, stampedAt);
   return next;
 }

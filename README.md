@@ -15,7 +15,7 @@ A new board opens on Dither Atlas renderer v3: the finalized Earth-like terrain,
 - Choose dark or light for the open board. The choice is saved with the board and restored from a ZIP archive. A new board starts dark. The operating system does not change it.
 - Flip an image horizontally or vertically. The original image bytes stay unchanged. Rotate turns the picture inside its frame.
 - Draw an undirected link by dragging from one handle to another. A new link remembers its rest length and does not pull until it is stretched. Select one link to give it a short label, or to draw it solid, dashed, or as a red string. The label and style do not change the tether.
-- Press Cmd+K or Ctrl+K, or the search icon, to find note text and group labels and jump to them. Search stays in this browser and is not saved.
+- Press Cmd+K or Ctrl+K, or the search icon, to find note text, group labels, and dates. Search stays in this browser and is not saved.
 - Save the current camera as a named view and return to it later. Views are part of the board, and they stay put when a note edit is undone.
 - Group notes from a selection or with the Frame tool. Groups stay flat, move as one body, and keep their children at the same world position when grouped or ungrouped.
 - Undo and redo recent edits until the page reloads. History is not stored in IndexedDB.
@@ -31,9 +31,17 @@ The board itself is not stored in `localStorage`. A board's appearance is part o
 
 The browser can still delete site data. An exported archive is the copy to keep. canvas does not upload the board anywhere. External image links are recorded as URLs only; their bytes are not included.
 
-Boards are document schema 8. A ZIP archive is still format 1, and a copied selection is still clipboard format 1. Image rotation is stored on the image note in degrees and is omitted at 0°. Labels, link styles, saved views, and a Topographic Contours seed travel with the board JSON. Older boards migrate forward without changing their saved background. There is no remote search service.
+Boards are document schema 9. A ZIP archive is still format 1, and a copied selection is still clipboard format 1. Image rotation is stored on the image note in degrees and is omitted at 0°. Text and image notes may store `lastEditedAt`. Labels, link styles, saved views, and a Topographic Contours seed travel with the board JSON. Older boards migrate forward without changing their saved background or inventing dates. There is no remote search service.
 
 One tab owns writing, using a browser lock named `raais-canvas-active-board-v1` when the browser provides it. Other tabs can pan, zoom, search, recall saved views, and inspect, but they do not save. If a tab has open edits when it loses the board, it keeps them in memory and offers **Download recovery ZIP**. Reload asks before discarding those edits. IndexedDB still refuses a stale revision. Embedded images must be 64 MiB or smaller, and a backup must stay within 256 MiB including the manifest. The project menu warns when a board is near or past that limit. Copying a note out of a group pastes it in world coordinates. Escape finishes a note edit and cancels a group rename. Delete contents asks before removing a group and its children. Checklists toggle for unordered, ordered, nested, and quoted tasks.
+
+## Node dates
+
+A text note's date is the last time its text actually changed. Moving, resizing, grouping, physics, colors, presentation, and code language do not change it. An image's date is the moment that image node was added. Rotation, flips, stretch, corners, and resizing leave it alone. Groups have no date. Older notes and images without a stored time show `-` until a text note is genuinely edited; an old image stays undated. The label sits outside the bottom-right of the frame, for example `2m ago | 14/11`, and refreshes about once a minute without saving. A copied or duplicated note gets a new time. A ZIP import keeps the times in the archive.
+
+## Search
+
+Ctrl+K still ranks note titles, note text, and group labels locally, including short prefixes and small typos, through MiniSearch plus a substring pass. A query that is also a date, such as `today`, `yesterday`, `last friday`, `june`, `june 2025`, `14/11`, or `2025`, lists dated text and image notes in that range and content matches underneath. `edited:yesterday` searches dates only. Groups never match a date. `may need fixing` stays a text search. Date matches can focus an image. Search is downloaded with the app and works offline.
 
 ## Image rotation
 

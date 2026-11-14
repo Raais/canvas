@@ -6,6 +6,7 @@ import { HANDLE_SIDES, visualHandleTransform } from '../editor/handles';
 import { highlightCode, resolveHighlightLanguage } from '../domain/highlight';
 import { toggleHighlight } from '../domain/markdown';
 import { MarkdownView } from './MarkdownView';
+import { NodeDateLabel } from './NodeDateLabel';
 import type { BackgroundTone, CodeLanguage, TextTone } from '../domain/types';
 
 export type TextNodeData = {
@@ -16,6 +17,7 @@ export type TextNodeData = {
   codeLanguage?: CodeLanguage;
   backgroundTone?: BackgroundTone;
   textTone?: TextTone;
+  lastEditedAt?: string;
 };
 
 const BACKGROUNDS: Array<BackgroundTone | 'default'> = ['default', 'slate', 'sage', 'sand', 'rose'];
@@ -196,6 +198,7 @@ function TextNoteNodeComponent({ id, data, selected }: NodeProps<Node<TextNodeDa
           <p className="text-body">{data.text || 'Empty note'}</p>
         )}
       </div>
+      <NodeDateLabel iso={data.lastEditedAt} />
     </article>
   );
 }

@@ -1,5 +1,6 @@
 import { seedFromProjectName } from '../backgrounds/atlas-seed';
 import { normalizeRotation } from './image-rotation';
+import { parseStoredTimestamp } from './node-date';
 import { contentExtent } from './geometry';
 import { classifyPlainText } from './code';
 import {
@@ -62,7 +63,7 @@ export function createEmptyBoard(now = new Date().toISOString()): Board {
   };
 }
 
-export function createTextNode(center: Point, text = ''): TextNode {
+export function createTextNode(center: Point, text = '', now = new Date().toISOString()): TextNode {
     const guess = text.trim() ? classifyPlainText(text) : null;
     return {
     id: crypto.randomUUID(),
@@ -72,6 +73,7 @@ export function createTextNode(center: Point, text = ''): TextNode {
     width: TEXT_NOTE_WIDTH,
     height: TEXT_NOTE_HEIGHT,
     text,
+    lastEditedAt: now,
     ...(guess?.presentation === 'code' ? { presentation: 'code' as const, ...(guess.language ? { language: guess.language } : {}) } : {}),
   };
 }
@@ -100,6 +102,7 @@ export function createEmbeddedImageNode(input: {
   assetId: string;
   intrinsicWidth: number;
   intrinsicHeight: number;
+  now?: string;
 }): ImageNode {
   const display = fitDisplaySize(input.intrinsicWidth, input.intrinsicHeight);
   return {
@@ -114,6 +117,7 @@ export function createEmbeddedImageNode(input: {
     intrinsicHeight: input.intrinsicHeight,
     sizedFromImage: true,
     source: { type: 'embedded', assetId: input.assetId },
+    lastEditedAt: input.now ?? new Date().toISOString(),
   };
 }
 
@@ -123,6 +127,7 @@ export function createExternalImageNode(input: {
   intrinsicWidth: number;
   intrinsicHeight: number;
   sizedFromImage: boolean;
+  now?: string;
 }): ImageNode {
   const display = fitDisplaySize(input.intrinsicWidth, input.intrinsicHeight);
   return {
@@ -137,6 +142,7 @@ export function createExternalImageNode(input: {
     intrinsicHeight: input.intrinsicHeight,
     sizedFromImage: input.sizedFromImage,
     source: { type: 'external', url: input.url },
+    lastEditedAt: input.now ?? new Date().toISOString(),
   };
 }
 
@@ -175,8 +181,13 @@ export function renameBoard(board: Board, title: string, now?: string): Board {
 export function updateText(board: Board, id: string, text: string, now?: string): Board {
   return mapNode(board, id, (node) => {
     if (node.kind !== 'text' || node.text === text) return node;
-    return { ...node, text };
+    return { ...node, text, lastEditedAt: now ?? new Date().toISOString() };
   }, now);
+}
+
+export function withInsertedTimestamp<T extends BoardNode>(node: T, now: string): T {
+  if (node.kind === 'group') return node;
+  return { ...node, lastEditedAt: now };
 }
 
 export function setViewport(board: Board, viewport: Viewport, now?: string): Board {
@@ -341,7 +352,7 @@ export function migrateStoredAppearance(
   storedAppearance: Appearance | null,
   legacy: Appearance,
 ): Board {
-  if (storedAppearance && (storedSchema === 5 || storedSchema === 6 || storedSchema === 7 || storedSchema === SCHEMA_VERSION)) return board;
+  if (storedAppearance && (storedSchema === 5 || storedSchema === 6 || storedSchema === 7 || storedSchema === 8 || storedSchema === SCHEMA_VERSION)) return board;
   return { ...board, appearance: storedAppearance ?? legacy };
 }
 
@@ -428,8 +439,8 @@ export function parseBoard(value: unknown): Board | null {
   if (!isRecord(value)) return null;
   if (value.schemaVersion === 1) return migrateVersion1(value);
   const version = value.schemaVersion;
-  if (version !== 2 && version !== 3 && version !== 4 && version !== 5 && version !== 6 && version !== 7 && version !== SCHEMA_VERSION) return null;
-  const relationshipStrict = version === 6 || version === 7 || version === SCHEMA_VERSION;
+  if (version !== 2 && version !== 3 && version !== 4 && version !== 5 && version !== 6 && version !== 7 && version !== 8 && version !== SCHEMA_VERSION) return null;
+  const relationshipStrict = version === 6 || version === 7 || version === 8 || version === SCHEMA_VERSION;
   if (!isNonEmptyString(value.id) || typeof value.title !== 'string') return null;
   if (typeof value.createdAt !== 'string' || typeof value.updatedAt !== 'string') return null;
   if (!isFiniteNumber(value.revision)) return null;
@@ -492,11 +503,11 @@ export function isSafeHttpUrl(value: string): boolean {
 }
 
 function strictDocument(schemaVersion: unknown): boolean {
-  return schemaVersion === 5 || schemaVersion === 6 || schemaVersion === 7 || schemaVersion === SCHEMA_VERSION;
+  return schemaVersion === 5 || schemaVersion === 6 || schemaVersion === 7 || schemaVersion === 8 || schemaVersion === SCHEMA_VERSION;
 }
 
 function supportsContours(schemaVersion: unknown): boolean {
-  return schemaVersion === 7 || schemaVersion === SCHEMA_VERSION;
+  return schemaVersion === 7 || schemaVersion === 8 || schemaVersion === SCHEMA_VERSION;
 }
 
 function parseAppearanceField(schemaVersion: unknown, value: unknown): Appearance | null {
@@ -610,6 +621,8 @@ function parseNode(value: unknown): BoardNode | null {
     const backgroundTone = parseTone(value.backgroundTone, ['slate', 'sage', 'sand', 'rose'] as const);
     const textTone = parseTone(value.textTone, ['muted', 'blue', 'sage', 'warm'] as const);
     if (codeLanguage === null || backgroundTone === null || textTone === null) return null;
+    const stamped = timestampFields(value.lastEditedAt);
+    if (stamped === null) return null;
     return {
       id: value.id,
       kind: 'text',
@@ -624,6 +637,7 @@ function parseNode(value: unknown): BoardNode | null {
       ...(presentation === 'code' && codeLanguage ? { codeLanguage } : {}),
       ...(backgroundTone ? { backgroundTone } : {}),
       ...(textTone ? { textTone } : {}),
+      ...stamped,
     };
   }
   if (value.kind === 'image') {
@@ -639,6 +653,8 @@ function parseNode(value: unknown): BoardNode | null {
     if (rotation === null) return null;
     const source = parseImageSource(value.source);
     if (!source) return null;
+    const stamped = timestampFields(value.lastEditedAt);
+    if (stamped === null) return null;
     return {
       id: value.id,
       kind: 'image',
@@ -656,9 +672,16 @@ function parseNode(value: unknown): BoardNode | null {
       ...(value.flipY === true ? { flipY: true } : {}),
       ...(cornerStyle === 'square' ? { cornerStyle } : {}),
       ...(rotation ? { rotation } : {}),
+      ...stamped,
     };
   }
   return null;
+}
+
+function timestampFields(value: unknown): { lastEditedAt: string } | null | Record<string, never> {
+  const timestamp = parseStoredTimestamp(value);
+  if (timestamp === null) return null;
+  return timestamp ? { lastEditedAt: timestamp } : {};
 }
 
 function parseRotation(value: unknown): number | undefined | null {

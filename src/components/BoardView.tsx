@@ -48,7 +48,7 @@ import { connectNodes, deleteEdges, hasUndirectedLink } from '../domain/graph';
 import { cameraDuration, frameViewport, noteJumpZoom } from '../domain/camera';
 import { setEdgeLabel, setEdgeStyle } from '../domain/relationships';
 import { editSavedView, recallViewport } from '../domain/saved-views';
-import { buildSearchIndex, centerOf, resultBounds, searchNodes } from '../domain/search';
+import { centerOf, contentSignature, resultBounds, type SearchOutcome } from '../domain/search';
 import { decodeGraphClipboard, encodeGraphClipboard, GRAPH_CLIPBOARD_LIMIT, GRAPH_MIME, looksLikeGraphClipboard, pasteGraph, selectionClosure } from '../domain/graph-clipboard';
 import {
   createTextInside,
@@ -98,6 +98,7 @@ import { BoardActionsProvider, type BoardActions } from './board-context';
 import { edgeTypes } from './RelationshipEdge';
 import { SavedViewsPanel } from './SavedViewsPanel';
 import { SearchPalette } from './SearchPalette';
+import { NodeClockProvider, useMinuteClock } from './node-clock';
 import { Coordinates, type CoordinatesHandle } from './Coordinates';
 import { GroupNode, type GroupFlowNode } from './GroupNode';
 import { ImageNoteNode, type ImageFlowNode } from './ImageNoteNode';
@@ -986,8 +987,27 @@ function BoardSurface({ session }: { session: SessionProps }) {
     if (chromeHidden) setViewsOpen(false);
   }, [chromeHidden]);
 
-  const searchIndex = useMemo(() => buildSearchIndex(board.nodes), [board.nodes]);
-  const searchResults = useMemo(() => searchNodes(searchIndex, searchQuery), [searchIndex, searchQuery]);
+  const clock = useMinuteClock();
+  const [searchModule, setSearchModule] = useState<typeof import('../search/query') | null>(null);
+  useEffect(() => {
+    if (!searchOpen || searchModule) return;
+    let live = true;
+    void import('../search/query').then((mod) => {
+      if (live) setSearchModule(mod);
+    });
+    return () => {
+      live = false;
+    };
+  }, [searchOpen, searchModule]);
+  const searchKey = useMemo(() => contentSignature(board.nodes), [board.nodes]);
+  const contentIndex = useMemo(
+    () => (searchModule ? searchModule.buildContentIndex(board.nodes) : null),
+    [searchModule, searchKey],
+  );
+  const searchOutcome = useMemo<SearchOutcome>(() => {
+    if (!searchModule || !contentIndex) return { results: [], notice: searchOpen && searchQuery.trim() ? 'Search is loading.' : null, dateLabel: null };
+    return searchModule.queryBoard(board.nodes, contentIndex, searchQuery, clock);
+  }, [searchModule, contentIndex, searchQuery, clock, searchKey, searchOpen]);
 
   function closeSearch() {
     setSearchOpen(false);
@@ -1488,6 +1508,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
   }, []);
 
   return (
+    <NodeClockProvider now={clock}>
     <BoardActionsProvider value={actions}>
       <div
         ref={boardEl}
@@ -1777,7 +1798,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
         ) : null}
         {fileDrag ? <div className="drop-overlay" /> : null}
         {searchOpen ? (
-          <SearchPalette query={searchQuery} results={searchResults} onQuery={setSearchQuery} onJump={jumpToNode} onClose={closeSearch} />
+          <SearchPalette query={searchQuery} results={searchOutcome.results} notice={searchOutcome.notice} dateLabel={searchOutcome.dateLabel} onQuery={setSearchQuery} onJump={jumpToNode} onClose={closeSearch} />
         ) : null}
         {viewsOpen && !chromeHidden ? (
           <SavedViewsPanel
@@ -1900,6 +1921,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
         </button>
       </div>
     </BoardActionsProvider>
+    </NodeClockProvider>
   );
 }
 
@@ -1940,7 +1962,7 @@ function toFlowNode(
     return {
       ...base,
       type: 'text',
-      data: { text: node.text, editing, presentation: node.presentation ?? 'text', language: node.language, codeLanguage: node.codeLanguage, backgroundTone: node.backgroundTone, textTone: node.textTone },
+      data: { text: node.text, editing, presentation: node.presentation ?? 'text', language: node.language, codeLanguage: node.codeLanguage, backgroundTone: node.backgroundTone, textTone: node.textTone, lastEditedAt: node.lastEditedAt },
     };
   }
   const image = node as ImageNode;
@@ -1956,6 +1978,7 @@ function toFlowNode(
       flipY: image.flipY === true,
       cornerStyle: image.cornerStyle === 'square' ? 'square' : 'rounded',
       rotation: image.rotation ?? 0,
+      lastEditedAt: image.lastEditedAt,
     },
   };
 }

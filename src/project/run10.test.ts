@@ -36,10 +36,10 @@ describe('dither atlas seed and schema', () => {
   test('migrates older patterns and rejects malformed atlas metadata', () => {
     const empty = createEmptyBoard();
     const grid = parseBoard({ ...empty, schemaVersion: 4, backgroundPattern: 'grid', ditherAtlas: undefined });
-    expect(grid?.schemaVersion).toBe(8);
+    expect(grid?.schemaVersion).toBe(9);
     expect(grid?.backgroundPattern).toBe('grid');
     expect(grid?.ditherAtlas).toBe(undefined);
-    expect(parseBoard({ ...empty, schemaVersion: 9 })).toBeNull();
+    expect(parseBoard({ ...empty, schemaVersion: 10 })).toBeNull();
     expect(parseBoard({ ...empty, backgroundPattern: 'dither-atlas', ditherAtlas: undefined })).toBeNull();
     expect(parseBoard({ ...empty, backgroundPattern: 'dither-atlas', ditherAtlas: { seed: 0, rendererVersion: 1 } })?.ditherAtlas?.seed).toBe(0);
     expect(parseBoard({ ...empty, backgroundPattern: 'dither-atlas', ditherAtlas: { seed: -1, rendererVersion: 1 } })).toBeNull();

@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 8 as const;
+export const SCHEMA_VERSION = 9 as const;
 export const MAX_SAVED_VIEWS = 32;
 export const MAX_SAVED_VIEW_NAME = 60;
 export const MAX_EDGE_LABEL = 80;
@@ -64,6 +64,8 @@ export type TextNode = {
   codeLanguage?: CodeLanguage;
   backgroundTone?: BackgroundTone;
   textTone?: TextTone;
+  /** ISO timestamp of the last genuine text change. Omitted on legacy notes. */
+  lastEditedAt?: string;
 };
 
 export type EmbeddedImageSource = {
@@ -94,6 +96,8 @@ export type ImageNode = {
   cornerStyle?: CornerStyle;
   /** Degrees, clockwise. Omitted at 0°. The frame itself stays axis-aligned. */
   rotation?: number;
+  /** ISO timestamp from when this image node was added. Omitted on legacy images. */
+  lastEditedAt?: string;
 };
 
 export type GroupNode = {

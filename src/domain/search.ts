@@ -12,6 +12,22 @@ export type SearchHit = {
   score: number;
 };
 
+export type SearchResult = {
+  id: string;
+  kind: 'text' | 'group' | 'image';
+  title: string;
+  snippet: string;
+  parentLabel: string | null;
+  score: number;
+  section: 'date' | 'content';
+};
+
+export type SearchOutcome = {
+  results: SearchResult[];
+  notice: string | null;
+  dateLabel: string | null;
+};
+
 type RankedHit = SearchHit & { order: number };
 
 type IndexedNode = {
@@ -54,7 +70,15 @@ export function buildSearchIndex(nodes: readonly BoardNode[]): IndexedNode[] {
   return indexed;
 }
 
-export function searchNodes(index: readonly IndexedNode[], query: string): SearchHit[] {
+export function contentSignature(nodes: readonly BoardNode[]): string {
+  return nodes.map((node) => {
+    if (node.kind === 'text') return `t\t${node.id}\t${node.parentId ?? ''}\t${node.text}`;
+    if (node.kind === 'group') return `g\t${node.id}\t${node.label}`;
+    return `i\t${node.id}\t${node.parentId ?? ''}\t${node.lastEditedAt ?? ''}\t${node.source.type}`;
+  }).join('\n');
+}
+
+export function rankContent(index: readonly IndexedNode[], query: string): SearchHit[] {
   const folded = fold(query.trim());
   if (!folded) return [];
   const tokens = folded.split(/\s+/).filter(Boolean);
@@ -73,10 +97,14 @@ export function searchNodes(index: readonly IndexedNode[], query: string): Searc
     });
   }
   hits.sort((left, right) => right.score - left.score || left.order - right.order);
-  return hits.slice(0, SEARCH_LIMIT).map(({ order, ...hit }) => {
+  return hits.map(({ order, ...hit }) => {
     void order;
     return hit;
   });
+}
+
+export function searchNodes(index: readonly IndexedNode[], query: string): SearchHit[] {
+  return rankContent(index, query).slice(0, SEARCH_LIMIT);
 }
 
 export function noteTitle(text: string): string {
@@ -91,7 +119,7 @@ export function centerOf(bounds: Rect): { x: number; y: number } {
 
 export function resultBounds(nodes: readonly BoardNode[], id: string): Rect | null {
   const node = nodes.find((entry) => entry.id === id);
-  if (!node || node.kind === 'image') return null;
+  if (!node) return null;
   return worldBounds(nodes, node);
 }
 

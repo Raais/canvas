@@ -1,4 +1,4 @@
-import { revise } from './board';
+import { revise, withInsertedTimestamp } from './board';
 import {
   boundsOfNodes,
   childrenOf,
@@ -175,6 +175,7 @@ export function duplicateSelection(board: Board, ids: readonly string[], now?: s
     }
   }
   if (included.size === 0) return board;
+  const stampedAt = now ?? new Date().toISOString();
   const idMap = new Map<string, string>();
   for (const id of included.keys()) idMap.set(id, crypto.randomUUID());
   const copies: BoardNode[] = [];
@@ -182,17 +183,17 @@ export function duplicateSelection(board: Board, ids: readonly string[], now?: s
     const id = idMap.get(node.id);
     if (!id) continue;
     if (node.kind === 'group') {
-      copies.push({ ...node, id, x: node.x + DUPLICATE_OFFSET, y: node.y + DUPLICATE_OFFSET });
+      copies.push(withInsertedTimestamp({ ...node, id, x: node.x + DUPLICATE_OFFSET, y: node.y + DUPLICATE_OFFSET }, stampedAt));
       continue;
     }
     if (node.parentId && idMap.has(node.parentId)) {
       const parentId = idMap.get(node.parentId);
-      copies.push(parentId ? { ...node, id, parentId } : { ...node, id });
+      copies.push(withInsertedTimestamp(parentId ? { ...node, id, parentId } : { ...node, id }, stampedAt));
       continue;
     }
     const world = worldTopLeft(board.nodes, node);
     const { parentId: _parent, ...rest } = node;
-    copies.push({ ...rest, id, x: world.x + DUPLICATE_OFFSET, y: world.y + DUPLICATE_OFFSET });
+    copies.push(withInsertedTimestamp({ ...rest, id, x: world.x + DUPLICATE_OFFSET, y: world.y + DUPLICATE_OFFSET }, stampedAt));
   }
   const edges: BoardEdge[] = [];
   for (const edge of board.edges) {
@@ -201,7 +202,7 @@ export function duplicateSelection(board: Board, ids: readonly string[], now?: s
     if (!sourceId || !targetId) continue;
     edges.push({ ...edge, id: crypto.randomUUID(), sourceId, targetId });
   }
-  return revise(board, { nodes: [...board.nodes, ...copies], edges: [...board.edges, ...edges] }, now);
+  return revise(board, { nodes: [...board.nodes, ...copies], edges: [...board.edges, ...edges] }, stampedAt);
 }
 
 export function restoreGroupLabels(current: Board, original: Board): Board {

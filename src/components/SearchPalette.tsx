@@ -1,16 +1,20 @@
-import { Frame, StickyNote } from 'lucide-react';
+import { Frame, Image, StickyNote } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import type { SearchHit } from '../domain/search';
+import type { SearchResult } from '../domain/search';
 
 export function SearchPalette({
   query,
   results,
+  notice,
+  dateLabel,
   onQuery,
   onJump,
   onClose,
 }: {
   query: string;
-  results: readonly SearchHit[];
+  results: readonly SearchResult[];
+  notice: string | null;
+  dateLabel: string | null;
   onQuery: (query: string) => void;
   onJump: (id: string) => void;
   onClose: () => void;
@@ -46,9 +50,9 @@ export function SearchPalette({
     <div ref={rootRef} className="search-palette nodrag nopan" role="dialog" aria-label="Search">
       <input
         className="search-input"
-        aria-label="Search notes and groups"
+        aria-label="Search notes, groups, and dates"
         aria-controls="search-results"
-        placeholder="Search notes and groups"
+        placeholder="Search notes, groups, and dates"
         value={query}
         autoFocus
         onChange={(event) => onQuery(event.target.value)}
@@ -71,26 +75,34 @@ export function SearchPalette({
         }}
       />
       <div ref={listRef} id="search-results" role="listbox" aria-label="Search results">
-        {query.trim() && results.length === 0 ? <p className="search-empty">No matches.</p> : null}
-        {!query.trim() ? <p className="search-empty">Search notes and groups.</p> : null}
-        {results.map((result, index) => (
-          <button
-            key={result.id}
-            type="button"
-            role="option"
-            aria-selected={index === selected}
-            className={index === selected ? 'search-result is-active' : 'search-result'}
-            onMouseEnter={() => setActive(index)}
-            onClick={() => onJump(result.id)}
-          >
-            {result.kind === 'group' ? <Frame size={15} strokeWidth={1.75} /> : <StickyNote size={15} strokeWidth={1.75} />}
-            <span>
-              <strong>{result.title}</strong>
-              {result.parentLabel ? <em>{result.parentLabel}</em> : null}
-              {result.snippet ? <small>{result.snippet}</small> : null}
-            </span>
-          </button>
-        ))}
+        {notice ? <p className="search-empty">{notice}</p> : null}
+        {query.trim() && !notice && results.length === 0 ? <p className="search-empty">No matches.</p> : null}
+        {!query.trim() ? <p className="search-empty">Search notes, groups, and dates.</p> : null}
+        {results.map((result, index) => {
+          const showDate = result.section === 'date' && results[index - 1]?.section !== 'date';
+          const showContent = result.section === 'content' && results.some((entry) => entry.section === 'date') && results[index - 1]?.section !== 'content';
+          return (
+            <div key={result.id}>
+              {showDate ? <p className="search-section">Date matches · {dateLabel}</p> : null}
+              {showContent ? <p className="search-section">Content matches</p> : null}
+              <button
+                type="button"
+                role="option"
+                aria-selected={index === selected}
+                className={index === selected ? 'search-result is-active' : 'search-result'}
+                onMouseEnter={() => setActive(index)}
+                onClick={() => onJump(result.id)}
+              >
+                {result.kind === 'group' ? <Frame size={15} strokeWidth={1.75} /> : result.kind === 'image' ? <Image size={15} strokeWidth={1.75} /> : <StickyNote size={15} strokeWidth={1.75} />}
+                <span>
+                  <strong>{result.title}</strong>
+                  {result.parentLabel ? <em>{result.parentLabel}</em> : null}
+                  {result.snippet ? <small>{result.snippet}</small> : null}
+                </span>
+              </button>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

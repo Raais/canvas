@@ -797,6 +797,26 @@ button:focus-visible, .title-input:focus-visible, select:focus-visible {
   background: color-mix(in srgb, var(--muted) 85%, transparent);
 }
 .search-empty { margin: 0; padding: 8px 14px 14px; color: var(--muted); }
+.search-section {
+  margin: 8px 14px 2px;
+  color: var(--muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.node-date {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  margin: 0;
+  color: var(--muted);
+  font-family: "Geist Sans", "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 11px;
+  line-height: 1.2;
+  text-align: right;
+  white-space: nowrap;
+  pointer-events: none;
+}
 .search-result {
   width: 100%;
   display: flex;

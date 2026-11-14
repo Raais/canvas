@@ -14,6 +14,7 @@ import {
 import type { ImageDisplayMode } from '../domain/types';
 import { useBoardActions } from './board-context';
 import { PortHandles } from './PortHandles';
+import { NodeDateLabel } from './NodeDateLabel';
 import { placeRotationPanel } from './rotation-placement';
 
 export type ImageNodeData = {
@@ -24,6 +25,7 @@ export type ImageNodeData = {
   flipY: boolean;
   cornerStyle: 'rounded' | 'square';
   rotation: number;
+  lastEditedAt?: string;
 };
 
 export type ImageFlowNode = Node<ImageNodeData, 'image'>;
@@ -333,6 +335,7 @@ export function ImageNoteNode({ id, data, selected, width, height }: NodeProps<I
         </div>
       )}
       {data.externalUrl ? <span className="image-flag">External</span> : null}
+      <NodeDateLabel iso={data.lastEditedAt} />
     </div>
   );
 }
