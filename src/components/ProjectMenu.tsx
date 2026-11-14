@@ -1,3 +1,5 @@
+import { SlidersHorizontal } from 'lucide-react';
+import { ATLAS_LAB_ENABLED } from '../backgrounds/atlas-tuning';
 import type { LogicalUsage } from '../project/storage';
 import { formatBytes, formatOriginEstimate } from '../project/storage';
 import type { BackgroundPattern } from '../domain/types';
@@ -8,7 +10,9 @@ type ProjectMenuProps = {
   estimate: { usage?: number; quota?: number } | null;
   persisted: boolean | null;
   pattern: BackgroundPattern;
+  atlasBlocked: boolean;
   onPattern: (pattern: BackgroundPattern) => void;
+  onTune: () => void;
   onToggle: () => void;
   onExport: () => void;
   onExportNew: () => void;
@@ -24,7 +28,9 @@ export function ProjectMenu({
   estimate,
   persisted,
   pattern,
+  atlasBlocked,
   onPattern,
+  onTune,
   onToggle,
   onExport,
   onExportNew,
@@ -53,6 +59,12 @@ export function ProjectMenu({
             <button type="button" className="atlas-choice" aria-pressed={pattern === 'dither-atlas'} onClick={() => onPattern('dither-atlas')}>
               Dither Atlas
             </button>
+            {pattern === 'dither-atlas' && ATLAS_LAB_ENABLED ? (
+              <button type="button" onClick={onTune} disabled={atlasBlocked} title={atlasBlocked ? 'Dither Atlas is unavailable on this device' : 'Tune Atlas'}>
+                <SlidersHorizontal size={14} strokeWidth={1.75} />
+                Tune Atlas
+              </button>
+            ) : null}
           </section>
           <div className="project-divider" />
           <div className="project-actions">

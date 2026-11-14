@@ -23,6 +23,14 @@ uniform vec2 uSeedB;
 uniform vec2 uSeedC;
 uniform vec3 uBaseColor;
 uniform vec3 uInkColor;
+uniform vec3 uNoiseScales;
+uniform vec3 uNoiseWeights;
+uniform vec2 uDensityThresholds;
+uniform float uInkStrength;
+uniform int uDitherMode;
+uniform vec2 uSmoothFade;
+uniform vec2 uCells;
+uniform float uLodBlend;
 
 out vec4 fragColor;
 
@@ -77,21 +85,27 @@ float bayer(ivec2 cell) {
   return value / 16.0;
 }
 
+float toneAt(vec2 world, float density, float cell) {
+  float threshold = bayer(ivec2(floor(world / max(cell, 0.001))));
+  float dithered = step(threshold, density);
+  if (uDitherMode == 0) {
+    float cellPixels = cell * uZoom * (uBackingResolution.x / max(uCssResolution.x, 1.0));
+    float fade = smoothstep(uSmoothFade.x, uSmoothFade.y, cellPixels);
+    return mix(density, dithered, fade);
+  }
+  return dithered;
+}
+
 void main() {
   vec2 css = vec2(gl_FragCoord.x, uBackingResolution.y - gl_FragCoord.y) * (uCssResolution / uBackingResolution);
   vec2 world = uTile + uLocalOrigin + css / max(uZoom, 0.0001);
-  float large = snoise(world / 900.0 + uSeedA);
-  float medium = snoise(world / 340.0 + uSeedB);
-  float detail = snoise(world / 105.0 + uSeedC);
-  float terrain = large * 0.57 + medium * 0.28 + detail * 0.15;
-  float density = smoothstep(-0.18, 0.42, terrain);
-  float cell = 4.0;
-  float threshold = bayer(ivec2(floor(world / cell)));
-  float cellPixels = cell * uZoom * (uBackingResolution.x / max(uCssResolution.x, 1.0));
-  float pixels = smoothstep(0.8, 2.4, cellPixels);
-  float dithered = step(threshold, density);
-  float tone = mix(density, dithered, pixels);
-  vec3 color = mix(uBaseColor, uInkColor, clamp(tone, 0.0, 1.0) * 0.72);
+  float large = snoise(world / max(uNoiseScales.x, 1.0) + uSeedA);
+  float medium = snoise(world / max(uNoiseScales.y, 1.0) + uSeedB);
+  float detail = snoise(world / max(uNoiseScales.z, 1.0) + uSeedC);
+  float terrain = large * uNoiseWeights.x + medium * uNoiseWeights.y + detail * uNoiseWeights.z;
+  float density = smoothstep(uDensityThresholds.x, uDensityThresholds.y, terrain);
+  float tone = mix(toneAt(world, density, uCells.x), toneAt(world, density, uCells.y), clamp(uLodBlend, 0.0, 1.0));
+  vec3 color = mix(uBaseColor, uInkColor, clamp(tone, 0.0, 1.0) * clamp(uInkStrength, 0.0, 1.0));
   fragColor = vec4(color, 1.0);
 }
 `;

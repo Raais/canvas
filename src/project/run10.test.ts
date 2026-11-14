@@ -15,7 +15,7 @@ function group(id = 'group'): BoardNode {
 }
 
 describe('dither atlas seed and schema', () => {
-  test('derives a stable unsigned seed and keeps it after rename', () => {
+  test('derives a stable unsigned seed and updates it when the title changes', () => {
     expect(seedFromProjectName('Research Atlas')).toBe(seedFromProjectName('  Research Atlas  '));
     expect(seedFromProjectName('')).toBe(seedFromProjectName('Untitled board'));
     expect(seedFromProjectName('e\u0301')).toBe(seedFromProjectName('é'));
@@ -26,8 +26,8 @@ describe('dither atlas seed and schema', () => {
     const atlas = setBackgroundPattern(named, 'dither-atlas');
     const renamed = renameBoard(atlas, 'Ideas 2027');
     const returned = setBackgroundPattern(setBackgroundPattern(renamed, 'dots'), 'dither-atlas');
-    expect(renamed.ditherAtlas?.seed).toBe(atlas.ditherAtlas?.seed);
-    expect(returned.ditherAtlas?.seed).toBe(seed);
+    expect(renamed.ditherAtlas?.seed).toBe(seedFromProjectName('Ideas 2027'));
+    expect(returned.ditherAtlas?.seed).toBe(seedFromProjectName('Ideas 2027'));
     expect(createEmptyBoard().backgroundPattern).toBe('dots');
     expect(createEmptyBoard().ditherAtlas).toBe(undefined);
   });

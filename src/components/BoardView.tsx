@@ -87,6 +87,8 @@ import { ImageNoteNode, type ImageFlowNode } from './ImageNoteNode';
 import { SelectionBar } from './SelectionBar';
 import { TextNoteNode, type TextFlowNode } from './TextNoteNode';
 import { AtlasBoundary } from '../backgrounds/AtlasBoundary';
+import { AtlasTuningPanel } from '../backgrounds/AtlasTuningPanel';
+import { ATLAS_LAB_ENABLED, ATLAS_TUNING_DEFAULTS, clampAtlasTuning, effectiveAtlasTuning, type AtlasPreview, type AtlasTuning } from '../backgrounds/atlas-tuning';
 import { ProjectMenu } from './ProjectMenu';
 
 const DitherAtlasLayer = lazy(() => import('../backgrounds/DitherAtlasLayer'));
@@ -138,7 +140,16 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const [historyStamp, setHistoryStamp] = useState(0);
   const [chromeHidden, setChromeHidden] = useState(false);
   const [atlasBlocked, setAtlasBlocked] = useState(false);
+  const [atlasTuning, setAtlasTuning] = useState<AtlasTuning>(ATLAS_TUNING_DEFAULTS);
+  const [atlasPreview, setAtlasPreview] = useState<AtlasPreview>('experimental');
+  const [atlasLabOpen, setAtlasLabOpen] = useState(false);
   const blockAtlas = useCallback(() => setAtlasBlocked(true), []);
+  const activeAtlasTuning = effectiveAtlasTuning(atlasPreview, atlasTuning);
+  useEffect(() => {
+    setAtlasTuning(ATLAS_TUNING_DEFAULTS);
+    setAtlasPreview('experimental');
+    setAtlasLabOpen(false);
+  }, [board.id]);
   const [confirming, setConfirming] = useState<
     | null
     | { kind: 'blank' | 'clear' | 'exported-clear' }
@@ -1151,7 +1162,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
         {board.backgroundPattern === 'dither-atlas' && board.ditherAtlas && !atlasBlocked ? (
           <AtlasBoundary onUnavailable={blockAtlas}>
             <Suspense fallback={null}>
-              <DitherAtlasLayer seed={board.ditherAtlas.seed} appearance={board.appearance} onUnavailable={blockAtlas} />
+              <DitherAtlasLayer seed={board.ditherAtlas.seed} appearance={board.appearance} tuning={activeAtlasTuning} onUnavailable={blockAtlas} />
             </Suspense>
           </AtlasBoundary>
         ) : null}
@@ -1214,6 +1225,8 @@ function BoardSurface({ session }: { session: SessionProps }) {
               estimate={estimate}
               persisted={persisted}
               pattern={board.backgroundPattern}
+              atlasBlocked={atlasBlocked}
+              onTune={() => { setProjectOpen(false); setAtlasLabOpen(true); }}
               onPattern={(pattern) => {
                 setAtlasBlocked(false);
                 if (blockedRef.current) return;
@@ -1394,6 +1407,19 @@ function BoardSurface({ session }: { session: SessionProps }) {
             </ViewportPortal>
           ) : null}
         </ReactFlow>
+        {chromeHidden || !ATLAS_LAB_ENABLED || !atlasLabOpen || board.backgroundPattern !== 'dither-atlas' ? null : (
+          <AtlasTuningPanel
+            tuning={atlasTuning}
+            preview={atlasPreview}
+            seed={board.ditherAtlas?.seed ?? 0}
+            title={board.title}
+            zoom={board.viewport.zoom}
+            onChange={(next) => setAtlasTuning(clampAtlasTuning(next))}
+            onPreview={setAtlasPreview}
+            onReset={() => { setAtlasTuning(ATLAS_TUNING_DEFAULTS); setAtlasPreview('experimental'); }}
+            onClose={() => setAtlasLabOpen(false)}
+          />
+        )}
         {chromeHidden ? null : <Coordinates ref={coordinatesRef} selection={selectionLabel} />}
         <button
           type="button"

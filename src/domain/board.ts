@@ -154,7 +154,11 @@ export function addNodes(board: Board, nodes: BoardNode[], now?: string): Board 
 
 export function renameBoard(board: Board, title: string, now?: string): Board {
   if (board.title === title) return board;
-  return touch(board, { title }, now);
+  if (!board.ditherAtlas) return touch(board, { title }, now);
+  return touch(board, {
+    title,
+    ditherAtlas: { ...board.ditherAtlas, seed: seedFromProjectName(title) },
+  }, now);
 }
 
 export function updateText(board: Board, id: string, text: string, now?: string): Board {
