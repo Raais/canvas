@@ -24,15 +24,15 @@ export type ContoursTuning = {
 export type ContoursPreview = 'original' | 'experimental';
 
 export const CONTOURS_V1_DEFAULTS: ContoursTuning = {
-  minorInterval: 0.075,
-  majorEvery: 4,
-  minorWidthPx: 0.7,
-  majorWidthPx: 1.15,
-  minorOpacity: 0.12,
-  majorOpacity: 0.24,
-  coastlineOpacity: 0.17,
-  lodFadeStartPx: 2,
-  lodFadeEndPx: 5,
+  minorInterval: 0.09,
+  majorEvery: 8,
+  minorWidthPx: 0.3,
+  majorWidthPx: 0.5,
+  minorOpacity: 0.02,
+  majorOpacity: 0.05,
+  coastlineOpacity: 0.03,
+  lodFadeStartPx: 1,
+  lodFadeEndPx: 2,
 };
 
 const LIMITS = {

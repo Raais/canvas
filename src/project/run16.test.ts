@@ -126,8 +126,15 @@ describe('contours switching', () => {
 
 describe('contours tuning', () => {
   test('clamps temporary settings and exports them outside the board', () => {
-    expect(CONTOURS_V1_DEFAULTS.minorInterval).toBe(0.075);
-    expect(CONTOURS_V1_DEFAULTS.majorEvery).toBe(4);
+    expect(CONTOURS_V1_DEFAULTS.minorInterval).toBe(0.09);
+    expect(CONTOURS_V1_DEFAULTS.majorEvery).toBe(8);
+    expect(CONTOURS_V1_DEFAULTS.minorWidthPx).toBe(0.3);
+    expect(CONTOURS_V1_DEFAULTS.majorWidthPx).toBe(0.5);
+    expect(CONTOURS_V1_DEFAULTS.minorOpacity).toBe(0.02);
+    expect(CONTOURS_V1_DEFAULTS.majorOpacity).toBe(0.05);
+    expect(CONTOURS_V1_DEFAULTS.coastlineOpacity).toBe(0.03);
+    expect(CONTOURS_V1_DEFAULTS.lodFadeStartPx).toBe(1);
+    expect(CONTOURS_V1_DEFAULTS.lodFadeEndPx).toBe(2);
     const clamped = clampContoursTuning({
       minorInterval: 0,
       majorEvery: 4.6,
@@ -140,7 +147,7 @@ describe('contours tuning', () => {
     expect(clamped.minorInterval > 0).toBe(true);
     expect(clamped.majorEvery).toBe(5);
     expect(Number.isInteger(clamped.majorEvery)).toBe(true);
-    expect(clamped.minorWidthPx).toBe(0.7);
+    expect(clamped.minorWidthPx).toBe(0.3);
     expect(clamped.majorOpacity).toBe(CONTOURS_V1_DEFAULTS.majorOpacity);
     expect(clamped.lodFadeEndPx > clamped.lodFadeStartPx).toBe(true);
     expect(effectiveContoursTuning('original', clamped)).toEqual(CONTOURS_V1_DEFAULTS);
