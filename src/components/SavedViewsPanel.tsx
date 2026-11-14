@@ -1,4 +1,4 @@
-import { Check, LocateFixed, Pencil, RefreshCw, Trash2, X } from 'lucide-react';
+import { Check, Pencil, RefreshCw, Trash2, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { nextViewName } from '../domain/saved-views';
 import type { SavedView, Viewport } from '../domain/types';
@@ -118,9 +118,6 @@ export function SavedViewsPanel({
                 {view.name}
               </button>
             )}
-            <button type="button" className="icon-button" aria-label={`Go to ${view.name}`} title="Go to" onClick={() => onRecall(view)}>
-              <LocateFixed size={14} strokeWidth={1.75} />
-            </button>
             <button
               type="button"
               className="icon-button"
