@@ -105,6 +105,8 @@ import { AtlasTuningPanel } from '../backgrounds/AtlasTuningPanel';
 import { ContoursTuningPanel } from '../backgrounds/ContoursTuningPanel';
 import { ATLAS_LAB_ENABLED, clampAtlasTuning, defaultsForAtlasVersion, effectiveAtlasTuning, storedAtlasVersion, type AtlasPreview, type AtlasTuning } from '../backgrounds/atlas-tuning';
 import { CONTOURS_V1_DEFAULTS, clampContoursTuning, effectiveContoursTuning, type ContoursPreview, type ContoursTuning } from '../backgrounds/contours-tuning';
+import { PwaUpdateNotice } from './PwaUpdateNotice';
+import { decidePwaUpdate, shouldActivateWorker } from '../project/pwa-update';
 import { ProjectMenu } from './ProjectMenu';
 
 const DitherAtlasLayer = lazy(() => import('../backgrounds/DitherAtlasLayer'));
@@ -144,6 +146,8 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const [selectedEdgeIds, setSelectedEdgeIds] = useState<string[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [status, setStatus] = useState<SaveStatus>('saved');
+  const statusRef = useRef<SaveStatus>('saved');
+  statusRef.current = status;
   const [notice, setNotice] = useState<{ text: string; source: 'save' | 'ingest' } | null>(null);
   const [fileDrag, setFileDrag] = useState(false);
   const [urlEpoch, setUrlEpoch] = useState(0);
@@ -214,6 +218,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const searchOpenRef = useRef(false);
   const viewsOpenRef = useRef(false);
   const edgeEditorRef = useRef(false);
+  const ingestRef = useRef(0);
   const confirmingRef = useRef(false);
   searchOpenRef.current = searchOpen;
   viewsOpenRef.current = viewsOpen;
@@ -263,6 +268,44 @@ function BoardSurface({ session }: { session: SessionProps }) {
     queueRef.current.adopt(session.board);
   }
   const queue = queueRef.current;
+  const preparePwaUpdate = useCallback(async () => {
+    const current = queueRef.current;
+    if (!current) return { ok: false as const, message: 'canvas is still opening.' };
+    const input = () => {
+      const active = document.activeElement;
+      const focusedField = active instanceof HTMLTextAreaElement
+        || (active instanceof HTMLInputElement && !['button', 'checkbox', 'file', 'range', 'radio'].includes(active.type));
+      let expectationMatches = false;
+      try {
+        const expected = current.expectation();
+        expectationMatches = expected.id === boardRef.current.id && expected.revision === boardRef.current.revision;
+      } catch {
+        expectationMatches = false;
+      }
+      return decidePwaUpdate({
+        editingNote: editingRef.current !== null,
+        editingRelationship: edgeEditorRef.current,
+        confirming: confirmingRef.current,
+        ingesting: ingestRef.current > 0,
+        focusedField,
+        readOnly: blockedRef.current,
+        saveStatus: statusRef.current,
+        hasUnpersisted: current.hasUnpersisted(),
+        hasRecovery: current.recovery() !== null,
+        expectationMatches,
+      });
+    };
+    let decision = input();
+    if (decision.action === 'flush' && !blockedRef.current) {
+      current.saveNow();
+      await current.idle();
+      decision = input();
+    }
+    if (!shouldActivateWorker(decision)) {
+      return { ok: false as const, message: decision.action === 'block' ? decision.reason : 'The board is still saving. Try the update again in a moment.' };
+    }
+    return { ok: true as const };
+  }, []);
 
   useEffect(() => {
     const registry = registryRef.current;
@@ -495,7 +538,9 @@ function BoardSurface({ session }: { session: SessionProps }) {
       const snapshot = captureClipboardData(data);
       event.preventDefault();
       const origin = pointerRef.current ?? viewportCenterRef.current();
+      ingestRef.current += 1;
       void ingestClipboard(snapshot, 'clipboard')
+        .finally(() => { ingestRef.current = Math.max(0, ingestRef.current - 1); })
         .then((bundle) => {
           showWarningsRef.current(bundle.warnings);
           return placeItemsRef.current(bundle.items, origin);
@@ -1380,7 +1425,9 @@ function BoardSurface({ session }: { session: SessionProps }) {
           setFileDrag(false);
           if (blockedRef.current) return;
           const origin = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+          ingestRef.current += 1;
           void ingestFileList(event.dataTransfer.files)
+            .finally(() => { ingestRef.current = Math.max(0, ingestRef.current - 1); })
             .then((bundle) => {
               showWarnings(bundle.warnings);
               return placeItems(bundle.items, origin);
@@ -1438,7 +1485,9 @@ function BoardSurface({ session }: { session: SessionProps }) {
           onAddImages={(files) => {
             if (blockedRef.current) return;
             const origin = pointerRef.current ?? viewportCenter();
+            ingestRef.current += 1;
             void ingestFileList(files)
+              .finally(() => { ingestRef.current = Math.max(0, ingestRef.current - 1); })
               .then((bundle) => {
                 showWarnings(bundle.warnings);
                 return placeItems(bundle.items, origin);
@@ -1754,6 +1803,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
           />
         )}
         {chromeHidden ? null : <Coordinates ref={coordinatesRef} selection={selectionLabel} />}
+        <PwaUpdateNotice prepareUpdate={preparePwaUpdate} />
         <button
           type="button"
           className="focus-toggle"

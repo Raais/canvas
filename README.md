@@ -35,6 +35,14 @@ Boards are document schema 7. A ZIP archive is still format 1, and a copied sele
 
 One tab owns writing, using a browser lock named `raais-canvas-active-board-v1` when the browser provides it. Other tabs can pan, zoom, search, recall saved views, and inspect, but they do not save. If a tab has open edits when it loses the board, it keeps them in memory and offers **Download recovery ZIP**. Reload asks before discarding those edits. IndexedDB still refuses a stale revision. Embedded images must be 64 MiB or smaller, and a backup must stay within 256 MiB including the manifest. The project menu warns when a board is near or past that limit. Copying a note out of a group pastes it in world coordinates. Escape finishes a note edit and cancels a group rename. Delete contents asks before removing a group and its children. Checklists toggle for unordered, ordered, nested, and quoted tasks.
 
+## Install and offline
+
+A current Chromium browser can install canvas from the address bar or the browser menu. Installation is optional. The page at `https://raais.github.io/canvas/` and an installed window use the same editor.
+
+Open canvas online once and let it finish loading. After that, the app shell is stored on the device and canvas can open without a network. Notes and embedded images come from IndexedDB on this origin, not from the service worker. External image links are not downloaded, so those pictures can fail offline. The first visit still needs a network. The browser can still clear or evict site data. An installed app is not a backup, and it does not sync to another browser, profile, or device. Export a `.canvas.zip` archive when you need a copy you can keep.
+
+A newer version shows **Update available**. Later leaves the current version running. Update now reloads only after the open note or relationship edit is finished and the board has been stored. A failed save, a recovery copy, or a tab that does not own unsaved work stays on the current version.
+
 ## Known limitations
 
 - Groups cannot contain other groups.
@@ -45,6 +53,7 @@ One tab owns writing, using a browser lock named `raais-canvas-active-board-v1` 
 - Dither Atlas is static and grayscale. Renderer v3 is the look for newly enabled Atlas, with the Void Mask on. Renderers v1 and v2 remain available for older projects. The tuning lab is part of the app, but its adjustments are not stored. Very large world coordinates lose some GPU precision. Discrete zoom steps can pop between pixel sizes.
 - Topographic Contours is static and uses the Atlas v3 terrain field. Contours v1 fades crowded lines when zoomed far out, so a very low zoom stays sparse. The same large coordinates lose some GPU precision. The contours lab is temporary and is not stored.
 - A procedural background loads only while it is selected. Dots, Grid, Cross, and Blank boards do not start WebGL. A new board starts on Atlas v3. An older board keeps its saved background.
+- Offline use starts only after a successful online load. The service worker stores the app, not the board. External images are not cached. Installation does not copy the board to another browser.
 
 ## Requirements
 
