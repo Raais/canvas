@@ -39,7 +39,7 @@ export default defineConfig({
       },
       workbox: {
         skipWaiting: false,
-        clientsClaim: false,
+        clientsClaim: true,
         globPatterns: ['**/*.{js,css,html,ico,png,woff2,webmanifest}'],
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
         navigateFallback: '/canvas/index.html',

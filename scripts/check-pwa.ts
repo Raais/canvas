@@ -37,7 +37,8 @@ expect(worker.includes('index.html'), 'shell precached');
 expect(worker.includes('app-maskable-512.png'), 'maskable icon precached');
 expect(!await Bun.file('dist/site.webmanifest').exists(), 'placeholder site.webmanifest absent');
 expect(!await Bun.file('dist/manifest.json').exists(), 'placeholder manifest.json absent');
-expect(!worker.includes('skipWaiting: true') && !worker.includes('clientsClaim: true'), 'waiting worker stays waiting');
+expect(worker.includes('SKIP_WAITING') && worker.includes('skipWaiting()'), 'update waits for an explicit message');
+expect(!worker.includes('self.skipWaiting()') || worker.includes('SKIP_WAITING'), 'skipWaiting is not unconditional');
 
 if (problems.length > 0) {
   console.error(problems.join('\n'));
