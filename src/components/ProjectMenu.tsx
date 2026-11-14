@@ -65,12 +65,14 @@ export function ProjectMenu({
                 </button>
               ))}
             </div>
-            <button type="button" className="atlas-choice" aria-pressed={pattern === 'dither-atlas'} onClick={() => onPattern('dither-atlas')}>
-              Dither Atlas
-            </button>
-            <button type="button" className="atlas-choice" aria-pressed={pattern === 'topographic-contours'} onClick={() => onPattern('topographic-contours')}>
-              Topographic Contours
-            </button>
+            <div className="pattern-row procedural-row" role="group" aria-label="Procedural backgrounds">
+              <button type="button" aria-pressed={pattern === 'dither-atlas'} title="Dither Atlas" onClick={() => onPattern('dither-atlas')}>
+                Atlas
+              </button>
+              <button type="button" aria-pressed={pattern === 'topographic-contours'} title="Topographic Contours" onClick={() => onPattern('topographic-contours')}>
+                Contours
+              </button>
+            </div>
             {pattern === 'dither-atlas' && (rendererVersion === 1 || rendererVersion === 2) ? (
               <button type="button" onClick={onUpgrade} title="Upgrade this project to Dither Atlas v3. Keeps the current terrain seed.">
                 Use new Atlas look

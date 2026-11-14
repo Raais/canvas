@@ -92,6 +92,19 @@ export function contoursSceneKey(scene: {
   ].join(':');
 }
 
+export function coastlineCoverage(terrain: number, seaLevel: number, footprint: number, halfWidthPx: number): number {
+  const height = terrain - seaLevel;
+  const foot = Math.max(Number.isFinite(footprint) ? footprint : 0, 0.00001);
+  const pixels = Math.abs(height) / foot;
+  const start = Math.max(Number.isFinite(halfWidthPx) ? halfWidthPx : 0, 0);
+  const end = start + 1;
+  if (pixels <= start) return 1;
+  if (pixels >= end) return 0;
+  const t = (pixels - start) / (end - start);
+  const smooth = t * t * (3 - 2 * t);
+  return 1 - smooth;
+}
+
 export function contoursLabDocument(settings: ContoursTuning, context: { seed: number; title: string; zoom: number; rendererVersion: 1 }) {
   return {
     format: 'canvas-topographic-contours-lab' as const,

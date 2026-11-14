@@ -47,8 +47,13 @@ export function boardSnapshotKey(board: Board): string {
     topographicContours: board.topographicContours ?? null,
     nodes: board.nodes,
     edges: board.edges,
+    savedViews: board.savedViews,
     viewport: board.viewport,
   });
+}
+
+export function exportedBoardIsCurrent(exportedKey: string, board: Board): boolean {
+  return exportedKey === boardSnapshotKey(board);
 }
 
 export function formatBytes(bytes: number): string {

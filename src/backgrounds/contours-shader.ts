@@ -86,7 +86,8 @@ void main() {
   float majorLevel = terrain / (interval * every);
   float minorFoot = max(fwidth(minorLevel), 0.00001);
   float majorFoot = max(fwidth(majorLevel), 0.00001);
-  float densityFoot = max(fwidth(density), 0.00001);
+  float coastHeight = terrain - uDensityThresholds.x;
+  float coastFoot = max(fwidth(terrain), 0.00001);
   float pixelScale = uBackingResolution.x / max(uCssResolution.x, 1.0);
   float minorSpacing = 1.0 / minorFoot;
   float majorSpacing = 1.0 / majorFoot;
@@ -96,7 +97,7 @@ void main() {
   float majorInk = isoline(majorLevel, majorFoot, uMajorWidthPx, pixelScale) * uMajorOpacity * majorFade;
   float land = density > 0.0 ? 1.0 : 0.0;
   float contour = max(minorInk, majorInk) * land;
-  float coastPixels = abs(density) / densityFoot;
+  float coastPixels = abs(coastHeight) / coastFoot;
   float coastHalf = 0.9 * pixelScale * 0.5;
   float coast = (1.0 - smoothstep(coastHalf, coastHalf + 1.0, coastPixels)) * uCoastOpacity;
   float ink = clamp(max(contour, coast), 0.0, 1.0);

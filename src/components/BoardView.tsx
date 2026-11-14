@@ -84,7 +84,7 @@ import { captureClipboardData } from '../ingest/clipboard';
 import { archiveFilename } from '../archive/format';
 import { buildArchive, readArchive } from '../archive/zip';
 import { downloadBytes } from '../project/download';
-import { boardSnapshotKey, logicalUsage, snapshotAssets, type LogicalUsage } from '../project/storage';
+import { boardSnapshotKey, exportedBoardIsCurrent, logicalUsage, snapshotAssets, type LogicalUsage } from '../project/storage';
 import { releaseWriteLock, retainWriteLock } from '../project/ownership';
 import { openBoardChannel, type BoardChannel } from '../project/tabs';
 import { createAssetRecord, replaceStoredBoard, RevisionConflictError, type CanvasDatabase } from '../persistence/db';
@@ -1595,7 +1595,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
                 else if (confirming.kind === 'import') void replaceActive(confirming.board, confirming.assets);
                 else if (confirming.kind === 'exported-clear') {
                   const exported = exportHold.current;
-                  if (!exported || boardSnapshotKey(boardRef.current) !== exported.key) {
+                  if (!exported || !exportedBoardIsCurrent(exported.key, boardRef.current)) {
                     setNotice({ text: 'The board changed after that export. Export it again before clearing.', source: 'ingest' });
                     setConfirming(null);
                     return;

@@ -513,7 +513,10 @@ button:focus-visible, .title-input:focus-visible, select:focus-visible {
 .group-tone-menu .tone-rose { background: #d7a3a8; }
 .dither-atlas, .topographic-contours { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
 .board.has-dither-atlas .react-flow, .board.has-topographic-contours .react-flow { background: transparent; --xy-background-color: transparent; }
-.atlas-choice { width: 100%; }
+.pattern-row.procedural-row > button { flex: 1 1 0; }
+.pattern-row.procedural-row > button:hover { background: color-mix(in srgb, var(--surface) 70%, transparent); }
+.pattern-row.procedural-row > button[aria-pressed='true'],
+.pattern-row.procedural-row > button[aria-pressed='true']:hover { background: var(--surface); color: var(--text); }
 .atlas-lab {
   position: absolute; top: 62px; right: 12px; z-index: 24; width: min(340px, calc(100% - 24px));
   max-height: calc(100% - 78px); display: flex; flex-direction: column; overflow: hidden;
@@ -698,6 +701,19 @@ button:focus-visible, .title-input:focus-visible, select:focus-visible {
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior-y: contain;
+}
+#search-results {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--muted) 75%, transparent) transparent;
+}
+#search-results::-webkit-scrollbar { width: 8px; height: 8px; }
+#search-results::-webkit-scrollbar-track { background: transparent; }
+#search-results::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--muted) 55%, transparent);
+  border-radius: var(--radius-control);
+}
+#search-results::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--muted) 85%, transparent);
 }
 .search-empty { margin: 0; padding: 8px 14px 14px; color: var(--muted); }
 .search-result {

@@ -3,10 +3,12 @@ import { ARCHIVE_VERSION } from '../archive/format';
 import { buildArchive, readArchive } from '../archive/zip';
 import { seedFromProjectName } from '../backgrounds/atlas-seed';
 import { ATLAS_V3_DEFAULTS, normalizedWeights } from '../backgrounds/atlas-tuning';
-import { CONTOURS_V1_DEFAULTS, CONTOURS_V1_TERRAIN, clampContoursTuning, contourWeights, contoursLabDocument, effectiveContoursTuning } from '../backgrounds/contours-tuning';
+import { CONTOURS_V1_DEFAULTS, CONTOURS_V1_TERRAIN, clampContoursTuning, coastlineCoverage, contourWeights, contoursLabDocument, effectiveContoursTuning } from '../backgrounds/contours-tuning';
 import { addNodes, createEmptyBoard, parseBoard, renameBoard, setBackgroundPattern } from '../domain/board';
 import { GRAPH_CLIPBOARD_VERSION } from '../domain/graph-clipboard';
 import { createHistory, pushHistory, undoHistory } from '../domain/history';
+import { addSavedView, deleteSavedView, renameSavedView, updateSavedView } from '../domain/saved-views';
+import { boardSnapshotKey, exportedBoardIsCurrent } from '../project/storage';
 import type { BoardNode } from '../domain/types';
 
 declare const Bun: { file(path: URL): { text(): Promise<string> } };
@@ -222,5 +224,56 @@ describe('contours persistence', () => {
     if ('error' in legacyArchive) throw new Error(legacyArchive.error);
     expect(legacyArchive.board.backgroundPattern).toBe('dots');
     expect(legacyArchive.board.topographicContours).toBe(undefined);
+  });
+});
+
+describe('coastline coverage', () => {
+  test('keeps ink on the sea-level crossing and off the open ocean', async () => {
+    const sea = CONTOURS_V1_TERRAIN.densityLow;
+    const foot = 0.02;
+    const half = 0.45;
+    expect(coastlineCoverage(sea - 2, sea, foot, half)).toBe(0);
+    expect(coastlineCoverage(sea, sea, foot, half)).toBe(1);
+    expect(coastlineCoverage(sea + foot * (half + 0.2), sea, foot, half) > 0).toBe(true);
+    expect(coastlineCoverage(sea + 2, sea, foot, half)).toBe(0);
+    const shader = await Bun.file(new URL('../backgrounds/contours-shader.ts', import.meta.url)).text();
+    const renderer = await Bun.file(new URL('../backgrounds/contours-renderer.ts', import.meta.url)).text();
+    expect(shader.includes('float coastHeight = terrain - uDensityThresholds.x')).toBe(true);
+    expect(shader.includes('fwidth(terrain)')).toBe(true);
+    expect(shader.includes('abs(density)')).toBe(false);
+    expect(renderer.includes("scene.appearance === 'light' ? LIGHT : DARK")).toBe(true);
+    expect(renderer.includes('uBaseColor')).toBe(true);
+    expect(renderer.includes('uLineColor')).toBe(true);
+  });
+});
+
+describe('export snapshot safety', () => {
+  test('saved views and background changes invalidate a captured export', () => {
+    const board = createEmptyBoard(now);
+    const captured = boardSnapshotKey(board);
+    expect(exportedBoardIsCurrent(captured, board)).toBe(true);
+    expect(boardSnapshotKey(board)).toBe(captured);
+    const added = addSavedView(board, 'Overview', { x: 1, y: 2, zoom: 1 });
+    if (!added) throw new Error('view');
+    expect(exportedBoardIsCurrent(captured, added)).toBe(false);
+    const renamed = renameSavedView(added, added.savedViews[0]?.id ?? '', 'Later');
+    if (!renamed) throw new Error('rename');
+    expect(boardSnapshotKey(renamed) === boardSnapshotKey(added)).toBe(false);
+    const updated = updateSavedView(renamed, renamed.savedViews[0]?.id ?? '', { x: 8, y: -3, zoom: 1.4 });
+    if (!updated) throw new Error('update');
+    expect(boardSnapshotKey(updated) === boardSnapshotKey(renamed)).toBe(false);
+    const deleted = deleteSavedView(updated, updated.savedViews[0]?.id ?? '');
+    if (!deleted) throw new Error('delete');
+    expect(boardSnapshotKey(deleted) === boardSnapshotKey(updated)).toBe(false);
+    const contours = setBackgroundPattern(board, 'topographic-contours', now);
+    expect(exportedBoardIsCurrent(captured, contours)).toBe(false);
+    const reseeded = { ...contours, topographicContours: { seed: 1234, rendererVersion: 1 as const } };
+    expect(exportedBoardIsCurrent(boardSnapshotKey(contours), reseeded)).toBe(false);
+    const reversioned = { ...contours, topographicContours: { seed: contours.topographicContours?.seed ?? 0, rendererVersion: 2 as 1 } };
+    expect(exportedBoardIsCurrent(boardSnapshotKey(contours), reversioned)).toBe(false);
+    const tuned = clampContoursTuning({ minorInterval: 0.2 });
+    expect(tuned.minorInterval === CONTOURS_V1_DEFAULTS.minorInterval).toBe(false);
+    expect(exportedBoardIsCurrent(boardSnapshotKey(contours), contours)).toBe(true);
+    expect(exportedBoardIsCurrent(boardSnapshotKey(added), renamed)).toBe(false);
   });
 });
