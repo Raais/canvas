@@ -1,0 +1,31 @@
+export type ShortcutGuard = {
+  defaultPrevented: boolean;
+  composing: boolean;
+  repeat: boolean;
+  meta: boolean;
+  ctrl: boolean;
+  alt: boolean;
+  shift: boolean;
+  tag: string | null;
+  editable: boolean;
+  inOverlay: boolean;
+  editing: boolean;
+  blocked: boolean;
+};
+
+export function plainShortcutBlocked(guard: ShortcutGuard): boolean {
+  if (guard.defaultPrevented || guard.composing || guard.repeat) return true;
+  if (guard.meta || guard.ctrl || guard.alt || guard.shift) return true;
+  if (guard.editing || guard.blocked || guard.inOverlay) return true;
+  if (guard.editable) return true;
+  if (guard.tag === 'INPUT' || guard.tag === 'TEXTAREA' || guard.tag === 'SELECT' || guard.tag === 'BUTTON' || guard.tag === 'A') return true;
+  return false;
+}
+
+export function canLinkSelection(count: number, alreadyLinked: boolean): boolean {
+  return count === 2 && !alreadyLinked;
+}
+
+export function canEditSelection(count: number, kind: string | null): boolean {
+  return count === 1 && kind === 'text';
+}

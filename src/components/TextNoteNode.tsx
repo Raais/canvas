@@ -129,7 +129,7 @@ function NoteChrome({
           )}
         </div>
         {menu && !data.editing ? (
-          <div className="tone-menu" role="menu" aria-label={menu === 'background' ? 'Background tone' : 'Text tone'}>
+          <div className={`tone-menu${menu === 'text' ? ' text-tone-menu' : ''}`} role="menu" aria-label={menu === 'background' ? 'Background tone' : 'Text tone'}>
             {(menu === 'background' ? BACKGROUNDS : TEXTS).map((toneName) => {
               const active = menu === 'background'
                 ? (data.backgroundTone ?? 'default') === toneName
@@ -170,23 +170,25 @@ function TextNoteNodeComponent({ id, data, selected }: NodeProps<Node<TextNodeDa
           <span className="port-dot" style={{ transform: visualHandleTransform() }} />
         </Handle>
       ))}
-      {data.editing ? (
-        <textarea
-          ref={editorRef}
-          className="text-editor nodrag nopan"
-          value={data.text}
-          aria-label="Note text"
-          onChange={(event) => actions.updateText(id, event.target.value)}
-          onBlur={() => actions.endEditing()}
-          onPointerDown={(event) => event.stopPropagation()}
-        />
-      ) : data.presentation === 'markdown' ? (
-        <MarkdownView text={data.text} onToggle={(offset) => actions.toggleTask(id, offset)} />
-      ) : data.presentation === 'code' ? (
-        <CodeView text={data.text} language={data.language} codeLanguage={data.codeLanguage} />
-      ) : (
-        <p className="text-body">{data.text || 'Empty note'}</p>
-      )}
+      <div className="text-note-content">
+        {data.editing ? (
+          <textarea
+            ref={editorRef}
+            className="text-editor nodrag nopan"
+            value={data.text}
+            aria-label="Note text"
+            onChange={(event) => actions.updateText(id, event.target.value)}
+            onBlur={() => actions.endEditing()}
+            onPointerDown={(event) => event.stopPropagation()}
+          />
+        ) : data.presentation === 'markdown' ? (
+          <MarkdownView text={data.text} onToggle={(offset) => actions.toggleTask(id, offset)} />
+        ) : data.presentation === 'code' ? (
+          <CodeView text={data.text} language={data.language} codeLanguage={data.codeLanguage} />
+        ) : (
+          <p className="text-body">{data.text || 'Empty note'}</p>
+        )}
+      </div>
     </article>
   );
 }

@@ -33,6 +33,25 @@ export function attachmentPoint(nodes: readonly BoardNode[], node: BoardNode, ha
   return { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height };
 }
 
+export function facingHandles(
+  nodes: readonly BoardNode[],
+  sourceId: string,
+  targetId: string,
+): { source: HandleSide; target: HandleSide } | null {
+  if (sourceId === targetId) return null;
+  const source = nodes.find((node) => node.id === sourceId);
+  const target = nodes.find((node) => node.id === targetId);
+  if (!source || !target) return null;
+  const sourceBounds = worldBounds(nodes, source);
+  const targetBounds = worldBounds(nodes, target);
+  const dx = targetBounds.x + targetBounds.width / 2 - (sourceBounds.x + sourceBounds.width / 2);
+  const dy = targetBounds.y + targetBounds.height / 2 - (sourceBounds.y + sourceBounds.height / 2);
+  if (Math.abs(dx) >= Math.abs(dy)) {
+    return dx >= 0 ? { source: 'right', target: 'left' } : { source: 'left', target: 'right' };
+  }
+  return dy >= 0 ? { source: 'bottom', target: 'top' } : { source: 'top', target: 'bottom' };
+}
+
 export function distance(a: Point, b: Point): number {
   return Math.hypot(b.x - a.x, b.y - a.y);
 }

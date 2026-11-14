@@ -12,6 +12,7 @@ import {
   type NodeChange,
   type Viewport,
 } from '@xyflow/react';
+import { Eye, EyeOff } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import {
   addNodes,
@@ -35,9 +36,10 @@ import {
   staggeredPositions,
   updateText,
 } from '../domain/board';
-import { contentExtent, isContentNode, normalizeRect, worldTopLeft } from '../domain/geometry';
+import { contentExtent, facingHandles, isContentNode, normalizeRect, worldTopLeft } from '../domain/geometry';
 import { toggleTaskAt } from '../domain/markdown';
 import { gesturePhase, sameSelection } from '../editor/interaction';
+import { plainShortcutBlocked } from '../editor/shortcuts';
 import { connectNodes, deleteEdges, hasUndirectedLink } from '../domain/graph';
 import { decodeGraphClipboard, encodeGraphClipboard, GRAPH_MIME, pasteGraph, selectionClosure } from '../domain/graph-clipboard';
 import {
@@ -130,6 +132,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const [persisted, setPersisted] = useState<boolean | null>(null);
   const [readOnly, setReadOnly] = useState(false);
   const [historyStamp, setHistoryStamp] = useState(0);
+  const [chromeHidden, setChromeHidden] = useState(false);
   const [confirming, setConfirming] = useState<
     | null
     | { kind: 'blank' | 'clear' | 'exported-clear' }
@@ -156,6 +159,8 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const coordinatesRef = useRef<CoordinatesHandle>(null);
   const channelRef = useRef<BoardChannel | null>(null);
   const blockedRef = useRef(false);
+  const overlayRef = useRef(false);
+  overlayRef.current = projectOpen || confirming !== null;
   const foreignRef = useRef(false);
   const exportHold = useRef<{ board: Board; assets: AssetRecord[]; unsaved: boolean; key: string } | null>(null);
   const pasteRepeat = useRef({ key: '', count: 0 });
@@ -463,12 +468,43 @@ function BoardSurface({ session }: { session: SessionProps }) {
     setUrlEpoch((value) => value + 1);
   }
 
+  function linkSelection(): boolean {
+    if (blockedRef.current || editingRef.current) return false;
+    const ids = selectedRef.current;
+    if (ids.length !== 2) return false;
+    const sourceId = ids[0];
+    const targetId = ids[1];
+    if (!sourceId || !targetId) return false;
+    const current = boardRef.current;
+    const handles = facingHandles(current.nodes, sourceId, targetId);
+    if (!handles) return false;
+    const next = connectNodes(current, sourceId, targetId, handles.source, handles.target);
+    if (!next) return false;
+    publish(next, current, 'save');
+    return true;
+  }
+
+  function editSelection(): boolean {
+    if (blockedRef.current || editingRef.current) return false;
+    if (selectedRef.current.length !== 1) return false;
+    const id = selectedRef.current[0];
+    if (!id) return false;
+    const node = boardRef.current.nodes.find((entry) => entry.id === id);
+    if (!node || node.kind !== 'text') return false;
+    textBefore.current = structuredClone(boardRef.current);
+    editingRef.current = id;
+    setEditingId(id);
+    return true;
+  }
+
   const commands = useRef({
     undo: () => restoreHistory('undo'),
     redo: () => restoreHistory('redo'),
     group: groupSelected,
     ungroup: ungroupSelected,
     duplicate: duplicateSelected,
+    link: linkSelection,
+    edit: editSelection,
   });
   commands.current = {
     undo: () => restoreHistory('undo'),
@@ -476,19 +512,41 @@ function BoardSurface({ session }: { session: SessionProps }) {
     group: groupSelected,
     ungroup: ungroupSelected,
     duplicate: duplicateSelected,
+    link: linkSelection,
+    edit: editSelection,
   };
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target;
-      if (target instanceof HTMLElement) {
-        const tag = target.tagName;
-        if (tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable) return;
-      }
+      const element = target instanceof HTMLElement ? target : null;
+      if (element && (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA' || element.isContentEditable)) return;
       if (event.key === 'Escape') {
         frameRef.current = null;
         setDraft(null);
         setTool('select');
+        return;
+      }
+      const plainBlocked = plainShortcutBlocked({
+        defaultPrevented: event.defaultPrevented,
+        composing: event.isComposing,
+        repeat: event.repeat,
+        meta: event.metaKey,
+        ctrl: event.ctrlKey,
+        alt: event.altKey,
+        shift: event.shiftKey,
+        tag: element?.tagName ?? null,
+        editable: element?.isContentEditable ?? false,
+        inOverlay: overlayRef.current || Boolean(element?.closest('[role="dialog"], [role="alertdialog"], [role="menu"]')),
+        editing: editingRef.current !== null,
+        blocked: blockedRef.current,
+      });
+      if (!plainBlocked && (event.key === 'l' || event.key === 'L')) {
+        if (commands.current.link()) event.preventDefault();
+        return;
+      }
+      if (!plainBlocked && event.key === 'Enter') {
+        if (commands.current.edit()) event.preventDefault();
         return;
       }
       if (blockedRef.current) return;
@@ -1077,6 +1135,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
             });
         }}
       >
+        {chromeHidden ? null : (
         <Toolbar
           title={board.title}
           status={status}
@@ -1165,6 +1224,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
             />
           }
         />
+        )}
         {readOnly ? (
           <div className="banner" role="status">
             <p>This board is open in another tab. Reload before editing so this tab does not overwrite it.</p>
@@ -1211,6 +1271,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
             </button>
           </div>
         ) : null}
+        {chromeHidden ? null : (
         <SelectionBar
           canGroup={canGroup}
           canUngroup={canUngroup}
@@ -1234,6 +1295,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
             publish(result.board, before, 'save');
           }}
         />
+        )}
         {notice ? (
           <div className="banner" role="alert">
             <p>{notice.text}</p>
@@ -1306,7 +1368,21 @@ function BoardSurface({ session }: { session: SessionProps }) {
             </ViewportPortal>
           ) : null}
         </ReactFlow>
-        <Coordinates ref={coordinatesRef} selection={selectionLabel} />
+        {chromeHidden ? null : <Coordinates ref={coordinatesRef} selection={selectionLabel} />}
+        <button
+          type="button"
+          className="focus-toggle"
+          aria-label={chromeHidden ? 'Show interface' : 'Hide interface'}
+          title={chromeHidden ? 'Show interface' : 'Hide interface'}
+          onClick={() => {
+            setChromeHidden((hidden) => {
+              if (!hidden) setProjectOpen(false);
+              return !hidden;
+            });
+          }}
+        >
+          {chromeHidden ? <Eye size={16} strokeWidth={1.75} /> : <EyeOff size={16} strokeWidth={1.75} />}
+        </button>
       </div>
     </BoardActionsProvider>
   );
