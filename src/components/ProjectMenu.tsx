@@ -1,6 +1,7 @@
 import { SlidersHorizontal } from 'lucide-react';
 import { ATLAS_LAB_ENABLED } from '../backgrounds/atlas-tuning';
 import { archivePressure } from '../ingest/admission';
+import { WEBP_OPTIMIZER_LABEL } from '../ingest/image-optimizer-config';
 import type { LogicalUsage } from '../project/storage';
 import { formatBytes, formatOriginEstimate } from '../project/storage';
 import type { BackgroundPattern } from '../domain/types';
@@ -14,6 +15,8 @@ type ProjectMenuProps = {
   atlasBlocked: boolean;
   contoursBlocked: boolean;
   rendererVersion: 1 | 2 | 3 | null;
+  optimizeImages: boolean;
+  onOptimizeImages: (enabled: boolean) => void;
   onPattern: (pattern: BackgroundPattern) => void;
   onTune: () => void;
   onTuneContours: () => void;
@@ -36,6 +39,8 @@ export function ProjectMenu({
   atlasBlocked,
   contoursBlocked,
   rendererVersion,
+  optimizeImages,
+  onOptimizeImages,
   onPattern,
   onTune,
   onTuneContours,
@@ -90,6 +95,22 @@ export function ProjectMenu({
                 Tune Contours
               </button>
             ) : null}
+          </section>
+          <div className="project-divider" />
+          <section className="pattern-section">
+            <p className="menu-label">Image storage</p>
+            <button
+              type="button"
+              role="switch"
+              className="storage-toggle"
+              aria-checked={optimizeImages}
+              onClick={() => onOptimizeImages(!optimizeImages)}
+            >
+              <span>Optimize new images</span>
+              <span className={optimizeImages ? 'switch is-on' : 'switch'} aria-hidden="true" />
+            </button>
+            <p className="project-note">Resize large images and compress them to WebP before saving. Saves storage space but may soften fine details and text. Existing images are unchanged.</p>
+            <p className="project-note">{WEBP_OPTIMIZER_LABEL}</p>
           </section>
           <div className="project-divider" />
           <div className="project-actions">

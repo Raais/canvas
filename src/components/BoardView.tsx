@@ -79,7 +79,9 @@ import {
   type Rect,
 } from '../domain/types';
 import { partitionIncoming } from '../ingest/admission';
-import { ingestClipboard, ingestFileList, type PreparedItem } from '../ingest/browser';
+import { ingestClipboard, ingestFileList, type IngestBundle, type PreparedItem } from '../ingest/browser';
+import { createImageOptimizer, type ImageOptimizer } from '../ingest/image-optimizer';
+import { createBatchGuard, mayPlaceImages, mayReplaceBoard, readOptimizeImages, writeOptimizeImages } from '../ingest/image-optimizer-config';
 import { captureClipboardData } from '../ingest/clipboard';
 import { archiveFilename } from '../archive/format';
 import { buildArchive, readArchive } from '../archive/zip';
@@ -219,6 +221,12 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const viewsOpenRef = useRef(false);
   const edgeEditorRef = useRef(false);
   const ingestRef = useRef(0);
+  const ingestGuard = useRef(createBatchGuard());
+  const optimizerRef = useRef<ImageOptimizer | null>(null);
+  const mountedRef = useRef(true);
+  const [optimizeImages, setOptimizeImages] = useState(() => readOptimizeImages(browserStorage()));
+  const optimizeRef = useRef(optimizeImages);
+  optimizeRef.current = optimizeImages;
   const confirmingRef = useRef(false);
   searchOpenRef.current = searchOpen;
   viewsOpenRef.current = viewsOpen;
@@ -406,8 +414,53 @@ function BoardSurface({ session }: { session: SessionProps }) {
     setNotice({ text: warnings.join(' '), source: 'ingest' });
   }
 
+  function ensureOptimizer(): ImageOptimizer {
+    optimizerRef.current ??= createImageOptimizer();
+    return optimizerRef.current;
+  }
+
+  async function runIngest(origin: Point, load: () => Promise<IngestBundle>) {
+    const token = ingestGuard.current.capture();
+    ingestRef.current += 1;
+    try {
+      const bundle = await load();
+      if (!mountedRef.current || !ingestGuard.current.current(token) || !mayPlaceImages(blockedRef.current)) {
+        setNotice((current) => (current?.text === 'Optimizing images…' ? null : current));
+        return;
+      }
+      const lines = [...bundle.warnings];
+      if (bundle.summary) lines.push(bundle.summary);
+      if (lines.length > 0) showWarningsRef.current(lines);
+      else setNotice((current) => (current?.text === 'Optimizing images…' ? null : current));
+      placeItemsRef.current(bundle.items, origin);
+    } catch (error: unknown) {
+      if (mountedRef.current && ingestGuard.current.current(token)) {
+        setNotice({ text: errorMessage(error), source: 'ingest' });
+      }
+    } finally {
+      ingestRef.current = Math.max(0, ingestRef.current - 1);
+    }
+  }
+
+  const runIngestRef = useRef(runIngest);
+  runIngestRef.current = runIngest;
+
+  function ingestOptions() {
+    const optimize = optimizeRef.current;
+    return {
+      optimize,
+      ...(optimize ? { optimizer: ensureOptimizer() } : {}),
+      onOptimizing: () => {
+        if (mountedRef.current) setNotice({ text: 'Optimizing images…', source: 'ingest' });
+      },
+    };
+  }
+
+  const ingestOptionsRef = useRef(ingestOptions);
+  ingestOptionsRef.current = ingestOptions;
+
   async function placeItems(items: PreparedItem[], origin: Point) {
-    if (blockedRef.current || items.length === 0) return;
+    if (!mayPlaceImages(blockedRef.current) || items.length === 0) return;
     const registry = registryRef.current;
     if (!registry) return;
     const referenced = referencedAssetIds(boardRef.current);
@@ -479,6 +532,12 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const viewportCenterRef = useRef(viewportCenter);
   viewportCenterRef.current = viewportCenter;
 
+  useEffect(() => () => {
+    mountedRef.current = false;
+    optimizerRef.current?.dispose();
+    optimizerRef.current = null;
+  }, []);
+
   useLayoutEffect(() => {
     document.documentElement.dataset.theme = board.appearance;
     const zoom = boardRef.current.viewport.zoom || 1;
@@ -538,16 +597,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
       const snapshot = captureClipboardData(data);
       event.preventDefault();
       const origin = pointerRef.current ?? viewportCenterRef.current();
-      ingestRef.current += 1;
-      void ingestClipboard(snapshot, 'clipboard')
-        .finally(() => { ingestRef.current = Math.max(0, ingestRef.current - 1); })
-        .then((bundle) => {
-          showWarningsRef.current(bundle.warnings);
-          return placeItemsRef.current(bundle.items, origin);
-        })
-        .catch((error: unknown) => {
-          setNotice({ text: errorMessage(error), source: 'ingest' });
-        });
+      void runIngestRef.current(origin, () => ingestClipboard(snapshot, 'clipboard', ingestOptionsRef.current()));
     };
     window.addEventListener('copy', onCopy);
     window.addEventListener('paste', onPaste);
@@ -1167,6 +1217,10 @@ function BoardSurface({ session }: { session: SessionProps }) {
   }
 
   async function stageExport(thenClear: boolean) {
+    if (!mayReplaceBoard(ingestRef.current > 0)) {
+      setNotice({ text: 'Wait for the image to finish before exporting.', source: 'ingest' });
+      return;
+    }
     const captured = captureExport();
     if (captured.missing.length > 0) {
       setNotice({ text: 'An embedded image is missing, so the archive was not created.', source: 'ingest' });
@@ -1216,11 +1270,17 @@ function BoardSurface({ session }: { session: SessionProps }) {
   }
 
   async function replaceActive(nextBoard: Board, assets: AssetRecord[]) {
+    if (!mayReplaceBoard(ingestRef.current > 0)) {
+      setNotice({ text: 'Wait for the image to finish before replacing the board.', source: 'ingest' });
+      return;
+    }
     if (foreignRef.current || blockedRef.current) {
       setNotice({ text: 'Reload this tab before replacing the board.', source: 'save' });
       return;
     }
     blockedRef.current = true;
+    ingestGuard.current.invalidate();
+    optimizerRef.current?.cancel();
     queue.holdForReplacement();
     await queue.idle();
     try {
@@ -1425,16 +1485,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
           setFileDrag(false);
           if (blockedRef.current) return;
           const origin = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-          ingestRef.current += 1;
-          void ingestFileList(event.dataTransfer.files)
-            .finally(() => { ingestRef.current = Math.max(0, ingestRef.current - 1); })
-            .then((bundle) => {
-              showWarnings(bundle.warnings);
-              return placeItems(bundle.items, origin);
-            })
-            .catch((error: unknown) => {
-              setNotice({ text: errorMessage(error), source: 'ingest' });
-            });
+          void runIngest(origin, () => ingestFileList(event.dataTransfer.files, ingestOptions()));
         }}
       >
         {atlasActive && board.ditherAtlas ? (
@@ -1485,16 +1536,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
           onAddImages={(files) => {
             if (blockedRef.current) return;
             const origin = pointerRef.current ?? viewportCenter();
-            ingestRef.current += 1;
-            void ingestFileList(files)
-              .finally(() => { ingestRef.current = Math.max(0, ingestRef.current - 1); })
-              .then((bundle) => {
-                showWarnings(bundle.warnings);
-                return placeItems(bundle.items, origin);
-              })
-              .catch((error: unknown) => {
-                setNotice({ text: errorMessage(error), source: 'ingest' });
-              });
+            void runIngest(origin, () => ingestFileList(files, ingestOptions()));
           }}
           onUndo={() => commands.current.undo()}
           onRedo={() => commands.current.redo()}
@@ -1524,6 +1566,15 @@ function BoardSurface({ session }: { session: SessionProps }) {
               atlasBlocked={atlasBlocked}
               contoursBlocked={contoursBlocked}
               rendererVersion={board.ditherAtlas?.rendererVersion ?? null}
+              optimizeImages={optimizeImages}
+              onOptimizeImages={(enabled) => {
+                setOptimizeImages(enabled);
+                writeOptimizeImages(browserStorage(), enabled);
+                if (!enabled) {
+                  optimizerRef.current?.dispose();
+                  optimizerRef.current = null;
+                }
+              }}
               onTune={() => { setProjectOpen(false); setContoursLabOpen(false); setAtlasLabOpen(true); }}
               onTuneContours={() => { setProjectOpen(false); setAtlasLabOpen(false); setContoursLabOpen(true); }}
               onUpgrade={() => {
@@ -1894,4 +1945,12 @@ function asHandle(value: string | null | undefined): HandleSide {
 
 function hasFiles(data: DataTransfer | null): boolean {
   return Boolean(data && Array.from(data.types).includes('Files'));
+}
+
+function browserStorage(): Storage | null {
+  try {
+    return globalThis.localStorage;
+  } catch {
+    return null;
+  }
 }

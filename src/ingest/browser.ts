@@ -3,7 +3,6 @@ import {
   FALLBACK_IMAGE_WIDTH,
   type Point,
 } from '../domain/types';
-import { archiveFileLimitLabel, imageExceedsArchiveFile } from './admission';
 import {
   canonicalRasterMime,
   captureClipboardData,
@@ -14,6 +13,15 @@ import {
   type ClipboardSnapshot,
   type IngestAction,
 } from './clipboard';
+import { imageExceedsArchiveFile } from './admission';
+import {
+  describeOptimization,
+  gateIncomingImage,
+  isOptimizableMime,
+  readRasterDimensions,
+  settleOptimization,
+} from './image-optimizer-config';
+import type { ImageOptimizer } from './image-optimizer';
 
 export type PreparedItem =
   | { type: 'text'; text: string }
@@ -35,49 +43,67 @@ export type PreparedItem =
 export type IngestBundle = {
   items: PreparedItem[];
   warnings: string[];
+  summary: string | null;
 };
+
+export type IngestOptions = {
+  optimize?: boolean;
+  optimizer?: Pick<ImageOptimizer, 'optimize'>;
+  measure?: (blob: Blob, mimeType: string) => Promise<{ width: number; height: number } | null>;
+  onOptimizing?: () => void;
+};
+
+const IDLE_OPTIONS: IngestOptions = {};
 
 export async function ingestDataTransfer(data: DataTransfer, kind: 'clipboard' | 'files'): Promise<IngestBundle> {
   return ingestClipboard(captureClipboardData(data), kind);
 }
 
-export async function ingestClipboard(snapshot: ClipboardSnapshot, kind: 'clipboard' | 'files'): Promise<IngestBundle> {
-  const collected = await collectFiles(snapshot.files.map((entry) => entry.file));
+export async function ingestClipboard(snapshot: ClipboardSnapshot, kind: 'clipboard' | 'files', options: IngestOptions = IDLE_OPTIONS): Promise<IngestBundle> {
+  const collected = await collectFiles(snapshot.files.map((entry) => entry.file), options);
   if (kind === 'files') {
     const actions: IngestAction[] = collected.refs.map((image) => ({ type: 'file-image', fileKey: image.key }));
-    const prepared = await prepareActions(actions, collected.files);
-    return { items: prepared.items, warnings: [...collected.warnings, ...prepared.warnings] };
+    const prepared = await prepareActions(actions, collected.files, options);
+    return { items: prepared.items, warnings: [...collected.warnings, ...prepared.warnings], summary: prepared.summary };
   }
   const interpreted = interpretClipboard({
     imageKeys: collected.refs,
     html: snapshot.html,
     plainText: snapshot.plainText,
   });
-  const prepared = await prepareActions(interpreted.actions, collected.files);
+  const prepared = await prepareActions(interpreted.actions, collected.files, options);
   return {
     items: prepared.items,
     warnings: [...collected.warnings, ...interpreted.warnings, ...prepared.warnings],
+    summary: prepared.summary,
   };
 }
 
-export async function ingestFileList(list: FileList | readonly File[]): Promise<IngestBundle> {
-  const collected = await collectFiles(list);
+export async function ingestFileList(list: FileList | readonly File[], options: IngestOptions = IDLE_OPTIONS): Promise<IngestBundle> {
+  const collected = await collectFiles(list, options);
   const actions: IngestAction[] = collected.refs.map((image) => ({ type: 'file-image', fileKey: image.key }));
-  const prepared = await prepareActions(actions, collected.files);
-  return { items: prepared.items, warnings: [...collected.warnings, ...prepared.warnings] };
+  const prepared = await prepareActions(actions, collected.files, options);
+  return { items: prepared.items, warnings: [...collected.warnings, ...prepared.warnings], summary: prepared.summary };
 }
 
 export function placementOrigin(pointer: Point | null, fallback: Point): Point {
   return pointer ?? fallback;
 }
 
-async function collectFiles(list: FileList | readonly File[]): Promise<{
+type HeldFile = {
+  file: File;
+  mimeType: string;
+  width: number | null;
+  height: number | null;
+};
+
+async function collectFiles(list: FileList | readonly File[], options: IngestOptions): Promise<{
   refs: ClipboardImageRef[];
-  files: Map<string, File>;
+  files: Map<string, HeldFile>;
   warnings: string[];
 }> {
   const refs: ClipboardImageRef[] = [];
-  const files = new Map<string, File>();
+  const files = new Map<string, HeldFile>();
   const warnings: string[] = [];
   for (const file of Array.from(list)) {
     const mimeType = canonicalRasterMime(file.type) ?? mimeFromFileName(file.name);
@@ -85,24 +111,43 @@ async function collectFiles(list: FileList | readonly File[]): Promise<{
       warnings.push(file.name ? `Skipped unsupported file "${file.name}".` : 'Skipped an unsupported file.');
       continue;
     }
-    if (imageExceedsArchiveFile(file.size)) {
-      const name = file.name || 'image';
-      warnings.push(`Skipped ${name}: images larger than ${archiveFileLimitLabel()} cannot be included in canvas backups.`);
+    const early = gateIncomingImage({
+      optimize: options.optimize === true && isOptimizableMime(mimeType),
+      mimeType,
+      bytes: file.size,
+      name: file.name || 'image',
+    });
+    if (early.action === 'reject') {
+      warnings.push(early.warning);
       continue;
     }
     const bytes = new Uint8Array(await file.arrayBuffer());
+    const measured = isOptimizableMime(mimeType) ? readRasterDimensions(bytes, mimeType) : null;
+    const sized = gateIncomingImage({
+      optimize: options.optimize === true,
+      mimeType,
+      bytes: file.size,
+      name: file.name || 'image',
+      ...(measured ? { width: measured.width, height: measured.height } : {}),
+    });
+    if (sized.action === 'reject') {
+      warnings.push(sized.warning);
+      continue;
+    }
     const key = contentSignature(mimeType, bytes);
     if (files.has(key)) continue;
     const blob = file.type === mimeType ? file : new File([copyBuffer(bytes)], file.name, { type: mimeType });
-    files.set(key, blob);
+    files.set(key, { file: blob, mimeType, width: measured?.width ?? null, height: measured?.height ?? null });
     refs.push({ key, mimeType });
   }
   return { refs, files, warnings };
 }
 
-async function prepareActions(actions: readonly IngestAction[], files: Map<string, File>): Promise<IngestBundle> {
+async function prepareActions(actions: readonly IngestAction[], files: Map<string, HeldFile>, options: IngestOptions): Promise<IngestBundle> {
   const items: PreparedItem[] = [];
   const warnings: string[] = [];
+  const stats = { optimized: 0, unchanged: 0, failedKept: 0, savedBytes: 0 };
+  let announced = false;
   for (const action of actions) {
     if (action.type === 'text') {
       items.push(action);
@@ -119,41 +164,121 @@ async function prepareActions(actions: readonly IngestAction[], files: Map<strin
       });
       continue;
     }
-    if (action.type === 'file-image') {
-      const file = files.get(action.fileKey);
-      if (!file) {
-        warnings.push('Could not read a pasted image.');
-        continue;
-      }
-      const decoded = await decodeBlob(file);
-      if (!decoded) {
-        warnings.push(file.name ? `Could not read "${file.name}".` : 'Could not read an image.');
-        continue;
-      }
-      items.push({
-        type: 'image',
-        blob: file,
-        mimeType: canonicalRasterMime(file.type) ?? 'application/octet-stream',
-        intrinsicWidth: decoded.width,
-        intrinsicHeight: decoded.height,
-      });
+    const embedded = action.type === 'file-image'
+      ? filePayload(files.get(action.fileKey))
+      : bytePayload(action.bytes, action.mimeType);
+    if (!embedded) {
+      warnings.push(action.type === 'file-image' ? 'Could not read a pasted image.' : 'Could not read an embedded image.');
       continue;
     }
-    const blob = new Blob([copyBuffer(action.bytes)], { type: action.mimeType });
-    const decoded = await decodeBlob(blob);
-    if (!decoded) {
-      warnings.push('Could not read an embedded image.');
-      continue;
-    }
-    items.push({
-      type: 'image',
-      blob,
-      mimeType: action.mimeType,
-      intrinsicWidth: decoded.width,
-      intrinsicHeight: decoded.height,
+    const prepared = await prepareEmbedded(embedded, options, stats, () => {
+      if (announced) return;
+      announced = true;
+      options.onOptimizing?.();
     });
+    if (prepared.kind === 'cancel') return { items: [], warnings: [], summary: null };
+    if (prepared.kind === 'warning') {
+      warnings.push(prepared.warning);
+      continue;
+    }
+    items.push(prepared.item);
   }
-  return { items, warnings };
+  return { items, warnings, summary: describeOptimization(stats) };
+}
+
+function filePayload(held: HeldFile | undefined): EmbeddedPayload | null {
+  if (!held) return null;
+  return { blob: held.file, mimeType: held.mimeType, name: held.file.name || 'image', width: held.width, height: held.height };
+}
+
+function bytePayload(bytes: Uint8Array, mimeType: string): EmbeddedPayload {
+  const measured = isOptimizableMime(mimeType) ? readRasterDimensions(bytes, mimeType) : null;
+  return {
+    blob: new Blob([copyBuffer(bytes)], { type: mimeType }),
+    mimeType,
+    name: 'image',
+    width: measured?.width ?? null,
+    height: measured?.height ?? null,
+  };
+}
+
+type EmbeddedPayload = {
+  blob: Blob;
+  mimeType: string;
+  name: string;
+  width: number | null;
+  height: number | null;
+};
+
+async function prepareEmbedded(
+  payload: EmbeddedPayload,
+  options: IngestOptions,
+  stats: { optimized: number; unchanged: number; failedKept: number; savedBytes: number },
+  onOptimizing: () => void,
+): Promise<{ kind: 'item'; item: PreparedItem } | { kind: 'warning'; warning: string } | { kind: 'cancel' }> {
+  const known = payload.width !== null && payload.height !== null ? { width: payload.width, height: payload.height } : null;
+  const gate = gateIncomingImage({
+    optimize: options.optimize === true,
+    mimeType: payload.mimeType,
+    bytes: payload.blob.size,
+    name: payload.name,
+    ...(known ?? {}),
+  });
+  if (gate.action === 'reject') return { kind: 'warning', warning: gate.warning };
+  if (gate.action === 'optimize' && !options.optimizer && imageExceedsArchiveFile(payload.blob.size)) {
+    return { kind: 'warning', warning: `Skipped ${payload.name}: it could not be optimized and is too large to store.` };
+  }
+  if (gate.action === 'store-original' || !options.optimizer) {
+    const decoded = known ?? await measureBlob(payload.blob, payload.mimeType, options);
+    if (!decoded) return { kind: 'warning', warning: payload.name === 'image' ? 'Could not read an image.' : `Could not read "${payload.name}".` };
+    return { kind: 'item', item: imageItem(payload.blob, payload.mimeType, decoded.width, decoded.height) };
+  }
+  onOptimizing();
+  let encoded: Awaited<ReturnType<ImageOptimizer['optimize']>>;
+  try {
+    encoded = await options.optimizer.optimize({ blob: payload.blob, width: known?.width ?? 0, height: known?.height ?? 0 });
+  } catch {
+    encoded = { ok: false, reason: 'failed' };
+  }
+  if (!encoded.ok && encoded.reason === 'cancelled') return { kind: 'cancel' };
+  const sourceWidth = encoded.ok ? encoded.sourceWidth : encoded.sourceWidth ?? known?.width;
+  const sourceHeight = encoded.ok ? encoded.sourceHeight : encoded.sourceHeight ?? known?.height;
+  const decision = settleOptimization({
+    originalBytes: payload.blob.size,
+    encoded: encoded.ok ? { bytes: encoded.blob.size, mimeType: encoded.blob.type, width: encoded.width, height: encoded.height } : null,
+  });
+  if (decision === 'accept' && encoded.ok) {
+    stats.optimized += 1;
+    stats.savedBytes += Math.max(0, payload.blob.size - encoded.blob.size);
+    return { kind: 'item', item: imageItem(encoded.blob, 'image/webp', encoded.width, encoded.height) };
+  }
+  if (decision === 'preserve') {
+    let width = sourceWidth;
+    let height = sourceHeight;
+    if (!(width && height)) {
+      const measured = await measureBlob(payload.blob, payload.mimeType, options);
+      width = measured?.width;
+      height = measured?.height;
+    }
+    if (!(width && height)) return { kind: 'warning', warning: payload.name === 'image' ? 'Could not read an image.' : `Could not read "${payload.name}".` };
+    if (!encoded.ok && encoded.reason !== 'pixels') stats.failedKept += 1;
+    else stats.unchanged += 1;
+    return { kind: 'item', item: imageItem(payload.blob, payload.mimeType, width, height) };
+  }
+  const warning = !encoded.ok && encoded.reason === 'pixels'
+    ? `Skipped ${payload.name}: the image has too many pixels to optimize.`
+    : `Skipped ${payload.name}: it could not be optimized and is too large to store.`;
+  return { kind: 'warning', warning };
+}
+
+function imageItem(blob: Blob, mimeType: string, width: number, height: number): PreparedItem {
+  return { type: 'image', blob, mimeType, intrinsicWidth: width, intrinsicHeight: height };
+}
+
+async function measureBlob(blob: Blob, mimeType: string, options: IngestOptions): Promise<{ width: number; height: number } | null> {
+  if (options.measure) return options.measure(blob, mimeType);
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  return readRasterDimensions(bytes, mimeType) ?? decodeBlob(blob);
 }
 
 function copyBuffer(bytes: Uint8Array): ArrayBuffer {

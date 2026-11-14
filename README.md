@@ -27,13 +27,21 @@ A new board opens on Dither Atlas renderer v3: the finalized Earth-like terrain,
 
 Notes, image bytes, positions, dimensions, links, groups, and the viewport are stored in IndexedDB in a database named `raais-canvas-db`. Saves are automatic. If a save fails, the open board stays on screen and the toolbar reports the failure.
 
-`localStorage` is not used. A board's appearance is part of the document, not a separate site setting. GitHub Pages sites on `raais.github.io` share one origin, so the browser quota shown in the project menu is not exclusive to canvas.
+The board itself is not stored in `localStorage`. A board's appearance is part of the document, not a separate site setting. The only `localStorage` entry is the optional image-optimization preference. GitHub Pages sites on `raais.github.io` share one origin, so the browser quota shown in the project menu is not exclusive to canvas.
 
 The browser can still delete site data. An exported archive is the copy to keep. canvas does not upload the board anywhere. External image links are recorded as URLs only; their bytes are not included.
 
 Boards are document schema 7. A ZIP archive is still format 1, and a copied selection is still clipboard format 1. Labels, link styles, saved views, and a Topographic Contours seed travel with the board JSON. Older boards migrate forward without changing their saved background. There is no remote search service.
 
 One tab owns writing, using a browser lock named `raais-canvas-active-board-v1` when the browser provides it. Other tabs can pan, zoom, search, recall saved views, and inspect, but they do not save. If a tab has open edits when it loses the board, it keeps them in memory and offers **Download recovery ZIP**. Reload asks before discarding those edits. IndexedDB still refuses a stale revision. Embedded images must be 64 MiB or smaller, and a backup must stay within 256 MiB including the manifest. The project menu warns when a board is near or past that limit. Copying a note out of a group pastes it in world coordinates. Escape finishes a note edit and cancels a group rename. Delete contents asks before removing a group and its children. Checklists toggle for unordered, ordered, nested, and quoted tasks.
+
+## Image optimization
+
+Project → Image storage has **Optimize new images**. It starts off, including after an upgrade, until you turn it on. The choice is remembered in this browser only. It is not part of the board, and importing a ZIP does not change it.
+
+When it is on, newly pasted, dropped, or selected PNG and JPEG pictures are resized so the long side is at most 2560 pixels and encoded as WebP at quality 82%. The WebP replaces the original only when it is at least 15% smaller and still fits the backup limits. Otherwise the original file is kept. The compression is lossy: photographs usually hold up, while screenshots, diagrams, and small text can look softer. Turn the setting off before adding images that need to stay sharp.
+
+GIF, WebP, and AVIF files are stored unchanged, so an animation is not flattened. Images already on the board are left alone. External image links are not downloaded or recompressed. Encoding runs in a Web Worker with the browser's own WebP encoder, including while canvas is open offline after the app has been cached. A picture can still be rejected when the stored file would be over 64 MiB or the board would no longer fit in a 256 MiB archive.
 
 ## Install and offline
 

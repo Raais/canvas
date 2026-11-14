@@ -1,3 +1,5 @@
+import { readdir } from 'node:fs/promises';
+
 const manifest = await Bun.file('dist/manifest.webmanifest').json() as {
   name: string;
   short_name: string;
@@ -39,6 +41,25 @@ expect(!await Bun.file('dist/site.webmanifest').exists(), 'placeholder site.webm
 expect(!await Bun.file('dist/manifest.json').exists(), 'placeholder manifest.json absent');
 expect(worker.includes('SKIP_WAITING') && worker.includes('skipWaiting()'), 'update waits for an explicit message');
 expect(!worker.includes('self.skipWaiting()') || worker.includes('SKIP_WAITING'), 'skipWaiting is not unconditional');
+
+const assets = (await readdir('dist/assets')).map((name) => `dist/assets/${name}`);
+const optimizerName = assets.find((name) => name.includes('image-optimizer.worker') && name.endsWith('.js'));
+expect(Boolean(optimizerName), 'optimizer worker emitted');
+if (optimizerName) {
+  const optimizer = await Bun.file(optimizerName).text();
+  expect(optimizer.includes('image/webp'), 'worker encodes webp');
+  expect(worker.includes(optimizerName.slice(optimizerName.lastIndexOf('/') + 1)), 'optimizer worker precached');
+  expect(!optimizer.includes('.wasm'), 'worker has no wasm payload');
+}
+const mainName = assets.find((name) => name.includes('/index-') && name.endsWith('.js'));
+if (mainName) {
+  const main = await Bun.file(mainName).text();
+  expect(!main.includes('convertToBlob'), 'webp encoder stays out of the main bundle');
+}
+expect(!assets.some((name) => name.endsWith('.wasm')), 'no wasm asset');
+const packages = await Bun.file('package.json').json() as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
+const dependencyNames = [...Object.keys(packages.dependencies ?? {}), ...Object.keys(packages.devDependencies ?? {})];
+expect(!dependencyNames.some((name) => /avif|wasm|squoosh|sharp/i.test(name)), 'no external encoder package');
 
 if (problems.length > 0) {
   console.error(problems.join('\n'));
