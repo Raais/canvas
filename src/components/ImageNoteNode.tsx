@@ -1,6 +1,6 @@
 import { NodeResizer, type Node, type NodeProps } from '@xyflow/react';
 import { useEffect, useState } from 'react';
-import { FlipHorizontal2, FlipVertical2 } from 'lucide-react';
+import { FlipHorizontal, FlipVertical } from 'lucide-react';
 import type { ImageDisplayMode } from '../domain/types';
 import { useBoardActions } from './board-context';
 import { PortHandles } from './PortHandles';
@@ -68,7 +68,7 @@ export function ImageNoteNode({ id, data, selected }: NodeProps<ImageFlowNode>) 
             aria-pressed={Boolean(data.flipX)}
             onClick={() => actions.toggleFlip(id, 'x')}
           >
-            <FlipHorizontal2 size={15} strokeWidth={1.75} />
+            <FlipHorizontal size={15} strokeWidth={1.75} />
           </button>
           <button
             type="button"
@@ -78,22 +78,24 @@ export function ImageNoteNode({ id, data, selected }: NodeProps<ImageFlowNode>) 
             aria-pressed={Boolean(data.flipY)}
             onClick={() => actions.toggleFlip(id, 'y')}
           >
-            <FlipVertical2 size={15} strokeWidth={1.75} />
+            <FlipVertical size={15} strokeWidth={1.75} />
           </button>
         </div>
       ) : null}
       {showImage ? (
-        <img
-          src={data.src ?? undefined}
-          alt={data.externalUrl ? 'External image' : 'Embedded image'}
-          draggable={false}
-          decoding="async"
-          style={{ transform: `scale(${data.flipX ? -1 : 1}, ${data.flipY ? -1 : 1})` }}
-          onLoad={(event) => {
-            actions.noteIntrinsicSize(id, event.currentTarget.naturalWidth, event.currentTarget.naturalHeight);
-          }}
-          onError={() => setFailed(true)}
-        />
+        <div className="image-clip">
+          <img
+            src={data.src ?? undefined}
+            alt={data.externalUrl ? 'External image' : 'Embedded image'}
+            draggable={false}
+            decoding="async"
+            style={{ transform: `scale(${data.flipX ? -1 : 1}, ${data.flipY ? -1 : 1})` }}
+            onLoad={(event) => {
+              actions.noteIntrinsicSize(id, event.currentTarget.naturalWidth, event.currentTarget.naturalHeight);
+            }}
+            onError={() => setFailed(true)}
+          />
+        </div>
       ) : (
         <div className="image-missing">
           <span>{data.src ? 'Image unavailable' : 'Stored image is missing'}</span>

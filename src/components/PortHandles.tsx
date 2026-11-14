@@ -1,6 +1,6 @@
 import { Handle, Position } from '@xyflow/react';
-import { handleTransform } from '../editor/handles';
 import type { HandleSide } from '../domain/types';
+import { visualHandleTransform } from '../editor/handles';
 
 const PORTS: { id: HandleSide; position: Position }[] = [
   { id: 'top', position: Position.Top },
@@ -13,14 +13,9 @@ export function PortHandles() {
   return (
     <>
       {PORTS.map((port) => (
-        <Handle
-          key={port.id}
-          id={port.id}
-          type="source"
-          position={port.position}
-          className="port nodrag nopan"
-          style={{ transform: handleTransform(port.id) }}
-        />
+        <Handle key={port.id} id={port.id} type="source" position={port.position} className="port nodrag nopan">
+          <span className="port-dot" style={{ transform: visualHandleTransform() }} />
+        </Handle>
       ))}
     </>
   );

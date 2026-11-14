@@ -4,7 +4,7 @@
 
 canvas is a local-first spatial notebook and moodboard. Arrange plain-text notes, code notes, images, undirected links, and rigid clusters on an infinite, zoomable canvas. The board lives in this browser. There is no account, backend, or upload server.
 
-This release adds project-specific dark and light themes, image flips, graph copy and paste, and ZIP project archives.
+This release keeps project-specific themes, image flips, and graph copy and paste, with fully rounded controls.
 
 ## What you can do
 

@@ -4,7 +4,7 @@ import { decodeGraphClipboard, encodeGraphClipboard, pasteGraph, selectionClosur
 import { duplicateSelection, groupSelection } from '../domain/groups';
 import { createHistory, pushHistory, undoHistory } from '../domain/history';
 import { placeNode } from '../domain/board';
-import { handleTransform } from '../editor/handles';
+import { HANDLE_SIDES, handleAnchorTransform, visualHandleTransform } from '../editor/handles';
 import type { BoardNode, ImageNode } from '../domain/types';
 import { buildArchive, readArchive } from '../archive/zip';
 
@@ -32,11 +32,12 @@ function image(id: string): ImageNode {
 
 describe('handles and groups', () => {
   test('uses a different anchor shift for the right and bottom handles', () => {
-    expect(handleTransform('top')).toContain('translate(-50%, -50%)');
-    expect(handleTransform('left')).toContain('translate(-50%, -50%)');
-    expect(handleTransform('right')).toContain('translate(50%, -50%)');
-    expect(handleTransform('bottom')).toContain('translate(-50%, 50%)');
-    expect(handleTransform('right')).toContain('scale(var(--handle-scale, 1))');
+    expect(handleAnchorTransform('top')).toBe('translate(-50%, -50%)');
+    expect(handleAnchorTransform('left')).toBe('translate(-50%, -50%)');
+    expect(handleAnchorTransform('right')).toBe('translate(50%, -50%)');
+    expect(handleAnchorTransform('bottom')).toBe('translate(-50%, 50%)');
+    for (const side of HANDLE_SIDES) expect(handleAnchorTransform(side).includes('scale(')).toBe(false);
+    expect(visualHandleTransform()).toBe('translate(-50%, -50%) scale(var(--handle-scale, 1))');
   });
 
   test('moving a group keeps child offsets', () => {
