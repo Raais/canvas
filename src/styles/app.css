@@ -791,7 +791,8 @@ button:focus-visible, .title-input:focus-visible, select:focus-visible {
 .views-panel .view-jump, .views-panel li .view-name { flex: 1 1 auto; width: auto; }
 .views-panel .view-save { color: var(--muted); }
 .search-input, .view-name input, .edge-tools .edge-label-input { outline: none; }
-.search-input:focus-visible, .view-name input:focus-visible, .edge-tools .edge-label-input:focus-visible {
+.search-input:focus, .search-input:focus-visible { outline: none; }
+.view-name input:focus-visible, .edge-tools .edge-label-input:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
