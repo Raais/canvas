@@ -41,13 +41,19 @@ export function ProjectMenu({
       </button>
       {open ? (
         <div className="project-panel" role="dialog" aria-label="Project and storage">
+          <section className="pattern-section">
+            <p className="menu-label">Canvas background</p>
+            <div className="pattern-row" role="group" aria-label="Canvas background">
+              {(['dots', 'grid', 'cross', 'blank'] as const).map((choice) => (
+                <button key={choice} type="button" aria-pressed={pattern === choice} onClick={() => onPattern(choice)}>
+                  {choice}
+                </button>
+              ))}
+            </div>
+          </section>
+          <div className="project-divider" />
           <div className="project-actions">
-            <p className="storage-label">Canvas background</p>
-            {(['dots', 'grid', 'cross', 'blank'] as const).map((choice) => (
-              <button key={choice} type="button" aria-pressed={pattern === choice} onClick={() => onPattern(choice)}>
-                {choice}
-              </button>
-            ))}
+            <p className="menu-label">Project actions</p>
             <button type="button" onClick={onExport}>
               Export
             </button>

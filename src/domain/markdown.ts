@@ -1,4 +1,52 @@
+import { visit } from 'unist-util-visit';
+import type { ListItem, Root } from 'mdast';
+
 const TASK = /^(\s*[-*+] )\[([ xX])\]/;
+
+type HastNode = {
+  type: string;
+  tagName?: string;
+  properties?: Record<string, unknown>;
+  children?: HastNode[];
+};
+
+export function remarkTaskIndex() {
+  return (tree: Root) => {
+    visit(tree, 'listItem', (node: ListItem) => {
+      if (typeof node.checked !== 'boolean') return;
+      const offset = node.position?.start.offset;
+      if (offset == null) return;
+      const data = node.data ?? {};
+      node.data = {
+        ...data,
+        hProperties: { ...(data.hProperties as Record<string, unknown> | undefined), dataTask: String(offset) },
+      };
+    });
+  };
+}
+
+export function rehypeTaskInputs() {
+  return (tree: HastNode) => {
+    visit(tree, 'element', (node: HastNode) => {
+      if (node.tagName !== 'li' || node.properties?.dataTask == null) return;
+      const input = node.children?.find((child) => child.tagName === 'input' && child.properties?.type === 'checkbox');
+      if (!input?.properties) return;
+      input.properties.dataTask = node.properties.dataTask;
+      delete input.properties.disabled;
+    });
+  };
+}
+
+export function toggleTaskAt(source: string, offset: number): string {
+  const lineStart = source.lastIndexOf('\n', Math.max(0, offset - 1)) + 1;
+  const lineEnd = source.indexOf('\n', offset);
+  const end = lineEnd === -1 ? source.length : lineEnd;
+  const match = TASK.exec(source.slice(lineStart, end));
+  if (!match) return source;
+  const markAt = lineStart + match.index + match[1].length + 1;
+  const mark = source[markAt] === ' ' ? 'x' : ' ';
+  return source.slice(0, markAt) + mark + source.slice(markAt + 1);
+}
 
 export function toggleTask(source: string, taskIndex: number): string {
   const newline = source.includes('\r\n') ? '\r\n' : '\n';

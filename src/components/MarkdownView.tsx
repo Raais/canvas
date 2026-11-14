@@ -1,9 +1,9 @@
-import { memo, useRef, type PointerEvent } from 'react';
+import { memo, type PointerEvent } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { visit } from 'unist-util-visit';
 import type { Root, Text } from 'mdast';
-import { safeHref } from '../domain/markdown';
+import { rehypeTaskInputs, remarkTaskIndex, safeHref } from '../domain/markdown';
 
 function remarkMark() {
   return (tree: Root) => {
@@ -31,37 +31,42 @@ function remarkMark() {
   };
 }
 
-export const MarkdownView = memo(function MarkdownView({ text, onToggle }: { text: string; onToggle: (index: number) => void }) {
-  const cursor = useRef(0);
-  cursor.current = 0;
+function taskOffset(value: unknown): number | null {
+  const offset = Number(value);
+  return Number.isInteger(offset) && offset >= 0 ? offset : null;
+}
+
+export const MarkdownView = memo(function MarkdownView({ text, onToggle }: { text: string; onToggle: (offset: number) => void }) {
   return (
     <div className="markdown-body">
       <Markdown
-        remarkPlugins={[remarkGfm, remarkMark]}
-        allowedElements={['p', 'strong', 'em', 'del', 'code', 'pre', 'h1', 'h2', 'h3', 'ul', 'ol', 'li', 'a', 'blockquote', 'mark', 'br', 'hr']}
+        remarkPlugins={[remarkGfm, remarkTaskIndex, remarkMark]}
+        rehypePlugins={[rehypeTaskInputs]}
+        allowedElements={['p', 'strong', 'em', 'del', 'code', 'pre', 'h1', 'h2', 'h3', 'ul', 'ol', 'li', 'a', 'blockquote', 'mark', 'br', 'hr', 'input']}
         unwrapDisallowed
         components={{
           a: ({ href, children }) => (safeHref(href) ? (
             <a href={href} target="_blank" rel="noopener noreferrer" className="nodrag nopan">{children}</a>
           ) : <span>{children}</span>),
-          li: ({ node, children }) => {
-            const checked = (node as { checked?: boolean | null } | undefined)?.checked;
-            if (typeof checked !== 'boolean') return <li>{children}</li>;
-            const task = cursor.current;
-            cursor.current += 1;
+          input: ({ type, checked, node }) => {
+            if (type !== 'checkbox') return null;
+            const offset = taskOffset(node?.properties?.dataTask);
+            if (offset == null) return null;
             return (
-              <li className="md-task">
-                <input
-                  type="checkbox"
-                  className="nodrag nopan"
-                  checked={checked}
-                  onPointerDown={(event: PointerEvent) => event.stopPropagation()}
-                  onChange={() => onToggle(task)}
-                />
-                <span>{children}</span>
-              </li>
+              <input
+                type="checkbox"
+                className="md-check nodrag nopan"
+                checked={checked === true}
+                data-task={offset}
+                aria-label={checked === true ? 'Completed task' : 'Open task'}
+                onPointerDown={(event: PointerEvent<HTMLInputElement>) => event.stopPropagation()}
+                onChange={() => onToggle(offset)}
+              />
             );
           },
+          li: ({ node, children }) => (
+            node?.properties?.dataTask == null ? <li>{children}</li> : <li className="md-task">{children}</li>
+          ),
         }}
       >
         {text}

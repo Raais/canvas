@@ -36,7 +36,7 @@ import {
   updateText,
 } from '../domain/board';
 import { contentExtent, isContentNode, normalizeRect, worldTopLeft } from '../domain/geometry';
-import { toggleTask } from '../domain/markdown';
+import { toggleTaskAt } from '../domain/markdown';
 import { gesturePhase, sameSelection } from '../editor/interaction';
 import { connectNodes, deleteEdges, hasUndirectedLink } from '../domain/graph';
 import { decodeGraphClipboard, encodeGraphClipboard, GRAPH_MIME, pasteGraph, selectionClosure } from '../domain/graph-clipboard';
@@ -585,7 +585,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
         const before = boardRef.current;
         const node = before.nodes.find((entry) => entry.id === id);
         if (!node || node.kind !== 'text') return;
-        const text = toggleTask(node.text, index);
+        const text = toggleTaskAt(node.text, index);
         if (text === node.text) return;
         publish(updateText(before, id, text), before, 'save');
       },
