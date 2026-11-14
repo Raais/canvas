@@ -42,6 +42,8 @@ export async function buildArchive(board: Board, assets: readonly AssetRecord[],
     externalImages: external,
   };
   const manifestBytes = strToU8(JSON.stringify(manifest));
+  if (listed.length + 1 > ARCHIVE_LIMITS.maxEntries) throw new Error('This board has too many files to export.');
+  if (payload + manifestBytes.byteLength > ARCHIVE_LIMITS.maxTotalBytes) throw new Error('This board is too large to export.');
   const packed: Record<string, [Uint8Array, { level: 0 | 6 }]> = {
     'manifest.json': [manifestBytes, { level: 6 }],
   };

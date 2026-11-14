@@ -22,7 +22,9 @@ export type Viewport = {
   zoom: number;
 };
 
-export type ImageDisplayMode = 'aspect' | 'contain';
+export type ImageDisplayMode = 'aspect' | 'stretch';
+
+export type NotePresentation = 'text' | 'code';
 
 export type HandleSide = 'top' | 'right' | 'bottom' | 'left';
 
@@ -35,6 +37,8 @@ export type TextNode = {
   width: number;
   height: number;
   text: string;
+  presentation?: NotePresentation;
+  language?: string;
 };
 
 export type EmbeddedImageSource = {

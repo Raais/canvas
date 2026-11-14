@@ -129,7 +129,7 @@ describe('project bookkeeping', () => {
       y: 0,
       width: 10,
       height: 10,
-      mode: 'contain' as const,
+      mode: 'stretch' as const,
       intrinsicWidth: 10,
       intrinsicHeight: 10,
       sizedFromImage: true,

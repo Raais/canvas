@@ -6,6 +6,7 @@ export type BoardActions = {
   updateText: (id: string, text: string) => void;
   endEditing: () => void;
   setMode: (id: string, mode: ImageDisplayMode) => void;
+  setPresentation: (id: string, presentation: 'text' | 'code') => void;
   noteIntrinsicSize: (id: string, width: number, height: number) => void;
   renameGroup: (id: string, label: string) => void;
   endRename: () => void;

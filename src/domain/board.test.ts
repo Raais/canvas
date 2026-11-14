@@ -87,7 +87,7 @@ describe('board model', () => {
     });
     image.width = 200;
     image.height = 200;
-    const aspect = setImageMode(addNodes(createEmptyBoard(now), [{ ...image, mode: 'contain' }], now), image.id, 'aspect', now);
+    const aspect = setImageMode(addNodes(createEmptyBoard(now), [{ ...image, mode: 'stretch' }], now), image.id, 'aspect', now);
     expect(aspect.nodes[0]?.height).toBe(1);
   });
 
@@ -109,7 +109,7 @@ describe('board model', () => {
     });
     image.width = 200;
     image.height = 40;
-    const board = addNodes(createEmptyBoard(now), [{ ...image, mode: 'contain' }], now);
+    const board = addNodes(createEmptyBoard(now), [{ ...image, mode: 'stretch' }], now);
     const aspect = setImageMode(board, image.id, 'aspect', now);
     expect(aspect.nodes[0]).toEqual({ ...image, mode: 'aspect', height: 100 });
     const probed = noteImageIntrinsic(aspect, image.id, 10, 10, now);

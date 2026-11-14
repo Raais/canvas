@@ -40,6 +40,27 @@ export class SaveQueue {
     this.suspended = false;
   }
 
+  holdForReplacement(): { dirty: boolean; upserts: number; deletes: number } {
+    this.suspended = true;
+    if (this.timer !== null) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    return { dirty: this.dirty, upserts: this.upserts.size, deletes: this.deleteIds.size };
+  }
+
+  abortReplacement(): void {
+    this.suspended = false;
+    if (this.dirty || this.upserts.size > 0 || this.deleteIds.size > 0) {
+      this.onStatus('unsaved');
+      this.schedule(500);
+    }
+  }
+
+  pendingSummary(): { suspended: boolean; dirty: boolean; upserts: number; deletes: number } {
+    return { suspended: this.suspended, dirty: this.dirty, upserts: this.upserts.size, deletes: this.deleteIds.size };
+  }
+
   discardPending(): void {
     if (this.timer !== null) {
       clearTimeout(this.timer);

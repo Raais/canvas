@@ -4,11 +4,14 @@
 
 canvas is a local-first spatial notebook and moodboard. Arrange plain-text notes, images, undirected links, and rigid clusters on an infinite, zoomable canvas. The board lives in this browser. There is no account, backend, or upload server.
 
-This release adds graph links, rigid clusters, tension-only physics, undo/redo, a dark canvas, world-space coordinates, and ZIP project archives.
+This release adds graph copy and paste, code notes, image stretch, a manual dark or light appearance, and ZIP project archives.
 
 ## What you can do
 
-- Create text notes and embedded or linked images.
+- Copy and paste selected notes and groups with the system clipboard. External text and screenshots still paste as new notes.
+- Switch a note between text and code. Clearly fenced code is recognized when it is pasted.
+- Lock an image to its ratio, or stretch it to the frame.
+- Choose dark or light appearance. The choice stays in this browser and does not follow the system theme or a board archive.
 - Draw an undirected link by dragging from one handle to another. A new link remembers its rest length and does not pull until it is stretched.
 - Group notes from a selection or with the Frame tool. Groups stay flat, move as one body, and keep their children at the same world position when grouped or ungrouped.
 - Undo and redo recent edits until the page reloads. History is not stored in IndexedDB.
@@ -20,7 +23,7 @@ This release adds graph links, rigid clusters, tension-only physics, undo/redo, 
 
 Notes, image bytes, positions, dimensions, links, groups, and the viewport are stored in IndexedDB in a database named `raais-canvas-db`. Saves are automatic. If a save fails, the open board stays on screen and the toolbar reports the failure.
 
-`localStorage` is not used. GitHub Pages sites on `raais.github.io` share one origin, so the browser quota shown in the project menu is not exclusive to canvas.
+`localStorage` is not used. Appearance is stored in the same IndexedDB database, separately from the board, so importing an archive does not change it. GitHub Pages sites on `raais.github.io` share one origin, so the browser quota shown in the project menu is not exclusive to canvas.
 
 The browser can still delete site data. An exported archive is the copy to keep. canvas does not upload the board anywhere. External image links are recorded as URLs only; their bytes are not included.
 

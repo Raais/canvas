@@ -37,6 +37,16 @@ export function logicalUsage(board: Board, assets: readonly { id: string; byteSi
   };
 }
 
+export function boardSnapshotKey(board: Board): string {
+  return JSON.stringify({
+    id: board.id,
+    title: board.title,
+    nodes: board.nodes,
+    edges: board.edges,
+    viewport: board.viewport,
+  });
+}
+
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return 'Unavailable';
   if (bytes < 1024) return `${Math.round(bytes)} B`;

@@ -22,7 +22,7 @@ export function ImageNoteNode({ id, data, selected }: NodeProps<ImageFlowNode>) 
 
   const className = [
     'image-note',
-    data.mode === 'contain' ? 'is-contain' : 'is-aspect',
+    data.mode === 'stretch' ? 'is-stretch' : 'is-aspect',
     selected ? 'is-selected' : '',
   ]
     .filter(Boolean)
@@ -52,10 +52,10 @@ export function ImageNoteNode({ id, data, selected }: NodeProps<ImageFlowNode>) 
           </button>
           <button
             type="button"
-            aria-pressed={data.mode === 'contain'}
-            onClick={() => actions.setMode(id, 'contain')}
+            aria-pressed={data.mode === 'stretch'}
+            onClick={() => actions.setMode(id, 'stretch')}
           >
-            Free frame
+            Stretch
           </button>
         </div>
       ) : null}

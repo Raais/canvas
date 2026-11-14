@@ -24,6 +24,7 @@ import {
   placeNode,
   renameBoard,
   setImageMode,
+  setPresentation,
   setViewport,
   staggeredPositions,
   updateText,
@@ -31,6 +32,7 @@ import {
 import { contentExtent, isContentNode, normalizeRect, worldTopLeft } from '../domain/geometry';
 import { gesturePhase, sameSelection } from '../editor/interaction';
 import { connectNodes, deleteEdges, hasUndirectedLink } from '../domain/graph';
+import { decodeGraphClipboard, encodeGraphClipboard, GRAPH_MIME, pasteGraph, selectionClosure } from '../domain/graph-clipboard';
 import {
   createTextInside,
   deleteGroupContents,
@@ -63,9 +65,9 @@ import { captureClipboardData } from '../ingest/clipboard';
 import { archiveFilename } from '../archive/format';
 import { buildArchive, readArchive } from '../archive/zip';
 import { downloadBytes } from '../project/download';
-import { logicalUsage, snapshotAssets, type LogicalUsage } from '../project/storage';
+import { boardSnapshotKey, logicalUsage, snapshotAssets, type LogicalUsage } from '../project/storage';
 import { openBoardChannel, type BoardChannel } from '../project/tabs';
-import { createAssetRecord, replaceStoredBoard, RevisionConflictError, type CanvasDatabase } from '../persistence/db';
+import { createAssetRecord, readAppearance, replaceStoredBoard, RevisionConflictError, writeAppearance, type Appearance, type CanvasDatabase } from '../persistence/db';
 import { createObjectUrlRegistry, type ObjectUrlRegistry } from '../persistence/object-urls';
 import { errorMessage, SaveQueue, type SaveStatus } from '../persistence/save-queue';
 import { BoardActionsProvider, type BoardActions } from './board-context';
@@ -120,6 +122,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const [estimate, setEstimate] = useState<{ usage?: number; quota?: number } | null>(null);
   const [persisted, setPersisted] = useState<boolean | null>(null);
   const [readOnly, setReadOnly] = useState(false);
+  const [appearance, setAppearance] = useState<Appearance>('dark');
   const [confirming, setConfirming] = useState<
     | null
     | { kind: 'blank' | 'clear' | 'exported-clear' }
@@ -147,7 +150,9 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const channelRef = useRef<BoardChannel | null>(null);
   const blockedRef = useRef(false);
   const foreignRef = useRef(false);
-  const exportHold = useRef<{ board: Board; assets: AssetRecord[]; unsaved: boolean } | null>(null);
+  const exportHold = useRef<{ board: Board; assets: AssetRecord[]; unsaved: boolean; key: string } | null>(null);
+  const pasteRepeat = useRef({ key: '', count: 0 });
+  const boardEl = useRef<HTMLDivElement>(null);
   const flowCache = useRef<{ nodeKey: string; nodes: CanvasFlowNode[]; edgeKey: string; edges: Edge[] }>({
     nodeKey: '',
     nodes: [],
@@ -158,8 +163,10 @@ function BoardSurface({ session }: { session: SessionProps }) {
   flowRef.current = flow;
   toolRef.current = tool;
 
-  if (libraryRef.current.size === 0) {
+  const libraryReady = useRef(false);
+  if (!libraryReady.current) {
     for (const asset of session.assets) libraryRef.current.set(asset.id, asset);
+    libraryReady.current = true;
   }
 
   const registryRef = useRef<ObjectUrlRegistry | null>(null);
@@ -284,7 +291,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
   }
 
   async function placeItems(items: PreparedItem[], origin: Point) {
-    if (items.length === 0) return;
+    if (blockedRef.current || items.length === 0) return;
     const registry = registryRef.current;
     if (!registry) return;
     const positions = staggeredPositions(origin, items.length);
@@ -339,8 +346,36 @@ function BoardSurface({ session }: { session: SessionProps }) {
   viewportCenterRef.current = viewportCenter;
 
   useEffect(() => {
+    document.documentElement.dataset.theme = appearance;
+  }, [appearance]);
+
+  useEffect(() => {
+    let cancel = false;
+    void readAppearance(session.database).then((next) => {
+      if (!cancel) setAppearance(next);
+    });
+    return () => {
+      cancel = true;
+    };
+  }, [session.database]);
+
+  useEffect(() => {
+    const onCopy = (event: ClipboardEvent) => {
+      if (editingRef.current || blockedRef.current) return;
+      const target = event.target;
+      if (target instanceof HTMLElement) {
+        const tag = target.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable) return;
+      }
+      const payload = selectionClosure(boardRef.current, selectedRef.current);
+      if (!payload) return;
+      const encoded = encodeGraphClipboard(payload);
+      event.clipboardData?.setData('text/plain', encoded);
+      event.clipboardData?.setData(GRAPH_MIME, encoded);
+      event.preventDefault();
+    };
     const onPaste = (event: ClipboardEvent) => {
-      if (editingRef.current) return;
+      if (editingRef.current || blockedRef.current) return;
       const target = event.target;
       if (target instanceof HTMLElement) {
         const tag = target.tagName;
@@ -348,6 +383,23 @@ function BoardSurface({ session }: { session: SessionProps }) {
       }
       const data = event.clipboardData;
       if (!data) return;
+      const encoded = data.getData(GRAPH_MIME) || data.getData('text/plain');
+      const graph = decodeGraphClipboard(encoded);
+      if (graph) {
+        event.preventDefault();
+        const repeat = pasteRepeat.current.key === encoded ? pasteRepeat.current.count + 1 : 0;
+        pasteRepeat.current = { key: encoded, count: repeat };
+        const origin = pointerRef.current ?? viewportCenterRef.current();
+        const result = pasteGraph(boardRef.current, graph, origin, new Set(libraryRef.current.keys()), repeat);
+        if ('error' in result) {
+          setNotice({ text: result.error, source: 'ingest' });
+          return;
+        }
+        const previous = new Set(boardRef.current.nodes.map((node) => node.id));
+        publish(result, boardRef.current, 'save');
+        replaceSelection(result.nodes.filter((node) => !previous.has(node.id) && (node.kind === 'group' || !node.parentId)).map((node) => node.id));
+        return;
+      }
       const snapshot = captureClipboardData(data);
       event.preventDefault();
       const origin = pointerRef.current ?? viewportCenterRef.current();
@@ -360,8 +412,12 @@ function BoardSurface({ session }: { session: SessionProps }) {
           setNotice({ text: errorMessage(error), source: 'ingest' });
         });
     };
+    window.addEventListener('copy', onCopy);
     window.addEventListener('paste', onPaste);
-    return () => window.removeEventListener('paste', onPaste);
+    return () => {
+      window.removeEventListener('copy', onCopy);
+      window.removeEventListener('paste', onPaste);
+    };
   }, []);
 
   function groupSelected() {
@@ -395,6 +451,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
   }
 
   function restoreHistory(direction: 'undo' | 'redo') {
+    if (blockedRef.current) return;
     const current = boardRef.current;
     const result = direction === 'undo' ? undoHistory(historyRef.current, current) : redoHistory(historyRef.current, current);
     if (!result) return;
@@ -460,6 +517,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const actions = useMemo<BoardActions>(
     () => ({
       beginEditing(id) {
+        if (blockedRef.current) return;
         textBefore.current = structuredClone(boardRef.current);
         editingRef.current = id;
         setEditingId(id);
@@ -467,6 +525,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
         setSelectedIds([id]);
       },
       updateText(id, text) {
+        if (blockedRef.current) return;
         const next = updateText(boardRef.current, id, text);
         if (next === boardRef.current) return;
         boardRef.current = next;
@@ -485,19 +544,29 @@ function BoardSurface({ session }: { session: SessionProps }) {
         queue.saveNow();
       },
       setMode(id, mode) {
+        if (blockedRef.current) return;
         const before = boardRef.current;
         const next = setImageMode(before, id, mode);
         if (next === before) return;
         publish(next, before, 'save');
       },
       noteIntrinsicSize(id, width, height) {
+        if (blockedRef.current) return;
         const next = noteImageIntrinsic(boardRef.current, id, width, height);
         if (next === boardRef.current) return;
         boardRef.current = next;
         setBoard(next);
         queue.saveNow();
       },
+      setPresentation(id, presentation) {
+        if (blockedRef.current) return;
+        const before = boardRef.current;
+        const next = setPresentation(before, id, presentation);
+        if (next === before) return;
+        publish(next, before, 'save');
+      },
       renameGroup(id, label) {
+        if (blockedRef.current) return;
         if (!renameBefore.current) renameBefore.current = structuredClone(boardRef.current);
         const next = renameGroup(boardRef.current, id, label);
         if (next === boardRef.current) return;
@@ -515,6 +584,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
         queue.saveNow();
       },
       createNoteIn(groupId) {
+        if (blockedRef.current) return;
         const before = boardRef.current;
         const note = createTextNode({ x: 0, y: 0 });
         const next = createTextInside(before, groupId, note);
@@ -526,6 +596,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
         setEditingId(note.id);
       },
       deleteContents(groupId) {
+        if (blockedRef.current) return;
         const before = boardRef.current;
         const next = deleteGroupContents(before, groupId);
         if (next === before) return;
@@ -656,7 +727,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
     frameRef.current = null;
     setDraft(null);
     setTool('select');
-    if (!start) return;
+    if (!start || blockedRef.current) return;
     const rect = normalizeRect(start, point);
     const before = boardRef.current;
     const result = groupFrame(before, rect);
@@ -678,6 +749,8 @@ function BoardSurface({ session }: { session: SessionProps }) {
         foreignRef.current = true;
         blockedRef.current = true;
         queue.suspend();
+        editingRef.current = null;
+        setEditingId(null);
         setReadOnly(true);
       },
       (message) => {
@@ -686,6 +759,8 @@ function BoardSurface({ session }: { session: SessionProps }) {
         foreignRef.current = true;
         blockedRef.current = true;
         queue.suspend();
+        editingRef.current = null;
+        setEditingId(null);
         setReadOnly(true);
         setNotice({
           text: 'Another tab saved this board. Reload before editing so this tab does not overwrite it.',
@@ -729,7 +804,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
       unsaved: captured.unsaved,
       summary: `${summary.embeddedAssets} embedded images, ${summary.externalImages} external references, about ${summary.totalBytes} bytes of board and image data.`,
     });
-    exportHold.current = captured;
+    exportHold.current = { ...captured, key: boardSnapshotKey(captured.board) };
   }
 
   async function runExport() {
@@ -753,13 +828,13 @@ function BoardSurface({ session }: { session: SessionProps }) {
       return;
     }
     blockedRef.current = true;
-    queue.suspend();
+    queue.holdForReplacement();
     await queue.idle();
     try {
       await replaceStoredBoard(session.database, nextBoard, assets, queue.expectation());
     } catch (error) {
       blockedRef.current = foreignRef.current;
-      if (!foreignRef.current) queue.resume();
+      if (!foreignRef.current) queue.abortReplacement();
       setNotice({ text: error instanceof RevisionConflictError ? error.message : errorMessage(error), source: 'save' });
       return;
     }
@@ -918,6 +993,10 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const onBeforeDeleteStable = useCallback((params: { nodes: { id: string }[]; edges: { id: string }[] }) => {
     return handlers.current.onBeforeDelete(params.nodes, params.edges);
   }, []);
+  const onMoveStable = useCallback((_: unknown, viewport: Viewport) => {
+    const zoom = viewport.zoom || 1;
+    boardEl.current?.style.setProperty('--handle-scale', String(1 / zoom));
+  }, []);
   const onPointerMoveStable = useCallback((event: ReactPointerEvent) => {
     handlers.current.onPointerMove(flowRef.current.screenToFlowPosition({ x: event.clientX, y: event.clientY }));
   }, []);
@@ -925,6 +1004,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
   return (
     <BoardActionsProvider value={actions}>
       <div
+        ref={boardEl}
         className={tool === 'frame' ? 'board is-framing' : 'board'}
         onDragEnter={(event) => {
           if (!hasFiles(event.dataTransfer)) return;
@@ -946,6 +1026,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
           event.preventDefault();
           dragDepth.current = 0;
           setFileDrag(false);
+          if (blockedRef.current) return;
           const origin = screenToFlowPosition({ x: event.clientX, y: event.clientY });
           void ingestFileList(event.dataTransfer.files)
             .then((bundle) => {
@@ -961,9 +1042,11 @@ function BoardSurface({ session }: { session: SessionProps }) {
           title={board.title}
           status={status}
           tool={tool}
+          appearance={appearance}
           canGroup={canGroup}
           canUngroup={canUngroup}
           onTitle={(title) => {
+            if (blockedRef.current) return;
             const next = renameBoard(boardRef.current, title);
             if (next === boardRef.current) return;
             replaceBoard(next);
@@ -984,6 +1067,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
             queue.schedule(300);
           }}
           onAddImages={(files) => {
+            if (blockedRef.current) return;
             const origin = pointerRef.current ?? viewportCenter();
             void ingestFileList(files)
               .then((bundle) => {
@@ -994,32 +1078,41 @@ function BoardSurface({ session }: { session: SessionProps }) {
                 setNotice({ text: errorMessage(error), source: 'ingest' });
               });
           }}
-        />
-        <ProjectMenu
-          open={projectOpen}
-          usage={usage}
-          estimate={estimate}
-          persisted={persisted}
-          onToggle={() => {
-            setProjectOpen((open) => {
-              const next = !open;
-              if (next) void refreshStorage();
-              return next;
-            });
+          onUndo={() => commands.current.undo()}
+          onRedo={() => commands.current.redo()}
+          onAppearance={() => {
+            const next = appearance === 'dark' ? 'light' : 'dark';
+            setAppearance(next);
+            void writeAppearance(session.database, next);
           }}
-          onExport={() => void stageExport(false)}
-          onExportNew={() => void stageExport(true)}
-          onImport={(file) => void stageImport(file)}
-          onBlank={() => setConfirming({ kind: 'blank' })}
-          onClear={() => setConfirming({ kind: 'clear' })}
-          onPersist={() => {
-            const storage = navigator.storage;
-            if (!storage?.persist) {
-              setPersisted(null);
-              return;
-            }
-            void storage.persist().then((granted) => setPersisted(granted));
-          }}
+          trailing={
+            <ProjectMenu
+              open={projectOpen}
+              usage={usage}
+              estimate={estimate}
+              persisted={persisted}
+              onToggle={() => {
+                setProjectOpen((open) => {
+                  const next = !open;
+                  if (next) void refreshStorage();
+                  return next;
+                });
+              }}
+              onExport={() => void stageExport(false)}
+              onExportNew={() => void stageExport(true)}
+              onImport={(file) => void stageImport(file)}
+              onBlank={() => setConfirming({ kind: 'blank' })}
+              onClear={() => setConfirming({ kind: 'clear' })}
+              onPersist={() => {
+                const storage = navigator.storage;
+                if (!storage?.persist) {
+                  setPersisted(null);
+                  return;
+                }
+                void storage.persist().then((granted) => setPersisted(granted));
+              }}
+            />
+          }
         />
         {readOnly ? (
           <div className="banner" role="status">
@@ -1047,7 +1140,15 @@ function BoardSurface({ session }: { session: SessionProps }) {
               onClick={() => {
                 if (confirming.kind === 'export') void runExport();
                 else if (confirming.kind === 'import') void replaceActive(confirming.board, confirming.assets);
-                else if (confirming.kind === 'blank' || confirming.kind === 'clear' || confirming.kind === 'exported-clear') {
+                else if (confirming.kind === 'exported-clear') {
+                  const exported = exportHold.current;
+                  if (!exported || boardSnapshotKey(boardRef.current) !== exported.key) {
+                    setNotice({ text: 'The board changed after that export. Export it again before clearing.', source: 'ingest' });
+                    setConfirming(null);
+                    return;
+                  }
+                  void replaceActive(createEmptyBoard(), []);
+                } else if (confirming.kind === 'blank' || confirming.kind === 'clear') {
                   void replaceActive(createEmptyBoard(), []);
                 }
               }}
@@ -1098,6 +1199,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
           defaultViewport={initialViewport.current}
           onNodesChange={onNodesChangeStable}
           onEdgesChange={onEdgesChangeStable}
+          onMove={onMoveStable}
           onMoveEnd={onMoveEndStable}
           onPointerMove={onPointerMoveStable}
           onPointerDown={(event) => {
@@ -1136,12 +1238,12 @@ function BoardSurface({ session }: { session: SessionProps }) {
           connectionMode={ConnectionMode.Loose}
           elementsSelectable
           elevateNodesOnSelect={false}
-          colorMode="dark"
-          proOptions={{ hideAttribution: false }}
+          colorMode={appearance}
+          proOptions={{ hideAttribution: true }}
           fitView={false}
           defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
         >
-          <Background variant={BackgroundVariant.Dots} gap={20} size={1.4} color="#4c596b" />
+          <Background variant={BackgroundVariant.Dots} gap={20} size={1.4} color={appearance === 'light' ? '#d2c9be' : '#4c596b'} />
           {draft ? (
             <ViewportPortal>
               <div
@@ -1174,6 +1276,7 @@ function toFlowNode(
     zIndex: node.kind === 'group' ? 0 : 1,
     draggable: node.kind !== 'text' || !editing,
     style: { width: node.width, height: node.height },
+    measured: { width: node.width, height: node.height },
   };
   if (node.kind === 'group') {
     const extent = contentExtent(nodes, node.id);
@@ -1188,7 +1291,13 @@ function toFlowNode(
       },
     };
   }
-  if (node.kind === 'text') return { ...base, type: 'text', data: { text: node.text, editing } };
+  if (node.kind === 'text') {
+    return {
+      ...base,
+      type: 'text',
+      data: { text: node.text, editing, presentation: node.presentation ?? 'text', language: node.language },
+    };
+  }
   const image = node as ImageNode;
   const src = image.source.type === 'external' ? image.source.url : (registry?.get(image.source.assetId) ?? null);
   return {

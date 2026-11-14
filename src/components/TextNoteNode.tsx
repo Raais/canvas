@@ -6,6 +6,8 @@ import { PortHandles } from './PortHandles';
 export type TextNodeData = {
   text: string;
   editing: boolean;
+  presentation: 'text' | 'code';
+  language?: string;
 };
 
 export type TextFlowNode = Node<TextNodeData, 'text'>;
@@ -23,7 +25,12 @@ export function TextNoteNode({ id, data, selected }: NodeProps<TextFlowNode>) {
     editor.setSelectionRange(end, end);
   }, [data.editing]);
 
-  const className = data.editing ? 'text-note is-editing' : selected ? 'text-note is-selected' : 'text-note';
+  const className = [
+    'text-note',
+    data.presentation === 'code' ? 'is-code' : '',
+    data.editing ? 'is-editing' : '',
+    selected ? 'is-selected' : '',
+  ].filter(Boolean).join(' ');
 
   return (
     <div
@@ -41,6 +48,17 @@ export function TextNoteNode({ id, data, selected }: NodeProps<TextFlowNode>) {
         lineStyle={{ borderColor: '#7aa2c4' }}
       />
       <PortHandles />
+      {selected && !data.editing ? (
+        <div className="image-tools nodrag nopan nowheel" onPointerDown={(event) => event.stopPropagation()}>
+          <button type="button" aria-pressed={data.presentation !== 'code'} onClick={() => actions.setPresentation(id, 'text')}>
+            Text
+          </button>
+          <button type="button" aria-pressed={data.presentation === 'code'} onClick={() => actions.setPresentation(id, 'code')}>
+            Code
+          </button>
+        </div>
+      ) : null}
+      {data.presentation === 'code' && !data.editing ? <span className="code-mark">{data.language ?? 'Code'}</span> : null}
       {data.editing ? (
         <textarea
           ref={editorRef}

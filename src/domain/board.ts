@@ -1,4 +1,5 @@
 import { contentExtent } from './geometry';
+import { classifyPlainText } from './code';
 import {
   ASPECT_MIN_SIZE,
   FALLBACK_IMAGE_HEIGHT,
@@ -42,7 +43,8 @@ export function createEmptyBoard(now = new Date().toISOString()): Board {
 }
 
 export function createTextNode(center: Point, text = ''): TextNode {
-  return {
+    const guess = text.trim() ? classifyPlainText(text) : null;
+    return {
     id: crypto.randomUUID(),
     kind: 'text',
     x: Math.round(center.x - TEXT_NOTE_WIDTH / 2),
@@ -50,6 +52,7 @@ export function createTextNode(center: Point, text = ''): TextNode {
     width: TEXT_NOTE_WIDTH,
     height: TEXT_NOTE_HEIGHT,
     text,
+    ...(guess?.presentation === 'code' ? { presentation: 'code' as const, ...(guess.language ? { language: guess.language } : {}) } : {}),
   };
 }
 
@@ -211,7 +214,26 @@ export function setImageMode(board: Board, id: string, mode: ImageDisplayMode, n
       const height = Math.max(1, Math.round(node.width * (node.intrinsicHeight / node.intrinsicWidth)));
       return { ...node, mode, height };
     }
-    return { ...node, mode };
+    return { ...node, mode: mode === 'aspect' ? mode : 'stretch' };
+  }, now);
+}
+
+export function setPresentation(
+  board: Board,
+  id: string,
+  presentation: 'text' | 'code',
+  now?: string,
+): Board {
+  return mapNode(board, id, (node) => {
+    if (node.kind !== 'text') return node;
+    if (presentation === 'text') {
+      const next = { ...node };
+      delete next.presentation;
+      delete next.language;
+      return next;
+    }
+    if (node.presentation === 'code') return node;
+    return { ...node, presentation: 'code' };
   }, now);
 }
 
@@ -379,6 +401,10 @@ function parseNode(value: unknown): BoardNode | null {
   }
   if (value.kind === 'text') {
     if (typeof value.text !== 'string') return null;
+    const presentation = value.presentation === 'code' ? 'code' : value.presentation === 'text' || value.presentation == null ? 'text' : null;
+    if (!presentation) return null;
+    const language = typeof value.language === 'string' && value.language.length > 0 && value.language.length <= 32 ? value.language : undefined;
+    if (value.language != null && language === undefined) return null;
     return {
       id: value.id,
       kind: 'text',
@@ -388,10 +414,13 @@ function parseNode(value: unknown): BoardNode | null {
       width: value.width,
       height: value.height,
       text: value.text,
+      ...(presentation === 'code' ? { presentation } : {}),
+      ...(presentation === 'code' && language ? { language } : {}),
     };
   }
   if (value.kind === 'image') {
-    if (value.mode !== 'aspect' && value.mode !== 'contain') return null;
+    const mode = value.mode === 'contain' ? 'stretch' : value.mode;
+    if (mode !== 'aspect' && mode !== 'stretch') return null;
     if (!isPositive(value.intrinsicWidth) || !isPositive(value.intrinsicHeight)) return null;
     if (typeof value.sizedFromImage !== 'boolean') return null;
     const source = parseImageSource(value.source);
@@ -404,7 +433,7 @@ function parseNode(value: unknown): BoardNode | null {
       y: value.y,
       width: value.width,
       height: value.height,
-      mode: value.mode,
+      mode,
       intrinsicWidth: value.intrinsicWidth,
       intrinsicHeight: value.intrinsicHeight,
       sizedFromImage: value.sizedFromImage,

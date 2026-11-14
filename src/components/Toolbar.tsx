@@ -1,5 +1,21 @@
 import { useReactFlow } from '@xyflow/react';
-import { useRef } from 'react';
+import {
+  Frame,
+  Image as ImageIcon,
+  Moon,
+  MousePointer2,
+  Redo2,
+  StickyNote,
+  Sun,
+  Undo2,
+  Ungroup,
+  ZoomIn,
+  ZoomOut,
+  Group,
+  Scan,
+} from 'lucide-react';
+import { useRef, type ReactNode } from 'react';
+import type { Appearance } from '../persistence/db';
 import type { SaveStatus } from '../persistence/save-queue';
 
 const STATUS_LABEL: Record<SaveStatus, string> = {
@@ -13,6 +29,7 @@ type ToolbarProps = {
   title: string;
   status: SaveStatus;
   tool: 'select' | 'frame';
+  appearance: Appearance;
   canGroup: boolean;
   canUngroup: boolean;
   onTitle: (title: string) => void;
@@ -22,12 +39,17 @@ type ToolbarProps = {
   onTool: (tool: 'select' | 'frame') => void;
   onGroup: () => void;
   onUngroup: () => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  onAppearance: () => void;
+  trailing: ReactNode;
 };
 
 export function Toolbar({
   title,
   status,
   tool,
+  appearance,
   canGroup,
   canUngroup,
   onTitle,
@@ -37,6 +59,10 @@ export function Toolbar({
   onTool,
   onGroup,
   onUngroup,
+  onUndo,
+  onRedo,
+  onAppearance,
+  trailing,
 }: ToolbarProps) {
   const fileRef = useRef<HTMLInputElement>(null);
   const { zoomIn, zoomOut, fitView, getViewport } = useReactFlow();
@@ -57,52 +83,73 @@ export function Toolbar({
           onChange={(event) => onTitle(event.target.value)}
         />
       </div>
-      <div className="toolbar-group">
-        <button type="button" onClick={onNewNote}>
-          Note
-        </button>
-        <button type="button" onClick={() => fileRef.current?.click()}>
-          Image
-        </button>
-        <input
-          ref={fileRef}
-          className="file-input"
-          type="file"
-          accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
-          multiple
-          onChange={(event) => {
-            const files = event.target.files;
-            if (files && files.length > 0) onAddImages(files);
-            event.target.value = '';
-          }}
-        />
-      </div>
-      <div className="toolbar-group">
-        <button type="button" aria-pressed={tool === 'frame'} onClick={() => onTool(tool === 'frame' ? 'select' : 'frame')}>
-          Frame
-        </button>
-        <button type="button" onClick={onGroup} disabled={!canGroup}>
-          Group
-        </button>
-        <button type="button" onClick={onUngroup} disabled={!canUngroup}>
-          Ungroup
-        </button>
-      </div>
-      <div className="toolbar-group">
-        <button type="button" onClick={() => settle(() => zoomOut({ duration: 150 }))}>
-          Zoom out
-        </button>
-        <button type="button" onClick={() => settle(() => zoomIn({ duration: 150 }))}>
-          Zoom in
-        </button>
-        <button type="button" onClick={() => settle(() => fitView({ padding: 0.2, duration: 150 }))}>
-          Fit
-        </button>
+      <div className="toolbar-center">
+        <div className="toolbar-group">
+          <button type="button" className="icon-button" aria-pressed={tool === 'select'} aria-label="Select" title="Select" onClick={() => onTool('select')}>
+            <MousePointer2 size={17} strokeWidth={1.75} />
+          </button>
+          <button type="button" className="icon-button" aria-label="New note" title="New note" onClick={onNewNote}>
+            <StickyNote size={17} strokeWidth={1.75} />
+          </button>
+          <button type="button" className="icon-button" aria-label="Add image" title="Add image" onClick={() => fileRef.current?.click()}>
+            <ImageIcon size={17} strokeWidth={1.75} />
+          </button>
+          <input
+            ref={fileRef}
+            className="file-input"
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
+            multiple
+            onChange={(event) => {
+              const files = event.target.files;
+              if (files && files.length > 0) onAddImages(files);
+              event.target.value = '';
+            }}
+          />
+          <button type="button" className="icon-button" aria-pressed={tool === 'frame'} aria-label="Frame" title="Frame" onClick={() => onTool(tool === 'frame' ? 'select' : 'frame')}>
+            <Frame size={17} strokeWidth={1.75} />
+          </button>
+        </div>
+        <div className="toolbar-group">
+          <button type="button" className="icon-button" aria-label="Group selection" title="Group" onClick={onGroup} disabled={!canGroup}>
+            <Group size={17} strokeWidth={1.75} />
+          </button>
+          <button type="button" className="icon-button" aria-label="Ungroup" title="Ungroup" onClick={onUngroup} disabled={!canUngroup}>
+            <Ungroup size={17} strokeWidth={1.75} />
+          </button>
+          <button type="button" className="icon-button" aria-label="Undo" title="Undo" onClick={onUndo}>
+            <Undo2 size={17} strokeWidth={1.75} />
+          </button>
+          <button type="button" className="icon-button" aria-label="Redo" title="Redo" onClick={onRedo}>
+            <Redo2 size={17} strokeWidth={1.75} />
+          </button>
+        </div>
+        <div className="toolbar-group">
+          <button type="button" className="icon-button" aria-label="Zoom out" title="Zoom out" onClick={() => settle(() => zoomOut({ duration: 150 }))}>
+            <ZoomOut size={17} strokeWidth={1.75} />
+          </button>
+          <button type="button" className="icon-button" aria-label="Zoom in" title="Zoom in" onClick={() => settle(() => zoomIn({ duration: 150 }))}>
+            <ZoomIn size={17} strokeWidth={1.75} />
+          </button>
+          <button type="button" className="icon-button" aria-label="Fit" title="Fit" onClick={() => settle(() => fitView({ padding: 0.2, duration: 150 }))}>
+            <Scan size={17} strokeWidth={1.75} />
+          </button>
+        </div>
       </div>
       <div className="toolbar-group status-group">
         <span className={status === 'error' ? 'status is-error' : 'status'} role="status" aria-live="polite">
           {STATUS_LABEL[status]}
         </span>
+        <button
+          type="button"
+          className="icon-button"
+          aria-label={appearance === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          title={appearance === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          onClick={onAppearance}
+        >
+          {appearance === 'dark' ? <Sun size={17} strokeWidth={1.75} /> : <Moon size={17} strokeWidth={1.75} />}
+        </button>
+        {trailing}
       </div>
     </div>
   );
