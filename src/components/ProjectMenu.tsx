@@ -50,6 +50,9 @@ export function ProjectMenu({
                 </button>
               ))}
             </div>
+            <button type="button" className="atlas-choice" aria-pressed={pattern === 'dither-atlas'} onClick={() => onPattern('dither-atlas')}>
+              Dither Atlas
+            </button>
           </section>
           <div className="project-divider" />
           <div className="project-actions">

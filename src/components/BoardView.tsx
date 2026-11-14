@@ -13,7 +13,7 @@ import {
   type Viewport,
 } from '@xyflow/react';
 import { Eye, EyeOff } from 'lucide-react';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import {
   addNodes,
   commitInteraction,
@@ -27,6 +27,7 @@ import {
   setImageMode,
   setAppearance,
   setBackgroundPattern,
+  setGroupBackgroundTone,
   setCodeLanguage,
   setCornerStyle,
   setNoteTone,
@@ -85,7 +86,10 @@ import { GroupNode, type GroupFlowNode } from './GroupNode';
 import { ImageNoteNode, type ImageFlowNode } from './ImageNoteNode';
 import { SelectionBar } from './SelectionBar';
 import { TextNoteNode, type TextFlowNode } from './TextNoteNode';
+import { AtlasBoundary } from '../backgrounds/AtlasBoundary';
 import { ProjectMenu } from './ProjectMenu';
+
+const DitherAtlasLayer = lazy(() => import('../backgrounds/DitherAtlasLayer'));
 import { Toolbar } from './Toolbar';
 
 type CanvasFlowNode = TextFlowNode | ImageFlowNode | GroupFlowNode;
@@ -133,6 +137,8 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const [readOnly, setReadOnly] = useState(false);
   const [historyStamp, setHistoryStamp] = useState(0);
   const [chromeHidden, setChromeHidden] = useState(false);
+  const [atlasBlocked, setAtlasBlocked] = useState(false);
+  const blockAtlas = useCallback(() => setAtlasBlocked(true), []);
   const [confirming, setConfirming] = useState<
     | null
     | { kind: 'blank' | 'clear' | 'exported-clear' }
@@ -647,6 +653,13 @@ function BoardSurface({ session }: { session: SessionProps }) {
         if (text === node.text) return;
         publish(updateText(before, id, text), before, 'save');
       },
+      setGroupTone(id, tone) {
+        if (blockedRef.current) return;
+        const before = boardRef.current;
+        const next = setGroupBackgroundTone(before, id, tone as 'default');
+        if (next === before) return;
+        publish(next, before, 'save');
+      },
       setCornerStyle(id, style) {
         if (blockedRef.current) return;
         const before = boardRef.current;
@@ -1102,7 +1115,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
     <BoardActionsProvider value={actions}>
       <div
         ref={boardEl}
-        className={tool === 'frame' ? 'board is-framing' : 'board'}
+        className={`${tool === 'frame' ? 'board is-framing' : 'board'}${board.backgroundPattern === 'dither-atlas' && board.ditherAtlas && !atlasBlocked ? ' has-dither-atlas' : ''}`}
         onDragEnter={(event) => {
           if (!hasFiles(event.dataTransfer)) return;
           event.preventDefault();
@@ -1135,6 +1148,13 @@ function BoardSurface({ session }: { session: SessionProps }) {
             });
         }}
       >
+        {board.backgroundPattern === 'dither-atlas' && board.ditherAtlas && !atlasBlocked ? (
+          <AtlasBoundary onUnavailable={blockAtlas}>
+            <Suspense fallback={null}>
+              <DitherAtlasLayer seed={board.ditherAtlas.seed} appearance={board.appearance} onUnavailable={blockAtlas} />
+            </Suspense>
+          </AtlasBoundary>
+        ) : null}
         {chromeHidden ? null : (
         <Toolbar
           title={board.title}
@@ -1195,6 +1215,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
               persisted={persisted}
               pattern={board.backgroundPattern}
               onPattern={(pattern) => {
+                setAtlasBlocked(false);
                 if (blockedRef.current) return;
                 const next = setBackgroundPattern(boardRef.current, pattern);
                 if (next === boardRef.current) return;
@@ -1225,6 +1246,11 @@ function BoardSurface({ session }: { session: SessionProps }) {
           }
         />
         )}
+        {atlasBlocked && board.backgroundPattern === 'dither-atlas' ? (
+          <div className="banner" role="status">
+            <p>Dither Atlas unavailable on this device. Showing Dots.</p>
+          </div>
+        ) : null}
         {readOnly ? (
           <div className="banner" role="status">
             <p>This board is open in another tab. Reload before editing so this tab does not overwrite it.</p>
@@ -1356,7 +1382,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
           fitView={false}
           defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
         >
-          {board.backgroundPattern === 'blank' ? null : (
+          {board.backgroundPattern === 'blank' || (board.backgroundPattern === 'dither-atlas' && !atlasBlocked) ? null : (
             <Background variant={board.backgroundPattern === 'grid' ? BackgroundVariant.Lines : board.backgroundPattern === 'cross' ? BackgroundVariant.Cross : BackgroundVariant.Dots} gap={20} size={1.4} color={board.appearance === 'light' ? '#d2c9be' : '#3c4652'} />
           )}
           {draft ? (
@@ -1417,6 +1443,7 @@ function toFlowNode(
         label: node.label,
         minWidth: Math.max(GROUP_MIN_WIDTH, extent ? extent.right + GROUP_PAD : GROUP_MIN_WIDTH),
         minHeight: Math.max(GROUP_MIN_HEIGHT, extent ? extent.bottom + GROUP_PAD : GROUP_MIN_HEIGHT),
+        backgroundTone: node.backgroundTone,
       },
     };
   }

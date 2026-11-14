@@ -43,6 +43,7 @@ export function boardSnapshotKey(board: Board): string {
     title: board.title,
     appearance: board.appearance,
     backgroundPattern: board.backgroundPattern,
+    ditherAtlas: board.ditherAtlas ?? null,
     nodes: board.nodes,
     edges: board.edges,
     viewport: board.viewport,

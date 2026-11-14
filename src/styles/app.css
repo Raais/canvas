@@ -475,10 +475,35 @@ button:focus-visible, .title-input:focus-visible, select:focus-visible {
 
 .group-node {
   position: relative;
-  background: var(--group);
-  border: 1px solid var(--group-line);
+  background: var(--group-fill-current, var(--group));
+  border: 1px solid var(--group-border-current, var(--group-line));
   border-radius: var(--radius-card);
 }
+.group-node.group-bg-slate { --group-fill-current: rgb(142 160 181 / 11%); --group-border-current: rgb(142 160 181 / 42%); }
+.group-node.group-bg-sage { --group-fill-current: rgb(142 174 152 / 11%); --group-border-current: rgb(142 174 152 / 42%); }
+.group-node.group-bg-sand { --group-fill-current: rgb(198 176 137 / 12%); --group-border-current: rgb(198 176 137 / 45%); }
+.group-node.group-bg-rose { --group-fill-current: rgb(215 163 168 / 12%); --group-border-current: rgb(215 163 168 / 45%); }
+.group-actions button.icon-button { width: 32px; height: 32px; padding: 0; }
+.group-tone-menu {
+  position: absolute;
+  top: 36px;
+  right: 0;
+  z-index: 6;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+.group-tone-menu .tone-default { background: color-mix(in srgb, var(--group-line) 55%, var(--surface)); }
+.group-tone-menu .tone-slate { background: #8ea0b5; }
+.group-tone-menu .tone-sage { background: #8eae98; }
+.group-tone-menu .tone-sand { background: #c6b089; }
+.group-tone-menu .tone-rose { background: #d7a3a8; }
+.dither-atlas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+.board.has-dither-atlas .react-flow { background: transparent; --xy-background-color: transparent; }
+.atlas-choice { width: 100%; }
 
 .group-header {
   display: flex;

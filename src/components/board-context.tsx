@@ -17,6 +17,7 @@ export type BoardActions = {
   endRename: () => void;
   createNoteIn: (groupId: string) => void;
   deleteContents: (groupId: string) => void;
+  setGroupTone: (id: string, tone: string) => void;
 };
 
 const BoardActionsContext = createContext<BoardActions | null>(null);

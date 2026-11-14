@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 4 as const;
+export const SCHEMA_VERSION = 5 as const;
 
 export const TEXT_NOTE_WIDTH = 240;
 export const TEXT_NOTE_HEIGHT = 140;
@@ -30,7 +30,8 @@ export type NotePresentation = 'text' | 'markdown' | 'code';
 export type BackgroundTone = 'slate' | 'sage' | 'sand' | 'rose';
 export type TextTone = 'muted' | 'blue' | 'sage' | 'warm';
 export type CodeLanguage = 'javascript' | 'typescript' | 'python' | 'json' | 'html' | 'css' | 'shell' | 'plain';
-export type BackgroundPattern = 'dots' | 'grid' | 'cross' | 'blank';
+export type BackgroundPattern = 'dots' | 'grid' | 'cross' | 'blank' | 'dither-atlas';
+export type DitherAtlasConfig = { seed: number; rendererVersion: 1 };
 export type CornerStyle = 'rounded' | 'square';
 
 export type HandleSide = 'top' | 'right' | 'bottom' | 'left';
@@ -87,6 +88,7 @@ export type GroupNode = {
   width: number;
   height: number;
   label: string;
+  backgroundTone?: BackgroundTone;
 };
 
 export type ContentNode = TextNode | ImageNode;
@@ -111,6 +113,7 @@ export type Board = {
   revision: number;
   appearance: Appearance;
   backgroundPattern: BackgroundPattern;
+  ditherAtlas?: DitherAtlasConfig;
   nodes: BoardNode[];
   edges: BoardEdge[];
   viewport: Viewport;

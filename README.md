@@ -4,7 +4,7 @@
 
 canvas is a local-first spatial notebook and moodboard. Arrange plain-text notes, code notes, images, undirected links, and rigid clusters on an infinite, zoomable canvas. The board lives in this browser. There is no account, backend, or upload server.
 
-This release adds Markdown notes with checklists, view-only code highlighting, note colors, image corner styles, and canvas background patterns. Checklists live in the Markdown source, highlighting is display-only, and the supported Markdown subset is intentionally small.
+Dots remains the default canvas background. Dither Atlas is an opt-in, static WebGL2 background. Its seed is derived once from the project title, then saved, so renaming the board later does not move the terrain. The generated pixels are not stored; a ZIP archive keeps the seed and renderer version, and a device without WebGL2 falls back to Dots. Group frames can use a translucent Slate, Sage, Sand, or Rose tint. Checklists still live in the Markdown source, and highlighting stays display-only.
 
 ## What you can do
 
@@ -38,6 +38,8 @@ A second tab becomes read-only when another tab already has the board open. A sa
 - Deleting a group frame keeps the notes. Delete contents is the separate action that removes the notes too.
 - Undo cannot survive a reload, an import, or a new board.
 - There is no cloud backup, account, or multi-project library.
+- Dither Atlas is static and grayscale. It does not animate, and very large world coordinates lose some GPU precision.
+- The procedural background loads only after it is selected. Ordinary Dots, Grid, Cross, and Blank boards do not start WebGL.
 
 ## Requirements
 

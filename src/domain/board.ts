@@ -1,3 +1,4 @@
+import { seedFromProjectName } from '../backgrounds/atlas-seed';
 import { contentExtent } from './geometry';
 import { classifyPlainText } from './code';
 import {
@@ -243,8 +244,25 @@ export function setPresentation(
 }
 
 export function setBackgroundPattern(board: Board, backgroundPattern: BackgroundPattern, now?: string): Board {
+  if (backgroundPattern === 'dither-atlas') {
+    const ditherAtlas = board.ditherAtlas ?? { seed: seedFromProjectName(board.title), rendererVersion: 1 as const };
+    if (board.backgroundPattern === 'dither-atlas' && board.ditherAtlas?.seed === ditherAtlas.seed) return board;
+    return touch(board, { backgroundPattern, ditherAtlas }, now);
+  }
   if (board.backgroundPattern === backgroundPattern) return board;
   return touch(board, { backgroundPattern }, now);
+}
+
+export function setGroupBackgroundTone(board: Board, id: string, tone: BackgroundTone | 'default', now?: string): Board {
+  return mapNode(board, id, (node) => {
+    if (node.kind !== 'group') return node;
+    const next = { ...node };
+    if (tone === 'default') delete next.backgroundTone;
+    else next.backgroundTone = tone;
+    if (next.backgroundTone === node.backgroundTone && tone !== 'default') return node;
+    if (tone === 'default' && node.backgroundTone == null) return node;
+    return next;
+  }, now);
 }
 
 export function setNoteTone(
@@ -370,7 +388,7 @@ export function revise(
 export function parseBoard(value: unknown): Board | null {
   if (!isRecord(value)) return null;
   if (value.schemaVersion === 1) return migrateVersion1(value);
-  if (value.schemaVersion !== 2 && value.schemaVersion !== 3 && value.schemaVersion !== SCHEMA_VERSION) return null;
+  if (value.schemaVersion !== 2 && value.schemaVersion !== 3 && value.schemaVersion !== 4 && value.schemaVersion !== SCHEMA_VERSION) return null;
   if (!isNonEmptyString(value.id) || typeof value.title !== 'string') return null;
   if (typeof value.createdAt !== 'string' || typeof value.updatedAt !== 'string') return null;
   if (!isFiniteNumber(value.revision)) return null;
@@ -397,7 +415,9 @@ export function parseBoard(value: unknown): Board | null {
   const viewport = parseViewport(value.viewport);
   const appearance = parseAppearanceField(value.schemaVersion, value.appearance);
   const backgroundPattern = parsePattern(value.schemaVersion, value.backgroundPattern);
-  if (!viewport || !appearance || !backgroundPattern || !validGraph(nodes, edges)) return null;
+  const ditherAtlas = parseDither(value.ditherAtlas);
+  if (!viewport || !appearance || !backgroundPattern || ditherAtlas === null || !validGraph(nodes, edges)) return null;
+  if (backgroundPattern === 'dither-atlas' && !ditherAtlas) return null;
 
   return {
     schemaVersion: SCHEMA_VERSION,
@@ -408,6 +428,7 @@ export function parseBoard(value: unknown): Board | null {
     revision: value.revision,
     appearance,
     backgroundPattern,
+    ...(ditherAtlas ? { ditherAtlas } : {}),
     nodes,
     edges,
     viewport,
@@ -431,10 +452,17 @@ function parseAppearanceField(schemaVersion: unknown, value: unknown): Appearanc
 }
 
 function parsePattern(schemaVersion: unknown, value: unknown): BackgroundPattern | null {
-  if (value === 'dots' || value === 'grid' || value === 'cross' || value === 'blank') return value;
+  if (value === 'dots' || value === 'grid' || value === 'cross' || value === 'blank' || value === 'dither-atlas') return value;
   if (schemaVersion === SCHEMA_VERSION) return null;
   if (value == null) return 'dots';
   return null;
+}
+
+function parseDither(value: unknown): Board['ditherAtlas'] | null {
+  if (value == null) return undefined;
+  if (!isRecord(value) || value.rendererVersion !== 1) return null;
+  if (typeof value.seed !== 'number' || !Number.isInteger(value.seed) || value.seed < 0 || value.seed > 4294967295) return null;
+  return { seed: value.seed, rendererVersion: 1 };
 }
 
 function parseTone<T extends string>(value: unknown, allowed: readonly T[]): T | undefined | null {
@@ -461,7 +489,7 @@ function mapNode(
 
 function touch(
   board: Board,
-  patch: Partial<Pick<Board, 'title' | 'nodes' | 'edges' | 'viewport' | 'appearance' | 'backgroundPattern'>>,
+  patch: Partial<Pick<Board, 'title' | 'nodes' | 'edges' | 'viewport' | 'appearance' | 'backgroundPattern' | 'ditherAtlas'>>,
   now = new Date().toISOString(),
 ): Board {
   return {
@@ -495,6 +523,8 @@ function parseNode(value: unknown): BoardNode | null {
   if (value.kind === 'group') {
     if (parentId) return null;
     if (typeof value.label !== 'string') return null;
+    const backgroundTone = parseTone(value.backgroundTone, ['slate', 'sage', 'sand', 'rose'] as const);
+    if (backgroundTone === null) return null;
     return {
       id: value.id,
       kind: 'group',
@@ -503,6 +533,7 @@ function parseNode(value: unknown): BoardNode | null {
       width: value.width,
       height: value.height,
       label: value.label,
+      ...(backgroundTone ? { backgroundTone } : {}),
     };
   }
   if (value.kind === 'text') {

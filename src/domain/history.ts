@@ -50,6 +50,7 @@ function revive(snapshot: Board, current: Board): Board {
     ...cloneBoard(snapshot),
     appearance: current.appearance,
     backgroundPattern: current.backgroundPattern,
+    ...(current.ditherAtlas ? { ditherAtlas: current.ditherAtlas } : { ditherAtlas: undefined }),
     viewport: { ...current.viewport },
     revision: current.revision + 1,
     updatedAt: new Date().toISOString(),
