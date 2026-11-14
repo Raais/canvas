@@ -36,8 +36,8 @@ describe('markdown notes', () => {
 describe('presentation metadata', () => {
   test('defaults older boards and rejects unknown tones', () => {
     const empty = createEmptyBoard();
-    expect(empty.backgroundPattern).toBe('dots');
-    const legacy = parseBoard({ ...empty, schemaVersion: 3, backgroundPattern: undefined });
+    expect(empty.backgroundPattern).toBe('dither-atlas');
+    const legacy = parseBoard({ ...empty, schemaVersion: 3, backgroundPattern: undefined, ditherAtlas: undefined });
     expect(legacy?.backgroundPattern).toBe('dots');
     const invalid = parseBoard({
       ...empty,

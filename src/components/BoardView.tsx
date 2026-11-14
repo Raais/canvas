@@ -42,8 +42,12 @@ import {
 import { contentExtent, facingHandles, isContentNode, normalizeRect, worldTopLeft } from '../domain/geometry';
 import { toggleTaskAt } from '../domain/markdown';
 import { gesturePhase, sameSelection } from '../editor/interaction';
-import { plainShortcutBlocked } from '../editor/shortcuts';
+import { plainShortcutBlocked, searchShortcut } from '../editor/shortcuts';
 import { connectNodes, deleteEdges, hasUndirectedLink } from '../domain/graph';
+import { cameraDuration, frameViewport, noteJumpZoom } from '../domain/camera';
+import { setEdgeLabel, setEdgeStyle } from '../domain/relationships';
+import { editSavedView, recallViewport } from '../domain/saved-views';
+import { buildSearchIndex, centerOf, resultBounds, searchNodes } from '../domain/search';
 import { decodeGraphClipboard, encodeGraphClipboard, GRAPH_CLIPBOARD_LIMIT, GRAPH_MIME, looksLikeGraphClipboard, pasteGraph, selectionClosure } from '../domain/graph-clipboard';
 import {
   createTextInside,
@@ -88,6 +92,9 @@ import { createObjectUrlRegistry, type ObjectUrlRegistry } from '../persistence/
 import { errorMessage, SaveQueue, type SaveStatus } from '../persistence/save-queue';
 import { canonicalViewportUpdate } from '../project/viewport-write';
 import { BoardActionsProvider, type BoardActions } from './board-context';
+import { edgeTypes } from './RelationshipEdge';
+import { SavedViewsPanel } from './SavedViewsPanel';
+import { SearchPalette } from './SearchPalette';
 import { Coordinates, type CoordinatesHandle } from './Coordinates';
 import { GroupNode, type GroupFlowNode } from './GroupNode';
 import { ImageNoteNode, type ImageFlowNode } from './ImageNoteNode';
@@ -144,6 +151,9 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const [estimate, setEstimate] = useState<{ usage?: number; quota?: number } | null>(null);
   const [persisted, setPersisted] = useState<boolean | null>(null);
   const [readOnly, setReadOnly] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [viewsOpen, setViewsOpen] = useState(false);
   const [historyStamp, setHistoryStamp] = useState(0);
   const [chromeHidden, setChromeHidden] = useState(false);
   const [atlasBlocked, setAtlasBlocked] = useState(false);
@@ -187,9 +197,16 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const coordinatesRef = useRef<CoordinatesHandle>(null);
   const channelRef = useRef<BoardChannel | null>(null);
   const blockedRef = useRef(true);
+  const searchOpenRef = useRef(false);
+  const viewsOpenRef = useRef(false);
+  const edgeEditorRef = useRef(false);
+  const confirmingRef = useRef(false);
+  searchOpenRef.current = searchOpen;
+  viewsOpenRef.current = viewsOpen;
+  confirmingRef.current = confirming !== null;
   const writerRef = useRef(false);
   const overlayRef = useRef(false);
-  overlayRef.current = projectOpen || confirming !== null;
+  overlayRef.current = projectOpen || confirming !== null || searchOpen || viewsOpen;
   const foreignRef = useRef(false);
   const exportHold = useRef<{ board: Board; assets: AssetRecord[]; unsaved: boolean; key: string } | null>(null);
   const pasteRepeat = useRef({ key: '', count: 0 });
@@ -576,7 +593,33 @@ function BoardSurface({ session }: { session: SessionProps }) {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target;
       const element = target instanceof HTMLElement ? target : null;
-      if (element && (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA' || element.isContentEditable)) return;
+      const editingField = Boolean(element && (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA' || element.isContentEditable));
+      if (searchShortcut({
+        key: event.key,
+        meta: event.metaKey,
+        ctrl: event.ctrlKey,
+        alt: event.altKey,
+        shift: event.shiftKey,
+        composing: event.isComposing,
+        repeat: event.repeat,
+        editingField,
+        confirming: confirmingRef.current,
+        editing: editingRef.current !== null,
+      })) {
+        event.preventDefault();
+        setViewsOpen(false);
+        setSearchOpen((open) => !open);
+        return;
+      }
+      if (event.key === 'Escape' && searchOpenRef.current) {
+        setSearchOpen(false);
+        return;
+      }
+      if (event.key === 'Escape' && viewsOpenRef.current && !editingField) {
+        setViewsOpen(false);
+        return;
+      }
+      if (editingField) return;
       if (event.key === 'Escape') {
         frameRef.current = null;
         setDraft(null);
@@ -593,7 +636,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
         shift: event.shiftKey,
         tag: element?.tagName ?? null,
         editable: element?.isContentEditable ?? false,
-        inOverlay: overlayRef.current || Boolean(element?.closest('[role="dialog"], [role="alertdialog"], [role="menu"]')),
+        inOverlay: overlayRef.current || edgeEditorRef.current || Boolean(element?.closest('[role="dialog"], [role="alertdialog"], [role="menu"]')),
         editing: editingRef.current !== null,
         blocked: blockedRef.current,
       });
@@ -780,9 +823,81 @@ function BoardSurface({ session }: { session: SessionProps }) {
         replaceSelection([]);
         setUrlEpoch((value) => value + 1);
       },
+      commitEdgeLabel(id, label) {
+        if (blockedRef.current) return;
+        const before = boardRef.current;
+        const next = setEdgeLabel(before, id, label);
+        if (!next || next === before) return;
+        publish(next, before, 'save');
+      },
+      setRelationshipStyle(id, style) {
+        if (blockedRef.current) return;
+        const before = boardRef.current;
+        const next = setEdgeStyle(before, id, style);
+        if (!next || next === before) return;
+        publish(next, before, 'save');
+      },
+      deleteRelationship(id) {
+        if (blockedRef.current) return;
+        const before = boardRef.current;
+        const next = deleteEdges(before, [id]);
+        if (next === before) return;
+        publish(next, before, 'save');
+        replaceEdgeSelection(selectedEdgeRef.current.filter((edgeId) => edgeId !== id));
+      },
+      setEdgeEditor(open) {
+        edgeEditorRef.current = open;
+      },
     }),
     [queue],
   );
+
+  useEffect(() => {
+    if (chromeHidden) setViewsOpen(false);
+  }, [chromeHidden]);
+
+  const searchIndex = useMemo(() => buildSearchIndex(board.nodes), [board.nodes]);
+  const searchResults = useMemo(() => searchNodes(searchIndex, searchQuery), [searchIndex, searchQuery]);
+
+  function closeSearch() {
+    setSearchOpen(false);
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && active.closest('.search-palette')) active.blur();
+  }
+
+  function jumpToNode(id: string) {
+    const bounds = resultBounds(boardRef.current.nodes, id);
+    const node = boardRef.current.nodes.find((entry) => entry.id === id);
+    if (!bounds || !node) return;
+    const duration = cameraDuration(250);
+    if (node.kind === 'group') {
+      const pane = document.querySelector('.react-flow');
+      const width = pane instanceof HTMLElement ? pane.clientWidth : window.innerWidth;
+      const height = pane instanceof HTMLElement ? pane.clientHeight : window.innerHeight;
+      void flowRef.current.setViewport(frameViewport(bounds, width, height), { duration });
+    }
+    else {
+      const center = centerOf(bounds);
+      void flowRef.current.setCenter(center.x, center.y, { zoom: noteJumpZoom(flowRef.current.getViewport().zoom), duration });
+    }
+    replaceSelection([id]);
+    replaceEdgeSelection([]);
+    closeSearch();
+  }
+
+  function commitMetadata(next: Board | null) {
+    if (!next || next === boardRef.current || blockedRef.current) return;
+    replaceBoard(next);
+    queue.saveNow();
+  }
+
+  function saveCurrentView(name: string) {
+    commitMetadata(editSavedView(blockedRef.current, boardRef.current, { type: 'add', name, viewport: flowRef.current.getViewport() }));
+  }
+
+  function recallSavedView(view: Board['savedViews'][number]) {
+    void flowRef.current.setViewport(recallViewport(view), { duration: cameraDuration(300) });
+  }
 
   const nodes = useMemo(() => {
     const ordered = [...board.nodes].sort((left, right) => Number(left.kind !== 'group') - Number(right.kind !== 'group'));
@@ -794,13 +909,18 @@ function BoardSurface({ session }: { session: SessionProps }) {
   }, [board.nodes, editingId, selectedIds, urlEpoch]);
 
   const edges = useMemo<Edge[]>(() => {
+    const solo = selectedEdgeIds.length === 1;
     const projected = board.edges.map((edge) => ({
       id: edge.id,
+      type: 'relationship',
       source: edge.sourceId,
       target: edge.targetId,
       sourceHandle: edge.sourceHandle,
       targetHandle: edge.targetHandle,
       selected: selectedEdgeIds.includes(edge.id),
+      interactionWidth: 18,
+      className: edge.style === 'dashed' ? 'relationship-dashed' : edge.style === 'red-string' ? 'relationship-string' : undefined,
+      data: { label: edge.label, style: edge.style, solo },
     }));
     const edgeKey = JSON.stringify(projected);
     if (edgeKey === flowCache.current.edgeKey) return flowCache.current.edges;
@@ -1308,6 +1428,15 @@ function BoardSurface({ session }: { session: SessionProps }) {
           }}
           onUndo={() => commands.current.undo()}
           onRedo={() => commands.current.redo()}
+          onSearch={() => {
+            setViewsOpen(false);
+            setSearchOpen(true);
+          }}
+          onToggleViews={() => {
+            setSearchOpen(false);
+            setViewsOpen((open) => !open);
+          }}
+          viewsOpen={viewsOpen}
           onAppearance={() => {
             if (blockedRef.current) return;
             const next = setAppearance(boardRef.current, boardRef.current.appearance === 'dark' ? 'light' : 'dark');
@@ -1489,10 +1618,26 @@ function BoardSurface({ session }: { session: SessionProps }) {
           </div>
         ) : null}
         {fileDrag ? <div className="drop-overlay" /> : null}
+        {searchOpen ? (
+          <SearchPalette query={searchQuery} results={searchResults} onQuery={setSearchQuery} onJump={jumpToNode} onClose={closeSearch} />
+        ) : null}
+        {viewsOpen && !chromeHidden ? (
+          <SavedViewsPanel
+            views={board.savedViews}
+            readOnly={readOnly}
+            onClose={() => setViewsOpen(false)}
+            onSave={saveCurrentView}
+            onRecall={recallSavedView}
+            onRename={(id, name) => commitMetadata(editSavedView(blockedRef.current, boardRef.current, { type: 'rename', id, name }))}
+            onUpdate={(id) => commitMetadata(editSavedView(blockedRef.current, boardRef.current, { type: 'update', id, viewport: flowRef.current.getViewport() }))}
+            onDelete={(id) => commitMetadata(editSavedView(blockedRef.current, boardRef.current, { type: 'delete', id }))}
+          />
+        ) : null}
         <ReactFlow
           nodes={nodes}
           edges={edges}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
           defaultViewport={initialViewport.current}
           onNodesChange={onNodesChangeStable}
           onEdgesChange={onEdgesChangeStable}

@@ -16,6 +16,11 @@ import {
   TEXT_MIN_WIDTH,
   TEXT_NOTE_HEIGHT,
   TEXT_NOTE_WIDTH,
+  MAX_EDGE_LABEL,
+  MAX_SAVED_VIEW_NAME,
+  MAX_SAVED_VIEWS,
+  MAX_ZOOM,
+  MIN_ZOOM,
   SCHEMA_VERSION,
   type Board,
   type BoardEdge,
@@ -28,6 +33,8 @@ import {
   type Viewport,
   type Appearance,
   type BackgroundPattern,
+  type EdgeStyle,
+  type SavedView,
   type BackgroundTone,
   type CodeLanguage,
   type CornerStyle,
@@ -45,9 +52,11 @@ export function createEmptyBoard(now = new Date().toISOString()): Board {
     updatedAt: now,
     revision: 1,
     appearance: 'dark',
-    backgroundPattern: 'dots',
+    backgroundPattern: 'dither-atlas',
+    ditherAtlas: { seed: seedFromProjectName('Untitled board'), rendererVersion: 3 },
     nodes: [],
     edges: [],
+    savedViews: [],
     viewport: { x: 0, y: 0, zoom: 1 },
   };
 }
@@ -325,7 +334,7 @@ export function migrateStoredAppearance(
   storedAppearance: Appearance | null,
   legacy: Appearance,
 ): Board {
-  if (storedSchema === SCHEMA_VERSION && storedAppearance) return board;
+  if (storedAppearance && (storedSchema === 5 || storedSchema === SCHEMA_VERSION)) return board;
   return { ...board, appearance: storedAppearance ?? legacy };
 }
 
@@ -389,7 +398,7 @@ export function deleteNodes(
 
 export function revise(
   board: Board,
-  patch: Partial<Pick<Board, 'title' | 'nodes' | 'edges' | 'viewport'>>,
+  patch: Partial<Pick<Board, 'title' | 'nodes' | 'edges' | 'viewport' | 'savedViews'>>,
   now = new Date().toISOString(),
 ): Board {
   return touch(board, patch, now);
@@ -398,7 +407,8 @@ export function revise(
 export function parseBoard(value: unknown): Board | null {
   if (!isRecord(value)) return null;
   if (value.schemaVersion === 1) return migrateVersion1(value);
-  if (value.schemaVersion !== 2 && value.schemaVersion !== 3 && value.schemaVersion !== 4 && value.schemaVersion !== SCHEMA_VERSION) return null;
+  const current = value.schemaVersion === SCHEMA_VERSION;
+  if (!current && value.schemaVersion !== 2 && value.schemaVersion !== 3 && value.schemaVersion !== 4 && value.schemaVersion !== 5) return null;
   if (!isNonEmptyString(value.id) || typeof value.title !== 'string') return null;
   if (typeof value.createdAt !== 'string' || typeof value.updatedAt !== 'string') return null;
   if (!isFiniteNumber(value.revision)) return null;
@@ -416,11 +426,13 @@ export function parseBoard(value: unknown): Board | null {
   const edges: BoardEdge[] = [];
   const edgeIds = new Set<string>();
   for (const entry of value.edges) {
-    const edge = parseEdge(entry);
+    const edge = parseEdge(entry, current);
     if (!edge || edgeIds.has(edge.id)) return null;
     edgeIds.add(edge.id);
     edges.push(edge);
   }
+  const savedViews = parseSavedViews(value.savedViews, current);
+  if (!savedViews) return null;
 
   const viewport = parseViewport(value.viewport);
   const appearance = parseAppearanceField(value.schemaVersion, value.appearance);
@@ -441,6 +453,7 @@ export function parseBoard(value: unknown): Board | null {
     ...(ditherAtlas ? { ditherAtlas } : {}),
     nodes,
     edges,
+    savedViews,
     viewport,
   };
 }
@@ -454,16 +467,20 @@ export function isSafeHttpUrl(value: string): boolean {
   }
 }
 
+function strictDocument(schemaVersion: unknown): boolean {
+  return schemaVersion === 5 || schemaVersion === SCHEMA_VERSION;
+}
+
 function parseAppearanceField(schemaVersion: unknown, value: unknown): Appearance | null {
   if (value === 'dark' || value === 'light') return value;
-  if (schemaVersion === SCHEMA_VERSION) return null;
+  if (strictDocument(schemaVersion)) return null;
   if (value == null) return 'dark';
   return null;
 }
 
 function parsePattern(schemaVersion: unknown, value: unknown): BackgroundPattern | null {
   if (value === 'dots' || value === 'grid' || value === 'cross' || value === 'blank' || value === 'dither-atlas') return value;
-  if (schemaVersion === SCHEMA_VERSION) return null;
+  if (strictDocument(schemaVersion)) return null;
   if (value == null) return 'dots';
   return null;
 }
@@ -499,7 +516,7 @@ function mapNode(
 
 function touch(
   board: Board,
-  patch: Partial<Pick<Board, 'title' | 'nodes' | 'edges' | 'viewport' | 'appearance' | 'backgroundPattern' | 'ditherAtlas'>>,
+  patch: Partial<Pick<Board, 'title' | 'nodes' | 'edges' | 'viewport' | 'appearance' | 'backgroundPattern' | 'ditherAtlas' | 'savedViews'>>,
   now = new Date().toISOString(),
 ): Board {
   return {
@@ -615,7 +632,7 @@ function parseImageSource(value: unknown): ImageNode['source'] | null {
   return null;
 }
 
-function parseEdge(value: unknown): BoardEdge | null {
+function parseEdge(value: unknown, strict: boolean): BoardEdge | null {
   if (!isRecord(value)) return null;
   if (!isNonEmptyString(value.id) || !isNonEmptyString(value.sourceId) || !isNonEmptyString(value.targetId)) {
     return null;
@@ -623,6 +640,9 @@ function parseEdge(value: unknown): BoardEdge | null {
   if (!isHandle(value.sourceHandle) || !isHandle(value.targetHandle)) return null;
   if (!isFiniteNumber(value.restLength) || value.restLength < 0) return null;
   if (value.sourceId === value.targetId) return null;
+  const label = parseEdgeLabel(value.label, strict);
+  const style = parseEdgeStyle(value.style, strict);
+  if (label === null || style === null) return null;
   return {
     id: value.id,
     sourceId: value.sourceId,
@@ -630,7 +650,51 @@ function parseEdge(value: unknown): BoardEdge | null {
     sourceHandle: value.sourceHandle,
     targetHandle: value.targetHandle,
     restLength: value.restLength,
+    ...(label ? { label } : {}),
+    ...(style ? { style } : {}),
   };
+}
+
+function parseEdgeLabel(value: unknown, strict: boolean): string | undefined | null {
+  if (value == null) return undefined;
+  if (typeof value !== 'string' || hasControlCharacter(value)) return strict ? null : undefined;
+  const label = value.trim();
+  if (!label || label.length > MAX_EDGE_LABEL) return strict ? null : undefined;
+  return label;
+}
+
+function parseEdgeStyle(value: unknown, strict: boolean): EdgeStyle | undefined | null {
+  if (value == null) return undefined;
+  if (value === 'solid' || value === 'dashed' || value === 'red-string') return value;
+  return strict ? null : undefined;
+}
+
+function parseSavedViews(value: unknown, strict: boolean): SavedView[] | null {
+  if (!strict) return [];
+  if (!Array.isArray(value) || value.length > MAX_SAVED_VIEWS) return null;
+  const seen = new Set<string>();
+  const views: SavedView[] = [];
+  for (const entry of value) {
+    if (!isRecord(entry) || !isNonEmptyString(entry.id) || seen.has(entry.id)) return null;
+    if (typeof entry.name !== 'string' || hasControlCharacter(entry.name)) return null;
+    const name = entry.name.trim();
+    if (!name || name.length > MAX_SAVED_VIEW_NAME) return null;
+    const viewport = parseSavedViewport(entry.viewport);
+    if (!viewport) return null;
+    seen.add(entry.id);
+    views.push({ id: entry.id, name, viewport });
+  }
+  return views;
+}
+
+function parseSavedViewport(value: unknown): Viewport | null {
+  const viewport = parseViewport(value);
+  if (!viewport || viewport.zoom < MIN_ZOOM || viewport.zoom > MAX_ZOOM) return null;
+  return viewport;
+}
+
+function hasControlCharacter(value: string): boolean {
+  return /[\u0000-\u001F\u007F]/.test(value);
 }
 
 function validGraph(nodes: readonly BoardNode[], edges: readonly BoardEdge[]): boolean {

@@ -28,18 +28,19 @@ describe('dither atlas seed and schema', () => {
     const returned = setBackgroundPattern(setBackgroundPattern(renamed, 'dots'), 'dither-atlas');
     expect(renamed.ditherAtlas?.seed).toBe(seedFromProjectName('Ideas 2027'));
     expect(returned.ditherAtlas?.seed).toBe(seedFromProjectName('Ideas 2027'));
-    expect(createEmptyBoard().backgroundPattern).toBe('dots');
-    expect(createEmptyBoard().ditherAtlas).toBe(undefined);
+    expect(createEmptyBoard().backgroundPattern).toBe('dither-atlas');
+    expect(createEmptyBoard().ditherAtlas?.rendererVersion).toBe(3);
+    expect(createEmptyBoard().ditherAtlas?.seed).toBe(seedFromProjectName('Untitled board'));
   });
 
   test('migrates older patterns and rejects malformed atlas metadata', () => {
     const empty = createEmptyBoard();
     const grid = parseBoard({ ...empty, schemaVersion: 4, backgroundPattern: 'grid', ditherAtlas: undefined });
-    expect(grid?.schemaVersion).toBe(5);
+    expect(grid?.schemaVersion).toBe(6);
     expect(grid?.backgroundPattern).toBe('grid');
     expect(grid?.ditherAtlas).toBe(undefined);
     expect(parseBoard({ ...empty, schemaVersion: 9 })).toBeNull();
-    expect(parseBoard({ ...empty, backgroundPattern: 'dither-atlas' })).toBeNull();
+    expect(parseBoard({ ...empty, backgroundPattern: 'dither-atlas', ditherAtlas: undefined })).toBeNull();
     expect(parseBoard({ ...empty, backgroundPattern: 'dither-atlas', ditherAtlas: { seed: 0, rendererVersion: 1 } })?.ditherAtlas?.seed).toBe(0);
     expect(parseBoard({ ...empty, backgroundPattern: 'dither-atlas', ditherAtlas: { seed: -1, rendererVersion: 1 } })).toBeNull();
     expect(parseBoard({ ...empty, backgroundPattern: 'dither-atlas', ditherAtlas: { seed: 1.5, rendererVersion: 1 } })).toBeNull();

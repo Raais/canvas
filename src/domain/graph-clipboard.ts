@@ -60,15 +60,17 @@ export function decodeGraphClipboard(raw: string): GraphClipboard | null {
   if (!Array.isArray(record.nodes) || !Array.isArray(record.edges)) return null;
   if (raw.length > GRAPH_CLIPBOARD_LIMIT || record.nodes.length > 2000 || record.edges.length > 4000) return null;
   const parsed = parseBoard({
-    schemaVersion: 3,
+    schemaVersion: 6,
     id: 'clipboard',
     title: 'clipboard',
     createdAt: '2020-01-01T00:00:00.000Z',
     updatedAt: '2020-01-01T00:00:00.000Z',
     revision: 1,
     appearance: 'dark',
+    backgroundPattern: 'dots',
     nodes: record.nodes,
     edges: record.edges,
+    savedViews: [],
     viewport: { x: 0, y: 0, zoom: 1 },
   });
   if (!parsed || parsed.nodes.length !== record.nodes.length || parsed.edges.length !== record.edges.length) return null;

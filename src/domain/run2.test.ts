@@ -39,7 +39,7 @@ describe('migration', () => {
       nodes: [note('n1', 10, 20)],
       edges: [{ id: 'e1', sourceId: 'missing', targetId: 'n1', restLength: 10 }],
     });
-    expect(migrated?.schemaVersion).toBe(5);
+    expect(migrated?.schemaVersion).toBe(6);
     expect(migrated?.title).toBe('Kept');
     expect(migrated?.viewport).toEqual({ x: 12, y: -4, zoom: 1.5 });
     expect(migrated?.nodes).toHaveLength(1);

@@ -26,6 +26,23 @@ export function canLinkSelection(count: number, alreadyLinked: boolean): boolean
   return count === 2 && !alreadyLinked;
 }
 
+export function searchShortcut(input: {
+  key: string;
+  meta: boolean;
+  ctrl: boolean;
+  alt: boolean;
+  shift: boolean;
+  composing: boolean;
+  repeat: boolean;
+  editingField: boolean;
+  confirming: boolean;
+  editing: boolean;
+}): boolean {
+  if (input.composing || input.repeat || input.alt || input.shift || input.editingField || input.confirming || input.editing) return false;
+  if (!input.meta && !input.ctrl) return false;
+  return input.key.toLowerCase() === 'k';
+}
+
 export function canEditSelection(count: number, kind: string | null): boolean {
   return count === 1 && kind === 'text';
 }

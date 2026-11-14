@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react';
-import type { ImageDisplayMode } from '../domain/types';
+import type { EdgeStyle, ImageDisplayMode } from '../domain/types';
 
 export type BoardActions = {
   beginEditing: (id: string) => void;
@@ -20,6 +20,10 @@ export type BoardActions = {
   requestDeleteContents: (groupId: string) => void;
   deleteContents: (groupId: string) => void;
   setGroupTone: (id: string, tone: string) => void;
+  commitEdgeLabel: (id: string, label: string) => void;
+  setRelationshipStyle: (id: string, style: EdgeStyle) => void;
+  deleteRelationship: (id: string) => void;
+  setEdgeEditor: (open: boolean) => void;
 };
 
 const BoardActionsContext = createContext<BoardActions | null>(null);

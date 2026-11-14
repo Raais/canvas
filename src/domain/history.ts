@@ -52,6 +52,7 @@ function revive(snapshot: Board, current: Board): Board {
     appearance: current.appearance,
     backgroundPattern: current.backgroundPattern,
     ...(current.ditherAtlas ? { ditherAtlas: current.ditherAtlas } : { ditherAtlas: undefined }),
+    savedViews: current.savedViews.map((view) => ({ ...view, viewport: { ...view.viewport } })),
     viewport: { ...current.viewport },
     revision: current.revision + 1,
     updatedAt: new Date().toISOString(),

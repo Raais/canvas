@@ -44,7 +44,10 @@ describe('atlas rename seeding', () => {
   });
 
   test('a project that never used atlas does not gain metadata', () => {
-    const renamed = renameBoard(createEmptyBoard(), 'Plain');
+    const plain = parseBoard({ ...createEmptyBoard(), schemaVersion: 4, backgroundPattern: 'dots', ditherAtlas: undefined });
+    if (!plain) throw new Error('legacy board');
+    const renamed = renameBoard(plain, 'Plain');
+    expect(renamed.backgroundPattern).toBe('dots');
     expect(renamed.ditherAtlas).toBe(undefined);
   });
 

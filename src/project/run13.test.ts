@@ -27,8 +27,9 @@ describe('atlas renderer v3', () => {
 
   test('new atlas is v3 and older versions survive parse, import, and rename', async () => {
     const empty = createEmptyBoard();
-    expect(empty.backgroundPattern).toBe('dots');
-    expect(empty.ditherAtlas).toBe(undefined);
+    expect(empty.backgroundPattern).toBe('dither-atlas');
+    expect(empty.ditherAtlas?.rendererVersion).toBe(3);
+    expect(empty.ditherAtlas?.seed).toBe(seedFromProjectName('Untitled board'));
     const created = setBackgroundPattern(empty, 'dither-atlas');
     expect(created.ditherAtlas?.rendererVersion).toBe(3);
     const v2 = { ...created, ditherAtlas: { seed: 775267960, rendererVersion: 2 as const } };

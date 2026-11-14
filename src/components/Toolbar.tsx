@@ -1,5 +1,6 @@
 import { useReactFlow } from '@xyflow/react';
 import {
+  Bookmark,
   Frame,
   Image as ImageIcon,
   Moon,
@@ -13,6 +14,7 @@ import {
   ZoomOut,
   Group,
   Scan,
+  Search,
 } from 'lucide-react';
 import { useRef, type ReactNode } from 'react';
 import type { Appearance } from '../persistence/db';
@@ -44,6 +46,9 @@ type ToolbarProps = {
   onUndo: () => void;
   onRedo: () => void;
   onAppearance: () => void;
+  onSearch: () => void;
+  onToggleViews: () => void;
+  viewsOpen: boolean;
   trailing: ReactNode;
 };
 
@@ -66,6 +71,9 @@ export function Toolbar({
   onUndo,
   onRedo,
   onAppearance,
+  onSearch,
+  onToggleViews,
+  viewsOpen,
   trailing,
 }: ToolbarProps) {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -91,6 +99,9 @@ export function Toolbar({
       </div>
       <div className="chrome chrome-create">
         <div className="toolbar-group">
+          <button type="button" className="icon-button" aria-label="Search" title="Search" onClick={onSearch}>
+            <Search size={17} strokeWidth={1.75} />
+          </button>
           <button type="button" className="icon-button" aria-pressed={tool === 'select'} aria-label="Select" title="Select" onClick={() => onTool('select')}>
             <MousePointer2 size={17} strokeWidth={1.75} />
           </button>
@@ -144,6 +155,9 @@ export function Toolbar({
           </button>
           <button type="button" className="icon-button" aria-label="Fit" title="Fit" onClick={() => settle(() => fitView({ padding: 0.2, duration: 150 }))}>
             <Scan size={17} strokeWidth={1.75} />
+          </button>
+          <button type="button" className="icon-button" aria-pressed={viewsOpen} aria-label="Saved views" title="Saved views" onClick={onToggleViews}>
+            <Bookmark size={17} strokeWidth={1.75} />
           </button>
         </div>
       </div>

@@ -1,4 +1,9 @@
-export const SCHEMA_VERSION = 5 as const;
+export const SCHEMA_VERSION = 6 as const;
+export const MAX_SAVED_VIEWS = 32;
+export const MAX_SAVED_VIEW_NAME = 60;
+export const MAX_EDGE_LABEL = 80;
+export const MIN_ZOOM = 0.1;
+export const MAX_ZOOM = 6;
 
 export const TEXT_NOTE_WIDTH = 240;
 export const TEXT_NOTE_HEIGHT = 140;
@@ -35,6 +40,14 @@ export type DitherAtlasConfig = { seed: number; rendererVersion: 1 | 2 | 3 };
 export type CornerStyle = 'rounded' | 'square';
 
 export type HandleSide = 'top' | 'right' | 'bottom' | 'left';
+
+export type EdgeStyle = 'solid' | 'dashed' | 'red-string';
+
+export type SavedView = {
+  id: string;
+  name: string;
+  viewport: Viewport;
+};
 
 export type TextNode = {
   id: string;
@@ -102,6 +115,8 @@ export type BoardEdge = {
   sourceHandle: HandleSide;
   targetHandle: HandleSide;
   restLength: number;
+  label?: string;
+  style?: EdgeStyle;
 };
 
 export type Board = {
@@ -116,6 +131,7 @@ export type Board = {
   ditherAtlas?: DitherAtlasConfig;
   nodes: BoardNode[];
   edges: BoardEdge[];
+  savedViews: SavedView[];
   viewport: Viewport;
 };
 
