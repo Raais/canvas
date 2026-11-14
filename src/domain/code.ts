@@ -1,5 +1,5 @@
 export type CodeGuess = {
-  presentation: 'text' | 'code';
+  presentation: 'text' | 'markdown' | 'code';
   language?: string;
 };
 
@@ -30,10 +30,24 @@ export function classifyPlainText(text: string): CodeGuess {
     const declared = fence[1]?.toLowerCase() ?? '';
     return { presentation: 'code', ...(LANGUAGES[declared] ? { language: LANGUAGES[declared] } : {}) };
   }
-  if (!trimmed.includes('\n')) return { presentation: 'text' };
+  if (looksLikeTasks(trimmed) && !strongCode(trimmed)) return { presentation: 'markdown' };
+  if (!trimmed.includes('\n') && !looksLikeTasks(trimmed)) return { presentation: 'text' };
   if (looksLikeJson(trimmed)) return { presentation: 'code', language: 'JSON' };
   if (strongCode(trimmed)) return { presentation: 'code', language: guessLanguage(trimmed) };
   return { presentation: 'text' };
+}
+
+function looksLikeTasks(text: string): boolean {
+  let fence = false;
+  let tasks = 0;
+  for (const line of text.split(/\r?\n/)) {
+    if (line.trim().startsWith('```')) {
+      fence = !fence;
+      continue;
+    }
+    if (!fence && /^\s*[-*+] \[[ xX]\] \S/.test(line)) tasks += 1;
+  }
+  return tasks >= 1;
 }
 
 function looksLikeJson(text: string): boolean {

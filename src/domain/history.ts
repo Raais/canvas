@@ -49,6 +49,7 @@ function revive(snapshot: Board, current: Board): Board {
   return {
     ...cloneBoard(snapshot),
     appearance: current.appearance,
+    backgroundPattern: current.backgroundPattern,
     viewport: { ...current.viewport },
     revision: current.revision + 1,
     updatedAt: new Date().toISOString(),

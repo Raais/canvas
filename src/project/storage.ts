@@ -42,6 +42,7 @@ export function boardSnapshotKey(board: Board): string {
     id: board.id,
     title: board.title,
     appearance: board.appearance,
+    backgroundPattern: board.backgroundPattern,
     nodes: board.nodes,
     edges: board.edges,
     viewport: board.viewport,

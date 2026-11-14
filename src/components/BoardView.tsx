@@ -25,6 +25,10 @@ import {
   renameBoard,
   setImageMode,
   setAppearance,
+  setBackgroundPattern,
+  setCodeLanguage,
+  setCornerStyle,
+  setNoteTone,
   setPresentation,
   setViewport,
   toggleImageFlip,
@@ -32,6 +36,7 @@ import {
   updateText,
 } from '../domain/board';
 import { contentExtent, isContentNode, normalizeRect, worldTopLeft } from '../domain/geometry';
+import { toggleTask } from '../domain/markdown';
 import { gesturePhase, sameSelection } from '../editor/interaction';
 import { connectNodes, deleteEdges, hasUndirectedLink } from '../domain/graph';
 import { decodeGraphClipboard, encodeGraphClipboard, GRAPH_MIME, pasteGraph, selectionClosure } from '../domain/graph-clipboard';
@@ -558,6 +563,36 @@ function BoardSurface({ session }: { session: SessionProps }) {
         if (blockedRef.current) return;
         const before = boardRef.current;
         const next = setPresentation(before, id, presentation);
+        if (next === before) return;
+        publish(next, before, 'save');
+      },
+      setNoteTone(id, kind, tone) {
+        if (blockedRef.current) return;
+        const before = boardRef.current;
+        const next = setNoteTone(before, id, kind === 'text' ? 'text' : 'background', tone as 'default');
+        if (next === before) return;
+        publish(next, before, 'save');
+      },
+      setCodeLanguage(id, language) {
+        if (blockedRef.current) return;
+        const before = boardRef.current;
+        const next = setCodeLanguage(before, id, language as 'auto');
+        if (next === before) return;
+        publish(next, before, 'save');
+      },
+      toggleTask(id, index) {
+        if (blockedRef.current) return;
+        const before = boardRef.current;
+        const node = before.nodes.find((entry) => entry.id === id);
+        if (!node || node.kind !== 'text') return;
+        const text = toggleTask(node.text, index);
+        if (text === node.text) return;
+        publish(updateText(before, id, text), before, 'save');
+      },
+      setCornerStyle(id, style) {
+        if (blockedRef.current) return;
+        const before = boardRef.current;
+        const next = setCornerStyle(before, id, style);
         if (next === before) return;
         publish(next, before, 'save');
       },
@@ -1099,6 +1134,14 @@ function BoardSurface({ session }: { session: SessionProps }) {
               usage={usage}
               estimate={estimate}
               persisted={persisted}
+              pattern={board.backgroundPattern}
+              onPattern={(pattern) => {
+                if (blockedRef.current) return;
+                const next = setBackgroundPattern(boardRef.current, pattern);
+                if (next === boardRef.current) return;
+                replaceBoard(next);
+                queue.schedule(300);
+              }}
               onToggle={() => {
                 setProjectOpen((open) => {
                   const next = !open;
@@ -1251,7 +1294,9 @@ function BoardSurface({ session }: { session: SessionProps }) {
           fitView={false}
           defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
         >
-          <Background variant={BackgroundVariant.Dots} gap={20} size={1.4} color={board.appearance === 'light' ? '#d2c9be' : '#3c4652'} />
+          {board.backgroundPattern === 'blank' ? null : (
+            <Background variant={board.backgroundPattern === 'grid' ? BackgroundVariant.Lines : board.backgroundPattern === 'cross' ? BackgroundVariant.Cross : BackgroundVariant.Dots} gap={20} size={1.4} color={board.appearance === 'light' ? '#d2c9be' : '#3c4652'} />
+          )}
           {draft ? (
             <ViewportPortal>
               <div
@@ -1303,7 +1348,7 @@ function toFlowNode(
     return {
       ...base,
       type: 'text',
-      data: { text: node.text, editing, presentation: node.presentation ?? 'text', language: node.language },
+      data: { text: node.text, editing, presentation: node.presentation ?? 'text', language: node.language, codeLanguage: node.codeLanguage, backgroundTone: node.backgroundTone, textTone: node.textTone },
     };
   }
   const image = node as ImageNode;
@@ -1317,6 +1362,7 @@ function toFlowNode(
       externalUrl: image.source.type === 'external' ? image.source.url : null,
       flipX: image.flipX === true,
       flipY: image.flipY === true,
+      cornerStyle: image.cornerStyle === 'square' ? 'square' : 'rounded',
     },
   };
 }

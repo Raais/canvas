@@ -79,7 +79,7 @@ export function Toolbar({
     <>
       <div className="chrome chrome-title">
         <div className="toolbar-group">
-          <p className="mark">canvas</p>
+          <p className="mark"><a href="https://github.com/Raais/canvas" target="_blank" rel="noopener noreferrer">canvas</a></p>
           <input
             className="title-input"
             aria-label="Board title"

@@ -11,6 +11,7 @@ export type ImageNodeData = {
   externalUrl: string | null;
   flipX: boolean;
   flipY: boolean;
+  cornerStyle: 'rounded' | 'square';
 };
 
 export type ImageFlowNode = Node<ImageNodeData, 'image'>;
@@ -26,6 +27,7 @@ export function ImageNoteNode({ id, data, selected }: NodeProps<ImageFlowNode>) 
   const className = [
     'image-note',
     data.mode === 'stretch' ? 'is-stretch' : 'is-aspect',
+    data.cornerStyle === 'square' ? 'is-square' : '',
     selected ? 'is-selected' : '',
   ]
     .filter(Boolean)
@@ -79,6 +81,13 @@ export function ImageNoteNode({ id, data, selected }: NodeProps<ImageFlowNode>) 
             onClick={() => actions.toggleFlip(id, 'y')}
           >
             <FlipVertical size={15} strokeWidth={1.75} />
+          </button>
+          <button
+            type="button"
+            aria-label={data.cornerStyle === 'square' ? 'Use rounded corners' : 'Use square corners'}
+            onClick={() => actions.setCornerStyle(id, data.cornerStyle === 'square' ? 'rounded' : 'square')}
+          >
+            {data.cornerStyle === 'square' ? 'Rounded' : 'Square'}
           </button>
         </div>
       ) : null}

@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 3 as const;
+export const SCHEMA_VERSION = 4 as const;
 
 export const TEXT_NOTE_WIDTH = 240;
 export const TEXT_NOTE_HEIGHT = 140;
@@ -26,7 +26,12 @@ export type ImageDisplayMode = 'aspect' | 'stretch';
 
 export type Appearance = 'dark' | 'light';
 
-export type NotePresentation = 'text' | 'code';
+export type NotePresentation = 'text' | 'markdown' | 'code';
+export type BackgroundTone = 'slate' | 'sage' | 'sand' | 'rose';
+export type TextTone = 'muted' | 'blue' | 'sage' | 'warm';
+export type CodeLanguage = 'javascript' | 'typescript' | 'python' | 'json' | 'html' | 'css' | 'shell' | 'plain';
+export type BackgroundPattern = 'dots' | 'grid' | 'cross' | 'blank';
+export type CornerStyle = 'rounded' | 'square';
 
 export type HandleSide = 'top' | 'right' | 'bottom' | 'left';
 
@@ -41,6 +46,9 @@ export type TextNode = {
   text: string;
   presentation?: NotePresentation;
   language?: string;
+  codeLanguage?: CodeLanguage;
+  backgroundTone?: BackgroundTone;
+  textTone?: TextTone;
 };
 
 export type EmbeddedImageSource = {
@@ -68,6 +76,7 @@ export type ImageNode = {
   source: EmbeddedImageSource | ExternalImageSource;
   flipX?: boolean;
   flipY?: boolean;
+  cornerStyle?: CornerStyle;
 };
 
 export type GroupNode = {
@@ -101,6 +110,7 @@ export type Board = {
   updatedAt: string;
   revision: number;
   appearance: Appearance;
+  backgroundPattern: BackgroundPattern;
   nodes: BoardNode[];
   edges: BoardEdge[];
   viewport: Viewport;

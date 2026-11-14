@@ -561,6 +561,50 @@ button:focus-visible, .title-input:focus-visible, select:focus-visible {
   cursor: pointer;
 }
 
+.mark a { color: inherit; text-decoration: none; }
+
+.note-tools, .highlight-action, .tone-menu {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding: 4px;
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+.note-tools { top: 8px; left: 8px; }
+.highlight-action { top: 8px; right: 8px; }
+.tone-menu { top: 40px; left: 8px; flex-direction: column; align-items: stretch; }
+.language-choice { display: inline-flex; align-items: center; gap: 4px; }
+.swatch { width: 12px; height: 12px; border-radius: 999px; border: 1px solid var(--line); display: inline-block; }
+
+.note-bg-slate { background: color-mix(in srgb, #8ea0b5 22%, var(--surface)); }
+.note-bg-sage { background: color-mix(in srgb, #8eae98 24%, var(--surface)); }
+.note-bg-sand { background: color-mix(in srgb, #c6b089 26%, var(--surface)); }
+.note-bg-rose { background: color-mix(in srgb, #d7a3a8 24%, var(--surface)); }
+.note-ink-muted { color: var(--muted); }
+.note-ink-blue { color: #8eacc6; }
+.note-ink-sage { color: #7ea58a; }
+.note-ink-warm { color: #d7b08a; }
+html[data-theme='light'] .note-ink-blue { color: #3e6280; }
+html[data-theme='light'] .note-ink-sage { color: #3f6b50; }
+html[data-theme='light'] .note-ink-warm { color: #8a5a32; }
+
+.markdown-body { height: 100%; overflow: auto; padding: 12px 14px; font-size: 14px; }
+.markdown-body h1, .markdown-body h2, .markdown-body h3 { margin: 0 0 6px; font-size: 15px; }
+.markdown-body p, .markdown-body ul, .markdown-body ol { margin: 0 0 8px; }
+.md-task { list-style: none; display: flex; gap: 8px; align-items: flex-start; }
+.md-mark { background: color-mix(in srgb, #e2b15a 45%, transparent); color: inherit; border-radius: 4px; padding: 0 2px; }
+.code-body { margin: 0; padding: 28px 14px 12px; height: 100%; overflow: auto; font-family: 'Geist Mono', monospace; font-size: 12.5px; white-space: pre-wrap; }
+.hl-keyword { color: #d7b08a; }
+.hl-string { color: #8eae98; }
+.hl-comment { color: var(--muted); }
+.hl-number, .hl-literal { color: #8eacc6; }
+.hl-function, .hl-type { color: #d7a3a8; }
+.image-note.is-square .image-clip, .image-note.is-square .image-missing { border-radius: 0; }
+
 @media (prefers-reduced-motion: reduce) {
   .chrome button, .rail button, .project-panel, .banner { transition: none; }
 }

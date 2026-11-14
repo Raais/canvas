@@ -1,11 +1,14 @@
 import type { LogicalUsage } from '../project/storage';
 import { formatBytes, formatOriginEstimate } from '../project/storage';
+import type { BackgroundPattern } from '../domain/types';
 
 type ProjectMenuProps = {
   open: boolean;
   usage: LogicalUsage | null;
   estimate: { usage?: number; quota?: number } | null;
   persisted: boolean | null;
+  pattern: BackgroundPattern;
+  onPattern: (pattern: BackgroundPattern) => void;
   onToggle: () => void;
   onExport: () => void;
   onExportNew: () => void;
@@ -20,6 +23,8 @@ export function ProjectMenu({
   usage,
   estimate,
   persisted,
+  pattern,
+  onPattern,
   onToggle,
   onExport,
   onExportNew,
@@ -37,6 +42,12 @@ export function ProjectMenu({
       {open ? (
         <div className="project-panel" role="dialog" aria-label="Project and storage">
           <div className="project-actions">
+            <p className="storage-label">Canvas background</p>
+            {(['dots', 'grid', 'cross', 'blank'] as const).map((choice) => (
+              <button key={choice} type="button" aria-pressed={pattern === choice} onClick={() => onPattern(choice)}>
+                {choice}
+              </button>
+            ))}
             <button type="button" onClick={onExport}>
               Export
             </button>

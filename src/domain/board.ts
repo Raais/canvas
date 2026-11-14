@@ -26,6 +26,11 @@ import {
   type TextNode,
   type Viewport,
   type Appearance,
+  type BackgroundPattern,
+  type BackgroundTone,
+  type CodeLanguage,
+  type CornerStyle,
+  type TextTone,
 } from './types';
 
 const PASTE_STAGGER = 36;
@@ -39,6 +44,7 @@ export function createEmptyBoard(now = new Date().toISOString()): Board {
     updatedAt: now,
     revision: 1,
     appearance: 'dark',
+    backgroundPattern: 'dots',
     nodes: [],
     edges: [],
     viewport: { x: 0, y: 0, zoom: 1 },
@@ -224,19 +230,64 @@ export function setImageMode(board: Board, id: string, mode: ImageDisplayMode, n
 export function setPresentation(
   board: Board,
   id: string,
-  presentation: 'text' | 'code',
+  presentation: 'text' | 'markdown' | 'code',
   now?: string,
 ): Board {
   return mapNode(board, id, (node) => {
     if (node.kind !== 'text') return node;
-    if (presentation === 'text') {
-      const next = { ...node };
-      delete next.presentation;
-      delete next.language;
-      return next;
-    }
-    if (node.presentation === 'code') return node;
-    return { ...node, presentation: 'code' };
+    const next = { ...node };
+    if (presentation === 'text') delete next.presentation;
+    else next.presentation = presentation;
+    return next;
+  }, now);
+}
+
+export function setBackgroundPattern(board: Board, backgroundPattern: BackgroundPattern, now?: string): Board {
+  if (board.backgroundPattern === backgroundPattern) return board;
+  return touch(board, { backgroundPattern }, now);
+}
+
+export function setNoteTone(
+  board: Board,
+  id: string,
+  kind: 'background' | 'text',
+  tone: BackgroundTone | TextTone | 'default',
+  now?: string,
+): Board {
+  return mapNode(board, id, (node) => {
+    if (node.kind !== 'text') return node;
+    const next = { ...node };
+    if (kind === 'background') {
+      if (tone === 'default') delete next.backgroundTone;
+      else if (tone === 'slate' || tone === 'sage' || tone === 'sand' || tone === 'rose') next.backgroundTone = tone;
+    } else if (tone === 'default') delete next.textTone;
+    else if (tone === 'muted' || tone === 'blue' || tone === 'sage' || tone === 'warm') next.textTone = tone;
+    return next;
+  }, now);
+}
+
+export function setCodeLanguage(
+  board: Board,
+  id: string,
+  codeLanguage: CodeLanguage | 'auto',
+  now?: string,
+): Board {
+  return mapNode(board, id, (node) => {
+    if (node.kind !== 'text') return node;
+    const next = { ...node };
+    if (codeLanguage === 'auto') delete next.codeLanguage;
+    else next.codeLanguage = codeLanguage;
+    return next;
+  }, now);
+}
+
+export function setCornerStyle(board: Board, id: string, cornerStyle: CornerStyle, now?: string): Board {
+  return mapNode(board, id, (node) => {
+    if (node.kind !== 'image') return node;
+    const next = { ...node };
+    if (cornerStyle === 'rounded') delete next.cornerStyle;
+    else next.cornerStyle = 'square';
+    return next;
   }, now);
 }
 
@@ -319,7 +370,7 @@ export function revise(
 export function parseBoard(value: unknown): Board | null {
   if (!isRecord(value)) return null;
   if (value.schemaVersion === 1) return migrateVersion1(value);
-  if (value.schemaVersion !== 2 && value.schemaVersion !== SCHEMA_VERSION) return null;
+  if (value.schemaVersion !== 2 && value.schemaVersion !== 3 && value.schemaVersion !== SCHEMA_VERSION) return null;
   if (!isNonEmptyString(value.id) || typeof value.title !== 'string') return null;
   if (typeof value.createdAt !== 'string' || typeof value.updatedAt !== 'string') return null;
   if (!isFiniteNumber(value.revision)) return null;
@@ -345,7 +396,8 @@ export function parseBoard(value: unknown): Board | null {
 
   const viewport = parseViewport(value.viewport);
   const appearance = parseAppearanceField(value.schemaVersion, value.appearance);
-  if (!viewport || !appearance || !validGraph(nodes, edges)) return null;
+  const backgroundPattern = parsePattern(value.schemaVersion, value.backgroundPattern);
+  if (!viewport || !appearance || !backgroundPattern || !validGraph(nodes, edges)) return null;
 
   return {
     schemaVersion: SCHEMA_VERSION,
@@ -355,6 +407,7 @@ export function parseBoard(value: unknown): Board | null {
     updatedAt: value.updatedAt,
     revision: value.revision,
     appearance,
+    backgroundPattern,
     nodes,
     edges,
     viewport,
@@ -377,6 +430,18 @@ function parseAppearanceField(schemaVersion: unknown, value: unknown): Appearanc
   return null;
 }
 
+function parsePattern(schemaVersion: unknown, value: unknown): BackgroundPattern | null {
+  if (value === 'dots' || value === 'grid' || value === 'cross' || value === 'blank') return value;
+  if (schemaVersion === SCHEMA_VERSION) return null;
+  if (value == null) return 'dots';
+  return null;
+}
+
+function parseTone<T extends string>(value: unknown, allowed: readonly T[]): T | undefined | null {
+  if (value == null) return undefined;
+  return allowed.includes(value as T) ? (value as T) : null;
+}
+
 function mapNode(
   board: Board,
   id: string,
@@ -396,7 +461,7 @@ function mapNode(
 
 function touch(
   board: Board,
-  patch: Partial<Pick<Board, 'title' | 'nodes' | 'edges' | 'viewport' | 'appearance'>>,
+  patch: Partial<Pick<Board, 'title' | 'nodes' | 'edges' | 'viewport' | 'appearance' | 'backgroundPattern'>>,
   now = new Date().toISOString(),
 ): Board {
   return {
@@ -442,10 +507,14 @@ function parseNode(value: unknown): BoardNode | null {
   }
   if (value.kind === 'text') {
     if (typeof value.text !== 'string') return null;
-    const presentation = value.presentation === 'code' ? 'code' : value.presentation === 'text' || value.presentation == null ? 'text' : null;
+    const presentation = value.presentation === 'code' || value.presentation === 'markdown' || value.presentation === 'text' ? value.presentation : value.presentation == null ? 'text' : null;
     if (!presentation) return null;
     const language = typeof value.language === 'string' && value.language.length > 0 && value.language.length <= 32 ? value.language : undefined;
     if (value.language != null && language === undefined) return null;
+    const codeLanguage = parseTone(value.codeLanguage, ['javascript', 'typescript', 'python', 'json', 'html', 'css', 'shell', 'plain'] as const);
+    const backgroundTone = parseTone(value.backgroundTone, ['slate', 'sage', 'sand', 'rose'] as const);
+    const textTone = parseTone(value.textTone, ['muted', 'blue', 'sage', 'warm'] as const);
+    if (codeLanguage === null || backgroundTone === null || textTone === null) return null;
     return {
       id: value.id,
       kind: 'text',
@@ -455,8 +524,11 @@ function parseNode(value: unknown): BoardNode | null {
       width: value.width,
       height: value.height,
       text: value.text,
-      ...(presentation === 'code' ? { presentation } : {}),
+      ...(presentation === 'text' ? {} : { presentation }),
       ...(presentation === 'code' && language ? { language } : {}),
+      ...(presentation === 'code' && codeLanguage ? { codeLanguage } : {}),
+      ...(backgroundTone ? { backgroundTone } : {}),
+      ...(textTone ? { textTone } : {}),
     };
   }
   if (value.kind === 'image') {
@@ -466,6 +538,8 @@ function parseNode(value: unknown): BoardNode | null {
     if (typeof value.sizedFromImage !== 'boolean') return null;
     if (value.flipX != null && value.flipX !== true && value.flipX !== false) return null;
     if (value.flipY != null && value.flipY !== true && value.flipY !== false) return null;
+    const cornerStyle = value.cornerStyle == null ? undefined : value.cornerStyle === 'rounded' || value.cornerStyle === 'square' ? value.cornerStyle : null;
+    if (cornerStyle === null) return null;
     const source = parseImageSource(value.source);
     if (!source) return null;
     return {
@@ -483,6 +557,7 @@ function parseNode(value: unknown): BoardNode | null {
       source,
       ...(value.flipX === true ? { flipX: true } : {}),
       ...(value.flipY === true ? { flipY: true } : {}),
+      ...(cornerStyle === 'square' ? { cornerStyle } : {}),
     };
   }
   return null;
