@@ -228,7 +228,9 @@ button:disabled { opacity: 0.45; cursor: default; }
 .project-menu > button,
 .project-panel button,
 .file-action,
-.storage-error button {
+.storage-error button,
+.edge-tools button,
+.views-panel button {
   appearance: none;
   border: 0;
   background: transparent;
@@ -250,14 +252,17 @@ button:disabled { opacity: 0.45; cursor: default; }
 .project-menu > button:hover,
 .project-panel button:hover,
 .file-action:hover,
-.storage-error button:hover {
+.storage-error button:hover,
+.edge-tools button:hover,
+.views-panel button:hover {
   background: var(--surface-2);
 }
 
 .chrome button:disabled:hover,
 .rail button:disabled:hover,
 .selection-bar button:disabled:hover,
-.image-tools button:disabled:hover {
+.image-tools button:disabled:hover,
+.views-panel button:disabled:hover {
   background: transparent;
 }
 
@@ -265,7 +270,8 @@ button:disabled { opacity: 0.45; cursor: default; }
 .rail button[aria-pressed='true'],
 .image-tools button[aria-pressed='true'],
 .note-toolbar button[aria-pressed='true'],
-.selection-bar button[aria-pressed='true'] {
+.selection-bar button[aria-pressed='true'],
+.edge-tools button[aria-pressed='true'] {
   background: var(--pressed);
   color: var(--accent-ink);
 }
@@ -283,7 +289,9 @@ button:disabled { opacity: 0.45; cursor: default; }
 .chrome button.icon-button,
 .rail button.icon-button,
 .image-tools button.icon-button,
-.note-toolbar button.icon-button {
+.note-toolbar button.icon-button,
+.edge-tools button.icon-button,
+.views-panel button.icon-button {
   padding: 0;
 }
 
@@ -617,31 +625,36 @@ button:focus-visible, .title-input:focus-visible, select:focus-visible {
 }
 .edge-tools {
   display: flex;
-  gap: 4px;
+  gap: 2px;
   align-items: center;
-  padding: 4px;
+  padding: 3px;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--radius-control);
   background: var(--surface);
+  color: var(--text);
 }
-.edge-label-input {
+.edge-tools .edge-label-input {
   width: 140px;
+  height: 32px;
+  margin: 0;
+  padding: 0 8px;
   border: 0;
+  border-radius: var(--radius-control);
   background: transparent;
-  outline: none;
-  font-size: 12px;
+  color: var(--text);
+  font-size: 13px;
+}
+.edge-tools button.icon-button,
+.edge-tools button.style-sample,
+.views-panel button.icon-button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  flex: 0 0 32px;
 }
 .edge-styles { display: flex; gap: 2px; }
-.style-sample {
-  width: 32px;
-  height: 22px;
-  padding: 0;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--edge);
-}
-.style-sample[aria-pressed='true'] { background: var(--pressed); color: var(--accent-ink); }
+.edge-tools button.style-sample { color: var(--edge); }
+.edge-tools button.style-sample[aria-pressed='true'] { background: var(--pressed); color: var(--accent-ink); }
 .style-sample svg { width: 28px; height: 8px; display: block; }
 .style-sample line { stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; }
 .style-sample .sample-dashed { stroke-dasharray: 4 3; }
@@ -649,24 +662,45 @@ button:focus-visible, .title-input:focus-visible, select:focus-visible {
 .search-palette, .views-panel {
   position: absolute;
   z-index: 40;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   width: min(480px, calc(100% - 32px));
   border: 1px solid var(--line);
   border-radius: 18px;
   background: color-mix(in srgb, var(--surface) 94%, transparent);
   box-shadow: 0 16px 40px rgb(0 0 0 / 18%);
 }
-.search-palette { top: 72px; left: 50%; transform: translateX(-50%); }
-.views-panel { top: 50%; left: 62px; width: min(320px, calc(100% - 80px)); transform: translateY(-50%); padding: 8px; }
-.search-input, .view-name input {
+.search-palette {
+  top: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-height: calc(100dvh - 88px);
+}
+.views-panel {
+  top: 50%;
+  left: 62px;
+  width: min(320px, calc(100% - 80px));
+  max-height: calc(100dvh - 24px);
+  transform: translateY(-50%);
+  padding: 8px;
+}
+.search-input {
+  flex: 0 0 auto;
   width: 100%;
   border: 0;
   background: transparent;
-  outline: none;
   padding: 12px 14px;
   font-size: 15px;
 }
+#search-results,
+.views-list {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
 .search-empty { margin: 0; padding: 8px 14px 14px; color: var(--muted); }
-.search-result, .view-jump, .view-save {
+.search-result {
   width: 100%;
   display: flex;
   gap: 8px;
@@ -678,14 +712,37 @@ button:focus-visible, .title-input:focus-visible, select:focus-visible {
   border-radius: 12px;
   padding: 8px 10px;
 }
-.search-result.is-active, .search-result:hover, .view-jump:hover { background: var(--pressed); }
+.search-result.is-active, .search-result:hover, .views-panel .view-jump:hover, .views-panel .view-save:hover { background: var(--pressed); }
 .search-result strong, .search-result em, .search-result small { display: block; }
 .search-result em, .search-result small { color: var(--muted); font-style: normal; font-size: 12px; }
-.views-head, .views-panel li, .view-name { display: flex; align-items: center; gap: 4px; }
+.views-head, .views-panel > .view-name, .views-panel > .view-save, .views-panel > .search-empty { flex: 0 0 auto; }
+.views-head, .views-panel li, .view-name { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.views-head { justify-content: space-between; }
 .views-head p { margin: 0; padding: 4px 8px; font-weight: 560; }
-.views-panel ul { list-style: none; margin: 6px 0 0; padding: 0; }
-.view-save { color: var(--muted); }
-.view-name input { padding: 6px 8px; }
+.views-list { flex: 1 1 auto; list-style: none; margin: 6px 0 0; padding: 0; }
+.views-panel .view-jump, .views-panel .view-save {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+.views-panel .view-jump, .views-panel li .view-name { flex: 1 1 auto; width: auto; }
+.views-panel .view-save { color: var(--muted); }
+.search-input, .view-name input, .edge-tools .edge-label-input { outline: none; }
+.search-input:focus-visible, .view-name input:focus-visible, .edge-tools .edge-label-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.view-name input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  padding: 6px 8px;
+  font-size: 14px;
+}
 
 .react-flow__attribution {
   background: transparent;

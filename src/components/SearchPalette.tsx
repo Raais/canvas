@@ -16,12 +16,23 @@ export function SearchPalette({
   onClose: () => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState(0);
   const selected = Math.min(active, Math.max(results.length - 1, 0));
 
   useEffect(() => {
     setActive(0);
   }, [query]);
+
+  useEffect(() => {
+    const list = listRef.current;
+    const option = list?.querySelector<HTMLElement>('[aria-selected="true"]');
+    if (!list || !option) return;
+    const listRect = list.getBoundingClientRect();
+    const optionRect = option.getBoundingClientRect();
+    if (optionRect.top < listRect.top) list.scrollTop -= listRect.top - optionRect.top;
+    else if (optionRect.bottom > listRect.bottom) list.scrollTop += optionRect.bottom - listRect.bottom;
+  }, [selected, query, results]);
 
   useEffect(() => {
     const onPointerDown = (event: PointerEvent) => {
@@ -59,7 +70,7 @@ export function SearchPalette({
           }
         }}
       />
-      <div id="search-results" role="listbox" aria-label="Search results">
+      <div ref={listRef} id="search-results" role="listbox" aria-label="Search results">
         {query.trim() && results.length === 0 ? <p className="search-empty">No matches.</p> : null}
         {!query.trim() ? <p className="search-empty">Search notes and groups.</p> : null}
         {results.map((result, index) => (

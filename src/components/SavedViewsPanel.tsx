@@ -86,7 +86,7 @@ export function SavedViewsPanel({
           Save current view
         </button>
       )}
-      <ul>
+      <ul className="views-list">
         {views.map((view) => (
           <li key={view.id}>
             {renaming === view.id ? (

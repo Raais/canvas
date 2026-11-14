@@ -308,6 +308,21 @@ describe('saved views', () => {
   });
 });
 
+describe('contextual chrome containment', () => {
+  test('search and saved views scroll inside their panels and toolbar buttons use the shared reset', async () => {
+    const css = await Bun.file(new URL('../styles/app.css', import.meta.url)).text();
+    const palette = await Bun.file(new URL('../components/SearchPalette.tsx', import.meta.url)).text();
+    expect(css.includes('.search-palette {\n  top: 72px;')).toBe(true);
+    expect(css.includes('max-height: calc(100dvh - 88px);')).toBe(true);
+    expect(css.includes('#search-results,\n.views-list {\n  min-height: 0;\n  overflow-y: auto;')).toBe(true);
+    expect(css.includes('.edge-tools button,\n.views-panel button')).toBe(true);
+    expect(css.includes('overscroll-behavior-y: contain;')).toBe(true);
+    expect(palette.includes('list.scrollTop')).toBe(true);
+    expect(palette.includes('onClose()')).toBe(true);
+    expect(palette.includes("onJump(results[selected].id)")).toBe(true);
+  });
+});
+
 describe('atlas default wiring', () => {
   test('keeps the shader lazy and the dots fallback stored as atlas', async () => {
     const view = await Bun.file(new URL('../components/BoardView.tsx', import.meta.url)).text();
