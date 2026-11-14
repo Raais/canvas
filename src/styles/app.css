@@ -249,6 +249,17 @@ button:disabled { opacity: 0.45; cursor: default; }
   place-items: center;
   padding: 0;
   border-radius: var(--radius-control);
+  line-height: 0;
+}
+
+.chrome button.icon-button,
+.rail button.icon-button,
+.image-tools button.icon-button {
+  padding: 0;
+}
+
+.icon-button svg {
+  display: block;
 }
 
 button:focus-visible, .title-input:focus-visible, select:focus-visible {
