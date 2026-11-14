@@ -816,6 +816,21 @@ button:focus-visible, .title-input:focus-visible, select:focus-visible {
   text-align: right;
   white-space: nowrap;
   pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.text-note:hover > .node-date,
+.image-note:hover > .node-date,
+.text-note.is-selected > .node-date,
+.image-note.is-selected > .node-date,
+.react-flow__node:focus-within > .text-note > .node-date,
+.react-flow__node:focus-within > .image-note > .node-date,
+.react-flow__node.selected > .text-note > .node-date,
+.react-flow__node.selected > .image-note > .node-date {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .node-date { transition: none; }
 }
 .search-result {
   width: 100%;
