@@ -12,7 +12,7 @@ import {
   type NodeChange,
   type Viewport,
 } from '@xyflow/react';
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import {
   addNodes,
   commitInteraction,
@@ -24,8 +24,10 @@ import {
   placeNode,
   renameBoard,
   setImageMode,
+  setAppearance,
   setPresentation,
   setViewport,
+  toggleImageFlip,
   staggeredPositions,
   updateText,
 } from '../domain/board';
@@ -67,7 +69,7 @@ import { buildArchive, readArchive } from '../archive/zip';
 import { downloadBytes } from '../project/download';
 import { boardSnapshotKey, logicalUsage, snapshotAssets, type LogicalUsage } from '../project/storage';
 import { openBoardChannel, type BoardChannel } from '../project/tabs';
-import { createAssetRecord, readAppearance, replaceStoredBoard, RevisionConflictError, writeAppearance, type Appearance, type CanvasDatabase } from '../persistence/db';
+import { createAssetRecord, replaceStoredBoard, RevisionConflictError, type CanvasDatabase } from '../persistence/db';
 import { createObjectUrlRegistry, type ObjectUrlRegistry } from '../persistence/object-urls';
 import { errorMessage, SaveQueue, type SaveStatus } from '../persistence/save-queue';
 import { BoardActionsProvider, type BoardActions } from './board-context';
@@ -122,7 +124,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const [estimate, setEstimate] = useState<{ usage?: number; quota?: number } | null>(null);
   const [persisted, setPersisted] = useState<boolean | null>(null);
   const [readOnly, setReadOnly] = useState(false);
-  const [appearance, setAppearance] = useState<Appearance>('dark');
+  const [historyStamp, setHistoryStamp] = useState(0);
   const [confirming, setConfirming] = useState<
     | null
     | { kind: 'blank' | 'clear' | 'exported-clear' }
@@ -268,6 +270,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
   function publish(next: Board, before: Board | null, mode: 'save' | 'schedule' | 'live') {
     if (blockedRef.current) return;
     if (before) historyRef.current = pushHistory(historyRef.current, before);
+    if (before) setHistoryStamp((value) => value + 1);
     const previous = boardRef.current;
     replaceBoard(next);
     reconcile(previous, next);
@@ -345,19 +348,11 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const viewportCenterRef = useRef(viewportCenter);
   viewportCenterRef.current = viewportCenter;
 
-  useEffect(() => {
-    document.documentElement.dataset.theme = appearance;
-  }, [appearance]);
-
-  useEffect(() => {
-    let cancel = false;
-    void readAppearance(session.database).then((next) => {
-      if (!cancel) setAppearance(next);
-    });
-    return () => {
-      cancel = true;
-    };
-  }, [session.database]);
+  useLayoutEffect(() => {
+    document.documentElement.dataset.theme = board.appearance;
+    const zoom = boardRef.current.viewport.zoom || 1;
+    boardEl.current?.style.setProperty('--handle-scale', String(1 / zoom));
+  }, [board.appearance]);
 
   useEffect(() => {
     const onCopy = (event: ClipboardEvent) => {
@@ -456,6 +451,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
     const result = direction === 'undo' ? undoHistory(historyRef.current, current) : redoHistory(historyRef.current, current);
     if (!result) return;
     historyRef.current = result.history;
+    setHistoryStamp((value) => value + 1);
     replaceBoard(result.board);
     reconcile(current, result.board);
     queue.saveNow();
@@ -562,6 +558,13 @@ function BoardSurface({ session }: { session: SessionProps }) {
         if (blockedRef.current) return;
         const before = boardRef.current;
         const next = setPresentation(before, id, presentation);
+        if (next === before) return;
+        publish(next, before, 'save');
+      },
+      toggleFlip(id, axis) {
+        if (blockedRef.current) return;
+        const before = boardRef.current;
+        const next = toggleImageFlip(before, id, axis);
         if (next === before) return;
         publish(next, before, 'save');
       },
@@ -857,6 +860,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
     setConfirming(null);
     setProjectOpen(false);
     flowRef.current.setViewport(nextBoard.viewport);
+    boardEl.current?.style.setProperty('--handle-scale', String(1 / (nextBoard.viewport.zoom || 1)));
   }
 
   async function stageImport(file: File) {
@@ -1042,7 +1046,9 @@ function BoardSurface({ session }: { session: SessionProps }) {
           title={board.title}
           status={status}
           tool={tool}
-          appearance={appearance}
+          appearance={board.appearance}
+          canUndo={historyStamp >= 0 && historyRef.current.past.length > 0}
+          canRedo={historyStamp >= 0 && historyRef.current.future.length > 0}
           canGroup={canGroup}
           canUngroup={canUngroup}
           onTitle={(title) => {
@@ -1081,9 +1087,11 @@ function BoardSurface({ session }: { session: SessionProps }) {
           onUndo={() => commands.current.undo()}
           onRedo={() => commands.current.redo()}
           onAppearance={() => {
-            const next = appearance === 'dark' ? 'light' : 'dark';
-            setAppearance(next);
-            void writeAppearance(session.database, next);
+            if (blockedRef.current) return;
+            const next = setAppearance(boardRef.current, boardRef.current.appearance === 'dark' ? 'light' : 'dark');
+            if (next === boardRef.current) return;
+            replaceBoard(next);
+            queue.schedule(300);
           }}
           trailing={
             <ProjectMenu
@@ -1238,12 +1246,12 @@ function BoardSurface({ session }: { session: SessionProps }) {
           connectionMode={ConnectionMode.Loose}
           elementsSelectable
           elevateNodesOnSelect={false}
-          colorMode={appearance}
+          colorMode={board.appearance}
           proOptions={{ hideAttribution: true }}
           fitView={false}
           defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
         >
-          <Background variant={BackgroundVariant.Dots} gap={20} size={1.4} color={appearance === 'light' ? '#d2c9be' : '#4c596b'} />
+          <Background variant={BackgroundVariant.Dots} gap={20} size={1.4} color={board.appearance === 'light' ? '#d2c9be' : '#3c4652'} />
           {draft ? (
             <ViewportPortal>
               <div
@@ -1283,7 +1291,7 @@ function toFlowNode(
     return {
       ...base,
       type: 'group',
-      dragHandle: '.group-header',
+      dragHandle: '.group-node',
       data: {
         label: node.label,
         minWidth: Math.max(GROUP_MIN_WIDTH, extent ? extent.right + GROUP_PAD : GROUP_MIN_WIDTH),
@@ -1307,6 +1315,8 @@ function toFlowNode(
       mode: image.mode,
       src,
       externalUrl: image.source.type === 'external' ? image.source.url : null,
+      flipX: image.flipX === true,
+      flipY: image.flipY === true,
     },
   };
 }

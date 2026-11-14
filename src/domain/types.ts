@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 2 as const;
+export const SCHEMA_VERSION = 3 as const;
 
 export const TEXT_NOTE_WIDTH = 240;
 export const TEXT_NOTE_HEIGHT = 140;
@@ -23,6 +23,8 @@ export type Viewport = {
 };
 
 export type ImageDisplayMode = 'aspect' | 'stretch';
+
+export type Appearance = 'dark' | 'light';
 
 export type NotePresentation = 'text' | 'code';
 
@@ -64,6 +66,8 @@ export type ImageNode = {
   intrinsicHeight: number;
   sizedFromImage: boolean;
   source: EmbeddedImageSource | ExternalImageSource;
+  flipX?: boolean;
+  flipY?: boolean;
 };
 
 export type GroupNode = {
@@ -96,6 +100,7 @@ export type Board = {
   createdAt: string;
   updatedAt: string;
   revision: number;
+  appearance: Appearance;
   nodes: BoardNode[];
   edges: BoardEdge[];
   viewport: Viewport;

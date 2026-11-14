@@ -7,6 +7,7 @@ export type BoardActions = {
   endEditing: () => void;
   setMode: (id: string, mode: ImageDisplayMode) => void;
   setPresentation: (id: string, presentation: 'text' | 'code') => void;
+  toggleFlip: (id: string, axis: 'x' | 'y') => void;
   noteIntrinsicSize: (id: string, width: number, height: number) => void;
   renameGroup: (id: string, label: string) => void;
   endRename: () => void;

@@ -48,6 +48,7 @@ export function retainedAssetIds(current: Board, history: History): Set<string> 
 function revive(snapshot: Board, current: Board): Board {
   return {
     ...cloneBoard(snapshot),
+    appearance: current.appearance,
     viewport: { ...current.viewport },
     revision: current.revision + 1,
     updatedAt: new Date().toISOString(),

@@ -1,5 +1,6 @@
 import { NodeResizer, type Node, type NodeProps } from '@xyflow/react';
 import { useEffect, useState } from 'react';
+import { FlipHorizontal2, FlipVertical2 } from 'lucide-react';
 import type { ImageDisplayMode } from '../domain/types';
 import { useBoardActions } from './board-context';
 import { PortHandles } from './PortHandles';
@@ -8,6 +9,8 @@ export type ImageNodeData = {
   mode: ImageDisplayMode;
   src: string | null;
   externalUrl: string | null;
+  flipX: boolean;
+  flipY: boolean;
 };
 
 export type ImageFlowNode = Node<ImageNodeData, 'image'>;
@@ -57,6 +60,26 @@ export function ImageNoteNode({ id, data, selected }: NodeProps<ImageFlowNode>) 
           >
             Stretch
           </button>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="Flip horizontally"
+            title="Flip horizontally"
+            aria-pressed={Boolean(data.flipX)}
+            onClick={() => actions.toggleFlip(id, 'x')}
+          >
+            <FlipHorizontal2 size={15} strokeWidth={1.75} />
+          </button>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label="Flip vertically"
+            title="Flip vertically"
+            aria-pressed={Boolean(data.flipY)}
+            onClick={() => actions.toggleFlip(id, 'y')}
+          >
+            <FlipVertical2 size={15} strokeWidth={1.75} />
+          </button>
         </div>
       ) : null}
       {showImage ? (
@@ -65,6 +88,7 @@ export function ImageNoteNode({ id, data, selected }: NodeProps<ImageFlowNode>) 
           alt={data.externalUrl ? 'External image' : 'Embedded image'}
           draggable={false}
           decoding="async"
+          style={{ transform: `scale(${data.flipX ? -1 : 1}, ${data.flipY ? -1 : 1})` }}
           onLoad={(event) => {
             actions.noteIntrinsicSize(id, event.currentTarget.naturalWidth, event.currentTarget.naturalHeight);
           }}

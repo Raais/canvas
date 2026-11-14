@@ -32,6 +32,8 @@ type ToolbarProps = {
   appearance: Appearance;
   canGroup: boolean;
   canUngroup: boolean;
+  canUndo: boolean;
+  canRedo: boolean;
   onTitle: (title: string) => void;
   onNewNote: () => void;
   onAddImages: (files: FileList) => void;
@@ -52,6 +54,8 @@ export function Toolbar({
   appearance,
   canGroup,
   canUngroup,
+  canUndo,
+  canRedo,
   onTitle,
   onNewNote,
   onAddImages,
@@ -72,18 +76,20 @@ export function Toolbar({
   }
 
   return (
-    <div className="toolbar">
-      <div className="toolbar-group">
-        <p className="mark">canvas</p>
-        <input
-          className="title-input"
-          aria-label="Board title"
-          value={title}
-          placeholder="Untitled board"
-          onChange={(event) => onTitle(event.target.value)}
-        />
+    <>
+      <div className="chrome chrome-title">
+        <div className="toolbar-group">
+          <p className="mark">canvas</p>
+          <input
+            className="title-input"
+            aria-label="Board title"
+            value={title}
+            placeholder="Untitled board"
+            onChange={(event) => onTitle(event.target.value)}
+          />
+        </div>
       </div>
-      <div className="toolbar-center">
+      <div className="chrome chrome-create">
         <div className="toolbar-group">
           <button type="button" className="icon-button" aria-pressed={tool === 'select'} aria-label="Select" title="Select" onClick={() => onTool('select')}>
             <MousePointer2 size={17} strokeWidth={1.75} />
@@ -110,47 +116,53 @@ export function Toolbar({
             <Frame size={17} strokeWidth={1.75} />
           </button>
         </div>
+      </div>
+      <div className="chrome chrome-status">
         <div className="toolbar-group">
-          <button type="button" className="icon-button" aria-label="Group selection" title="Group" onClick={onGroup} disabled={!canGroup}>
-            <Group size={17} strokeWidth={1.75} />
+          <span className={status === 'error' ? 'status is-error' : 'status'} role="status" aria-live="polite">
+            {STATUS_LABEL[status]}
+          </span>
+          <button
+            type="button"
+            className="icon-button"
+            aria-label={appearance === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            title={appearance === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            onClick={onAppearance}
+          >
+            {appearance === 'dark' ? <Sun size={17} strokeWidth={1.75} /> : <Moon size={17} strokeWidth={1.75} />}
           </button>
-          <button type="button" className="icon-button" aria-label="Ungroup" title="Ungroup" onClick={onUngroup} disabled={!canUngroup}>
-            <Ungroup size={17} strokeWidth={1.75} />
-          </button>
-          <button type="button" className="icon-button" aria-label="Undo" title="Undo" onClick={onUndo}>
-            <Undo2 size={17} strokeWidth={1.75} />
-          </button>
-          <button type="button" className="icon-button" aria-label="Redo" title="Redo" onClick={onRedo}>
-            <Redo2 size={17} strokeWidth={1.75} />
-          </button>
+          {trailing}
         </div>
-        <div className="toolbar-group">
-          <button type="button" className="icon-button" aria-label="Zoom out" title="Zoom out" onClick={() => settle(() => zoomOut({ duration: 150 }))}>
-            <ZoomOut size={17} strokeWidth={1.75} />
-          </button>
+      </div>
+      <div className="rail rail-left">
+        <div className="toolbar-group rail-group">
           <button type="button" className="icon-button" aria-label="Zoom in" title="Zoom in" onClick={() => settle(() => zoomIn({ duration: 150 }))}>
             <ZoomIn size={17} strokeWidth={1.75} />
+          </button>
+          <button type="button" className="icon-button" aria-label="Zoom out" title="Zoom out" onClick={() => settle(() => zoomOut({ duration: 150 }))}>
+            <ZoomOut size={17} strokeWidth={1.75} />
           </button>
           <button type="button" className="icon-button" aria-label="Fit" title="Fit" onClick={() => settle(() => fitView({ padding: 0.2, duration: 150 }))}>
             <Scan size={17} strokeWidth={1.75} />
           </button>
         </div>
       </div>
-      <div className="toolbar-group status-group">
-        <span className={status === 'error' ? 'status is-error' : 'status'} role="status" aria-live="polite">
-          {STATUS_LABEL[status]}
-        </span>
-        <button
-          type="button"
-          className="icon-button"
-          aria-label={appearance === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-          title={appearance === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-          onClick={onAppearance}
-        >
-          {appearance === 'dark' ? <Sun size={17} strokeWidth={1.75} /> : <Moon size={17} strokeWidth={1.75} />}
-        </button>
-        {trailing}
+      <div className="rail rail-right">
+        <div className="toolbar-group rail-group">
+          <button type="button" className="icon-button" aria-label="Group selection" title="Group" onClick={onGroup} disabled={!canGroup}>
+            <Group size={17} strokeWidth={1.75} />
+          </button>
+          <button type="button" className="icon-button" aria-label="Ungroup" title="Ungroup" onClick={onUngroup} disabled={!canUngroup}>
+            <Ungroup size={17} strokeWidth={1.75} />
+          </button>
+          <button type="button" className="icon-button" aria-label="Undo" title="Undo" onClick={onUndo} disabled={!canUndo}>
+            <Undo2 size={17} strokeWidth={1.75} />
+          </button>
+          <button type="button" className="icon-button" aria-label="Redo" title="Redo" onClick={onRedo} disabled={!canRedo}>
+            <Redo2 size={17} strokeWidth={1.75} />
+          </button>
+        </div>
       </div>
-    </div>
+    </>
   );
 }

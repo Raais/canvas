@@ -41,6 +41,7 @@ export function boardSnapshotKey(board: Board): string {
   return JSON.stringify({
     id: board.id,
     title: board.title,
+    appearance: board.appearance,
     nodes: board.nodes,
     edges: board.edges,
     viewport: board.viewport,

@@ -15,6 +15,7 @@ import {
   TEXT_MIN_WIDTH,
   TEXT_NOTE_HEIGHT,
   TEXT_NOTE_WIDTH,
+  SCHEMA_VERSION,
   type Board,
   type BoardEdge,
   type BoardNode,
@@ -24,18 +25,20 @@ import {
   type Point,
   type TextNode,
   type Viewport,
+  type Appearance,
 } from './types';
 
 const PASTE_STAGGER = 36;
 
 export function createEmptyBoard(now = new Date().toISOString()): Board {
   return {
-    schemaVersion: 2,
+    schemaVersion: SCHEMA_VERSION,
     id: crypto.randomUUID(),
     title: 'Untitled board',
     createdAt: now,
     updatedAt: now,
     revision: 1,
+    appearance: 'dark',
     nodes: [],
     edges: [],
     viewport: { x: 0, y: 0, zoom: 1 },
@@ -237,6 +240,35 @@ export function setPresentation(
   }, now);
 }
 
+export function migrateStoredAppearance(
+  board: Board,
+  storedSchema: number,
+  storedAppearance: Appearance | null,
+  legacy: Appearance,
+): Board {
+  if (storedSchema === SCHEMA_VERSION && storedAppearance) return board;
+  return { ...board, appearance: storedAppearance ?? legacy };
+}
+
+export function setAppearance(board: Board, appearance: Appearance, now?: string): Board {
+  if (board.appearance === appearance) return board;
+  return touch(board, { appearance }, now);
+}
+
+export function toggleImageFlip(board: Board, id: string, axis: 'x' | 'y', now?: string): Board {
+  return mapNode(board, id, (node) => {
+    if (node.kind !== 'image') return node;
+    const flipX = axis === 'x' ? !node.flipX : Boolean(node.flipX);
+    const flipY = axis === 'y' ? !node.flipY : Boolean(node.flipY);
+    const next = { ...node };
+    if (flipX) next.flipX = true;
+    else delete next.flipX;
+    if (flipY) next.flipY = true;
+    else delete next.flipY;
+    return next;
+  }, now);
+}
+
 export function noteImageIntrinsic(
   board: Board,
   id: string,
@@ -287,7 +319,7 @@ export function revise(
 export function parseBoard(value: unknown): Board | null {
   if (!isRecord(value)) return null;
   if (value.schemaVersion === 1) return migrateVersion1(value);
-  if (value.schemaVersion !== 2) return null;
+  if (value.schemaVersion !== 2 && value.schemaVersion !== SCHEMA_VERSION) return null;
   if (!isNonEmptyString(value.id) || typeof value.title !== 'string') return null;
   if (typeof value.createdAt !== 'string' || typeof value.updatedAt !== 'string') return null;
   if (!isFiniteNumber(value.revision)) return null;
@@ -312,15 +344,17 @@ export function parseBoard(value: unknown): Board | null {
   }
 
   const viewport = parseViewport(value.viewport);
-  if (!viewport || !validGraph(nodes, edges)) return null;
+  const appearance = parseAppearanceField(value.schemaVersion, value.appearance);
+  if (!viewport || !appearance || !validGraph(nodes, edges)) return null;
 
   return {
-    schemaVersion: 2,
+    schemaVersion: SCHEMA_VERSION,
     id: value.id,
     title: value.title,
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
     revision: value.revision,
+    appearance,
     nodes,
     edges,
     viewport,
@@ -334,6 +368,13 @@ export function isSafeHttpUrl(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+function parseAppearanceField(schemaVersion: unknown, value: unknown): Appearance | null {
+  if (value === 'dark' || value === 'light') return value;
+  if (schemaVersion === SCHEMA_VERSION) return null;
+  if (value == null) return 'dark';
+  return null;
 }
 
 function mapNode(
@@ -355,7 +396,7 @@ function mapNode(
 
 function touch(
   board: Board,
-  patch: Partial<Pick<Board, 'title' | 'nodes' | 'edges' | 'viewport'>>,
+  patch: Partial<Pick<Board, 'title' | 'nodes' | 'edges' | 'viewport' | 'appearance'>>,
   now = new Date().toISOString(),
 ): Board {
   return {
@@ -423,6 +464,8 @@ function parseNode(value: unknown): BoardNode | null {
     if (mode !== 'aspect' && mode !== 'stretch') return null;
     if (!isPositive(value.intrinsicWidth) || !isPositive(value.intrinsicHeight)) return null;
     if (typeof value.sizedFromImage !== 'boolean') return null;
+    if (value.flipX != null && value.flipX !== true && value.flipX !== false) return null;
+    if (value.flipY != null && value.flipY !== true && value.flipY !== false) return null;
     const source = parseImageSource(value.source);
     if (!source) return null;
     return {
@@ -438,6 +481,8 @@ function parseNode(value: unknown): BoardNode | null {
       intrinsicHeight: value.intrinsicHeight,
       sizedFromImage: value.sizedFromImage,
       source,
+      ...(value.flipX === true ? { flipX: true } : {}),
+      ...(value.flipY === true ? { flipY: true } : {}),
     };
   }
   return null;

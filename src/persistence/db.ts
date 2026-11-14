@@ -1,5 +1,5 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
-import { createEmptyBoard, parseBoard, referencedAssetIds } from '../domain/board';
+import { createEmptyBoard, migrateStoredAppearance, parseBoard, referencedAssetIds } from '../domain/board';
 import type { AssetRecord, Board } from '../domain/types';
 
 export const DATABASE_NAME = 'raais-canvas-db';
@@ -36,6 +36,11 @@ function isPreferences(value: Board | AppPreferences | undefined): value is AppP
   return Boolean(value && 'kind' in value && value.kind === 'preferences');
 }
 
+function rawAppearance(value: Board): 'dark' | 'light' | null {
+  const appearance = (value as { appearance?: unknown }).appearance;
+  return appearance === 'dark' || appearance === 'light' ? appearance : null;
+}
+
 function asBoard(value: Board | AppPreferences | undefined): Board | undefined {
   if (!value || isPreferences(value)) return undefined;
   return value;
@@ -70,8 +75,15 @@ export async function readSession(database: CanvasDatabase): Promise<{ board: Bo
   if (!boardValue) return null;
   const board = parseBoard(boardValue);
   if (!board) throw new Error('The stored board could not be read. It was left unchanged.');
+  const storedAppearance = rawAppearance(boardValue);
+  const legacy = storedAppearance ? board.appearance : await readAppearance(database);
+  const migrated = migrateStoredAppearance(board, boardValue.schemaVersion, storedAppearance, legacy);
+  if (migrated !== board) {
+    await writeBoardSnapshot(database, migrated, [], [], { id: migrated.id, revision: migrated.revision });
+    await database.delete('board', PREFERENCES_KEY);
+  }
   const assets = await database.getAll('assets');
-  return { board, assets };
+  return { board: migrated, assets };
 }
 
 export class RevisionConflictError extends Error {

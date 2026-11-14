@@ -1,6 +1,6 @@
 import { childrenOf } from './geometry';
 import type { Board, BoardEdge, BoardNode, Point } from './types';
-import { revise } from './board';
+import { parseBoard, revise } from './board';
 
 export const GRAPH_CLIPBOARD_FORMAT = 'canvas-graph';
 export const GRAPH_CLIPBOARD_VERSION = 1;
@@ -49,7 +49,21 @@ export function decodeGraphClipboard(raw: string): GraphClipboard | null {
   const record = value as Partial<GraphClipboard>;
   if (record.format !== GRAPH_CLIPBOARD_FORMAT || record.version !== GRAPH_CLIPBOARD_VERSION) return null;
   if (!Array.isArray(record.nodes) || !Array.isArray(record.edges)) return null;
-  return { format: GRAPH_CLIPBOARD_FORMAT, version: GRAPH_CLIPBOARD_VERSION, nodes: record.nodes, edges: record.edges };
+  if (raw.length > 1_500_000 || record.nodes.length > 2000 || record.edges.length > 4000) return null;
+  const parsed = parseBoard({
+    schemaVersion: 3,
+    id: 'clipboard',
+    title: 'clipboard',
+    createdAt: '2020-01-01T00:00:00.000Z',
+    updatedAt: '2020-01-01T00:00:00.000Z',
+    revision: 1,
+    appearance: 'dark',
+    nodes: record.nodes,
+    edges: record.edges,
+    viewport: { x: 0, y: 0, zoom: 1 },
+  });
+  if (!parsed || parsed.nodes.length !== record.nodes.length || parsed.edges.length !== record.edges.length) return null;
+  return { format: GRAPH_CLIPBOARD_FORMAT, version: GRAPH_CLIPBOARD_VERSION, nodes: parsed.nodes, edges: parsed.edges };
 }
 
 export function pasteGraph(
