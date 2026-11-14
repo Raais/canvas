@@ -5,13 +5,14 @@ import { GRAPH_CLIPBOARD_VERSION } from '../domain/graph-clipboard';
 import { createHistory, pushHistory, undoHistory } from '../domain/history';
 import { SCHEMA_VERSION, type AssetRecord } from '../domain/types';
 import { partitionIncoming } from '../ingest/admission';
-import { ingestFileList } from '../ingest/browser';
+import { ingestClipboard, ingestFileList } from '../ingest/browser';
 import { interpretClipboard } from '../ingest/clipboard';
 import { createImageOptimizer, type OptimizerPort } from '../ingest/image-optimizer';
 import {
   OPTIMIZE_IMAGES_KEY,
   WEBP_OPTIMIZER_V1,
   classifyDimensions,
+  classifyPngAnimation,
   createBatchGuard,
   describeOptimization,
   gateIncomingImage,
@@ -166,7 +167,7 @@ describe('webp savings and archive admission', () => {
     expect(WEBP_OPTIMIZER_V1.maxDimension).toBe(2560);
     expect(ARCHIVE_LIMITS.maxFileBytes).toBe(64 * Mib);
     expect(ARCHIVE_LIMITS.maxTotalBytes).toBe(256 * Mib);
-    expect(gateIncomingImage({ optimize: true, mimeType: 'image/png', bytes: 80 * Mib, name: 'photo.png' }).action).toBe('optimize');
+    expect(gateIncomingImage({ optimize: true, mimeType: 'image/png', bytes: 80 * Mib, name: 'photo.png', png: 'still' }).action).toBe('optimize');
     expect(gateIncomingImage({ optimize: false, mimeType: 'image/png', bytes: 80 * Mib, name: 'photo.png' }).action).toBe('reject');
     expect(gateIncomingImage({ optimize: true, mimeType: 'image/gif', bytes: 80 * Mib, name: 'move.gif' }).action).toBe('reject');
     const board = createEmptyBoard(now);
@@ -262,7 +263,8 @@ describe('image optimizer worker queue', () => {
 describe('optimized ingestion', () => {
   test('converts eligible pictures and leaves the other formats alone', async () => {
     const calls: string[] = [];
-    const png = new File([new Uint8Array(100)], 'photo.png', { type: 'image/png' });
+    const stillBytes = pngBytes(ihdrChunk(), pngChunk('IDAT', new Uint8Array(40)));
+    const png = pngFile(stillBytes, 'photo.png');
     const converted = await ingestFileList([png], {
       optimize: true,
       measure: async () => ({ width: 20, height: 10 }),
@@ -283,7 +285,7 @@ describe('optimized ingestion', () => {
       expect(image.intrinsicHeight).toBe(10);
       expect(image.blob.size).toBe(40);
     }
-    expect(converted.summary).toBe('Optimized 1 image · saved 60 B');
+    expect(converted.summary).toBe(`Optimized 1 image · saved ${stillBytes.length - 40} B`);
     const kept = await ingestFileList([png], {
       optimize: true,
       optimizer: {
@@ -295,7 +297,7 @@ describe('optimized ingestion', () => {
     if (original?.type === 'image') {
       expect(original.mimeType).toBe('image/png');
       expect(original.intrinsicWidth).toBe(12);
-      expect(original.blob.size).toBe(100);
+      expect(original.blob.size).toBe(stillBytes.length);
     }
     const gif = new File([new Uint8Array([1, 2, 3])], 'move.gif', { type: 'image/gif' });
     const animated = await ingestFileList([gif], {
@@ -364,5 +366,115 @@ describe('optimized image save safety', () => {
     expect(decidePwaUpdate({ ...ready, hasUnpersisted: true }).action).toBe('flush');
     expect(decidePwaUpdate({ ...ready, saveStatus: 'error' }).action).toBe('block');
     expect(mayReplaceBoard(true)).toBe(false);
+  });
+});
+
+function pngChunk(type: string, data = new Uint8Array(0)): Uint8Array {
+  const bytes = new Uint8Array(12 + data.length);
+  new DataView(bytes.buffer).setUint32(0, data.length);
+  for (let index = 0; index < 4; index += 1) bytes[4 + index] = type.charCodeAt(index);
+  bytes.set(data, 8);
+  return bytes;
+}
+
+function pngBytes(...chunks: Uint8Array[]): Uint8Array {
+  const bytes = new Uint8Array(8 + chunks.reduce((sum, chunk) => sum + chunk.length, 0));
+  bytes.set([137, 80, 78, 71, 13, 10, 26, 10]);
+  let offset = 8;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return bytes;
+}
+
+function pngFile(bytes: Uint8Array, name: string): File {
+  const copy = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(copy).set(bytes);
+  return new File([copy], name, { type: 'image/png' });
+}
+
+function ihdrChunk(): Uint8Array {
+  const data = new Uint8Array(13);
+  const view = new DataView(data.buffer);
+  view.setUint32(0, 32);
+  view.setUint32(4, 16);
+  data[8] = 8;
+  return pngChunk('IHDR', data);
+}
+
+describe('animated png preservation', () => {
+  test('does not flatten an apng or a png with a broken chunk length', async () => {
+    const still = pngBytes(ihdrChunk(), pngChunk('IDAT', new Uint8Array([1, 2])));
+    const animated = pngBytes(ihdrChunk(), pngChunk('acTL', new Uint8Array(8)), pngChunk('IDAT', new Uint8Array([1])));
+    expect(classifyPngAnimation(still)).toBe('still');
+    expect(classifyPngAnimation(animated)).toBe('animated');
+    expect(gateIncomingImage({ optimize: true, mimeType: 'image/png', bytes: still.length, name: 'still.png', png: 'still' }).action).toBe('optimize');
+    const broken = new Uint8Array(24);
+    broken.set([137, 80, 78, 71, 13, 10, 26, 10]);
+    new DataView(broken.buffer).setUint32(8, 0xffffffff);
+    expect(classifyPngAnimation(broken)).toBe('ambiguous');
+    const oversized = gateIncomingImage({
+      optimize: true,
+      mimeType: 'image/png',
+      bytes: ARCHIVE_LIMITS.maxFileBytes + 1,
+      name: 'anim.png',
+      png: 'animated',
+    });
+    expect(oversized.action).toBe('reject');
+    if (oversized.action === 'reject') expect(oversized.warning).toContain('64 MiB');
+    const calls: string[] = [];
+    const optimizer = {
+      optimize: async () => {
+        calls.push('worker');
+        return { ok: false as const, reason: 'failed' as const };
+      },
+    };
+    const measure = async () => ({ width: 32, height: 16 });
+    const preserved = await ingestFileList([pngFile(animated, 'anim.png')], { optimize: true, optimizer, measure });
+    expect(calls).toHaveLength(0);
+    expect(preserved.summary).toBeNull();
+    const preservedImage = preserved.items[0];
+    expect(preservedImage?.type).toBe('image');
+    if (preservedImage?.type === 'image') {
+      expect(preservedImage.mimeType).toBe('image/png');
+      expect(preservedImage.blob.size).toBe(animated.length);
+      expect(preservedImage.intrinsicWidth).toBe(32);
+      expect(preservedImage.intrinsicHeight).toBe(16);
+    }
+    const eligible = await ingestFileList([pngFile(still, 'still.png')], {
+      optimize: true,
+      measure,
+      optimizer: {
+        optimize: async () => {
+          calls.push('still');
+          return { ok: true as const, blob: new Blob([new Uint8Array(4)], { type: 'image/webp' }), width: 32, height: 16, sourceWidth: 32, sourceHeight: 16 };
+        },
+      },
+    });
+    expect(calls).toEqual(['still']);
+    if (eligible.items[0]?.type === 'image') expect(eligible.items[0].mimeType).toBe('image/webp');
+    const ambiguous = await ingestFileList([pngFile(broken, 'bad.png')], { optimize: true, optimizer, measure });
+    expect(calls).toEqual(['still']);
+    if (ambiguous.items[0]?.type === 'image') expect(ambiguous.items[0].mimeType).toBe('image/png');
+    let binary = '';
+    for (const byte of animated) binary += String.fromCharCode(byte);
+    const pasted = await ingestClipboard({
+      html: `<img src="data:image/png;base64,${btoa(binary)}">`,
+      plainText: null,
+      files: [],
+    }, 'clipboard', { optimize: true, optimizer, measure });
+    expect(calls).toEqual(['still']);
+    if (pasted.items[0]?.type === 'image') {
+      expect(pasted.items[0].mimeType).toBe('image/png');
+      expect(pasted.items[0].blob.size).toBe(animated.length);
+    }
+    expect(keepsOriginalMime('image/gif')).toBe(true);
+    expect(keepsOriginalMime('image/webp')).toBe(true);
+    expect(keepsOriginalMime('image/avif')).toBe(true);
+    expect(WEBP_OPTIMIZER_V1.quality).toBe(0.82);
+    expect(WEBP_OPTIMIZER_V1.maxDimension).toBe(2560);
+    expect(scaledDimensions(4000, 3000)).toEqual({ width: 2560, height: 1920 });
+    expect(settleOptimization({ originalBytes: 1000, encoded: { bytes: 850, mimeType: 'image/webp', width: 10, height: 10 } })).toBe('accept');
   });
 });

@@ -150,7 +150,14 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const [status, setStatus] = useState<SaveStatus>('saved');
   const statusRef = useRef<SaveStatus>('saved');
   statusRef.current = status;
-  const [notice, setNotice] = useState<{ text: string; source: 'save' | 'ingest' } | null>(null);
+  const [notice, setNotice] = useState<{ text: string; source: 'save' | 'ingest'; ephemeral?: boolean } | null>(null);
+  useEffect(() => {
+    if (!notice?.ephemeral) return;
+    const timer = window.setTimeout(() => {
+      setNotice((current) => (current?.ephemeral ? null : current));
+    }, 3000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
   const [fileDrag, setFileDrag] = useState(false);
   const [urlEpoch, setUrlEpoch] = useState(0);
   const [tool, setTool] = useState<Tool>('select');
@@ -409,9 +416,9 @@ function BoardSurface({ session }: { session: SessionProps }) {
     return toWorldRef.current({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
   }
 
-  function showWarnings(warnings: string[]) {
+  function showWarnings(warnings: string[], ephemeral = false) {
     if (warnings.length === 0) return;
-    setNotice({ text: warnings.join(' '), source: 'ingest' });
+    setNotice({ text: warnings.join(' '), source: 'ingest', ephemeral });
   }
 
   function ensureOptimizer(): ImageOptimizer {
@@ -430,7 +437,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
       }
       const lines = [...bundle.warnings];
       if (bundle.summary) lines.push(bundle.summary);
-      if (lines.length > 0) showWarningsRef.current(lines);
+      if (lines.length > 0) showWarningsRef.current(lines, bundle.warnings.length === 0 && bundle.summary !== null);
       else setNotice((current) => (current?.text === 'Optimizing images…' ? null : current));
       placeItemsRef.current(bundle.items, origin);
     } catch (error: unknown) {
@@ -1739,7 +1746,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
         />
         )}
         {notice ? (
-          <div className="banner" role="alert">
+          <div className={notice.ephemeral ? 'banner is-summary' : 'banner'} role="alert">
             <p>{notice.text}</p>
             <button type="button" onClick={() => setNotice(null)}>
               Dismiss

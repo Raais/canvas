@@ -41,7 +41,7 @@ Project → Image storage has **Optimize new images**. It starts off, including 
 
 When it is on, newly pasted, dropped, or selected PNG and JPEG pictures are resized so the long side is at most 2560 pixels and encoded as WebP at quality 82%. The WebP replaces the original only when it is at least 15% smaller and still fits the backup limits. Otherwise the original file is kept. The compression is lossy: photographs usually hold up, while screenshots, diagrams, and small text can look softer. Turn the setting off before adding images that need to stay sharp.
 
-GIF, WebP, and AVIF files are stored unchanged, so an animation is not flattened. Images already on the board are left alone. External image links are not downloaded or recompressed. Encoding runs in a Web Worker with the browser's own WebP encoder, including while canvas is open offline after the app has been cached. A picture can still be rejected when the stored file would be over 64 MiB or the board would no longer fit in a 256 MiB archive.
+GIF, animated PNG, WebP, and AVIF files are stored unchanged, so an animation is not flattened. An ordinary PNG is still eligible. A savings note disappears after a few seconds, or sooner if it is dismissed. Images already on the board are left alone. External image links are not downloaded or recompressed. Encoding runs in a Web Worker with the browser's own WebP encoder, including while canvas is open offline after the app has been cached. A picture can still be rejected when the stored file would be over 64 MiB or the board would no longer fit in a 256 MiB archive.
 
 ## Install and offline
 

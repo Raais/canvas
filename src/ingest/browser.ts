@@ -15,11 +15,15 @@ import {
 } from './clipboard';
 import { imageExceedsArchiveFile } from './admission';
 import {
+  classifyPngAnimation,
+  classifyPngBlob,
   describeOptimization,
   gateIncomingImage,
   isOptimizableMime,
+  RAW_SOURCE_BYTES,
   readRasterDimensions,
   settleOptimization,
+  type PngAnimation,
 } from './image-optimizer-config';
 import type { ImageOptimizer } from './image-optimizer';
 
@@ -95,6 +99,7 @@ type HeldFile = {
   mimeType: string;
   width: number | null;
   height: number | null;
+  png?: PngAnimation;
 };
 
 async function collectFiles(list: FileList | readonly File[], options: IngestOptions): Promise<{
@@ -111,23 +116,32 @@ async function collectFiles(list: FileList | readonly File[], options: IngestOpt
       warnings.push(file.name ? `Skipped unsupported file "${file.name}".` : 'Skipped an unsupported file.');
       continue;
     }
+    const name = file.name || 'image';
+    if (mimeType === 'image/png' && options.optimize === true && file.size > RAW_SOURCE_BYTES) {
+      const kind = await classifyPngBlob(file);
+      const oversized = gateIncomingImage({ optimize: true, mimeType, bytes: file.size, name, png: kind });
+      if (oversized.action === 'reject') warnings.push(oversized.warning);
+      continue;
+    }
     const early = gateIncomingImage({
-      optimize: options.optimize === true && isOptimizableMime(mimeType),
+      optimize: options.optimize === true && mimeType !== 'image/png',
       mimeType,
       bytes: file.size,
-      name: file.name || 'image',
+      name,
     });
     if (early.action === 'reject') {
       warnings.push(early.warning);
       continue;
     }
     const bytes = new Uint8Array(await file.arrayBuffer());
-    const measured = isOptimizableMime(mimeType) ? readRasterDimensions(bytes, mimeType) : null;
+    const png = mimeType === 'image/png' ? classifyPngAnimation(bytes) : undefined;
+    const measured = isOptimizableMime(mimeType) && png !== 'animated' && png !== 'ambiguous' ? readRasterDimensions(bytes, mimeType) : null;
     const sized = gateIncomingImage({
       optimize: options.optimize === true,
       mimeType,
       bytes: file.size,
-      name: file.name || 'image',
+      name,
+      ...(png ? { png } : {}),
       ...(measured ? { width: measured.width, height: measured.height } : {}),
     });
     if (sized.action === 'reject') {
@@ -137,7 +151,7 @@ async function collectFiles(list: FileList | readonly File[], options: IngestOpt
     const key = contentSignature(mimeType, bytes);
     if (files.has(key)) continue;
     const blob = file.type === mimeType ? file : new File([copyBuffer(bytes)], file.name, { type: mimeType });
-    files.set(key, { file: blob, mimeType, width: measured?.width ?? null, height: measured?.height ?? null });
+    files.set(key, { file: blob, mimeType, width: measured?.width ?? null, height: measured?.height ?? null, ...(png ? { png } : {}) });
     refs.push({ key, mimeType });
   }
   return { refs, files, warnings };
@@ -188,17 +202,26 @@ async function prepareActions(actions: readonly IngestAction[], files: Map<strin
 
 function filePayload(held: HeldFile | undefined): EmbeddedPayload | null {
   if (!held) return null;
-  return { blob: held.file, mimeType: held.mimeType, name: held.file.name || 'image', width: held.width, height: held.height };
+  return {
+    blob: held.file,
+    mimeType: held.mimeType,
+    name: held.file.name || 'image',
+    width: held.width,
+    height: held.height,
+    ...(held.png ? { png: held.png } : {}),
+  };
 }
 
 function bytePayload(bytes: Uint8Array, mimeType: string): EmbeddedPayload {
-  const measured = isOptimizableMime(mimeType) ? readRasterDimensions(bytes, mimeType) : null;
+  const png = mimeType === 'image/png' ? classifyPngAnimation(bytes) : undefined;
+  const measured = isOptimizableMime(mimeType) && png !== 'animated' && png !== 'ambiguous' ? readRasterDimensions(bytes, mimeType) : null;
   return {
     blob: new Blob([copyBuffer(bytes)], { type: mimeType }),
     mimeType,
     name: 'image',
     width: measured?.width ?? null,
     height: measured?.height ?? null,
+    ...(png ? { png } : {}),
   };
 }
 
@@ -208,6 +231,7 @@ type EmbeddedPayload = {
   name: string;
   width: number | null;
   height: number | null;
+  png?: PngAnimation;
 };
 
 async function prepareEmbedded(
@@ -222,6 +246,7 @@ async function prepareEmbedded(
     mimeType: payload.mimeType,
     bytes: payload.blob.size,
     name: payload.name,
+    ...(payload.png ? { png: payload.png } : {}),
     ...(known ?? {}),
   });
   if (gate.action === 'reject') return { kind: 'warning', warning: gate.warning };

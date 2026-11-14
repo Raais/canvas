@@ -37,6 +37,83 @@ export function isOptimizableMime(mimeType: string): boolean {
   return mimeType === 'image/png' || mimeType === 'image/jpeg';
 }
 
+export type PngAnimation = 'still' | 'animated' | 'ambiguous';
+
+const PNG_SIGNATURE = [137, 80, 78, 71, 13, 10, 26, 10];
+
+/** acTL before the first IDAT means the PNG is animated. A broken length is ambiguous, not a still. */
+export function classifyPngAnimation(bytes: Uint8Array): PngAnimation {
+  const read = (offset: number, length: number): Uint8Array | null => {
+    if (length < 0 || offset < 0 || offset > bytes.length || length > bytes.length - offset) return null;
+    return bytes.subarray(offset, offset + length);
+  };
+  return walkPngChunksSync(bytes.length, read(0, 8), read);
+}
+
+export async function classifyPngBlob(blob: Blob): Promise<PngAnimation> {
+  const read = async (offset: number, length: number): Promise<Uint8Array | null> => {
+    if (length < 0 || offset < 0 || offset > blob.size || length > blob.size - offset) return null;
+    return new Uint8Array(await blob.slice(offset, offset + length).arrayBuffer());
+  };
+  return walkPngChunksAsync(blob.size, read);
+}
+
+function walkPngChunksSync(
+  size: number,
+  signature: Uint8Array | null,
+  read: (offset: number, length: number) => Uint8Array | null,
+): PngAnimation {
+  if (!isPngSignature(signature)) return 'ambiguous';
+  let offset = 8;
+  while (offset + 8 <= size) {
+    const header = read(offset, 8);
+    if (!header || header.length < 8) return 'ambiguous';
+    const length = pngChunkLength(header);
+    if (length === null || length > size - offset - 12) return 'ambiguous';
+    if (isChunk(header, 'acTL')) return 'animated';
+    if (isChunk(header, 'IDAT')) return 'still';
+    offset += 12 + length;
+  }
+  return 'ambiguous';
+}
+
+async function walkPngChunksAsync(
+  size: number,
+  read: (offset: number, length: number) => Promise<Uint8Array | null>,
+): Promise<PngAnimation> {
+  if (!isPngSignature(await read(0, 8))) return 'ambiguous';
+  let offset = 8;
+  while (offset + 8 <= size) {
+    const header = await read(offset, 8);
+    if (!header || header.length < 8) return 'ambiguous';
+    const length = pngChunkLength(header);
+    if (length === null || length > size - offset - 12) return 'ambiguous';
+    if (isChunk(header, 'acTL')) return 'animated';
+    if (isChunk(header, 'IDAT')) return 'still';
+    offset += 12 + length;
+  }
+  return 'ambiguous';
+}
+
+function isPngSignature(bytes: Uint8Array | null): boolean {
+  if (!bytes || bytes.length < 8) return false;
+  return PNG_SIGNATURE.every((value, index) => bytes[index] === value);
+}
+
+function pngChunkLength(header: Uint8Array): number | null {
+  const view = new DataView(header.buffer, header.byteOffset, header.byteLength);
+  const length = view.getUint32(0);
+  if (!Number.isFinite(length)) return null;
+  return length;
+}
+
+function isChunk(header: Uint8Array, type: string): boolean {
+  return header[4] === type.charCodeAt(0)
+    && header[5] === type.charCodeAt(1)
+    && header[6] === type.charCodeAt(2)
+    && header[7] === type.charCodeAt(3);
+}
+
 export function keepsOriginalMime(mimeType: string): boolean {
   return mimeType === 'image/gif' || mimeType === 'image/webp' || mimeType === 'image/avif';
 }
@@ -72,9 +149,11 @@ export function gateIncomingImage(input: {
   name: string;
   width?: number;
   height?: number;
+  png?: PngAnimation;
 }): SourceGate {
   const name = input.name || 'image';
-  const eligible = input.optimize && isOptimizableMime(input.mimeType);
+  const pngCanOptimize = input.mimeType !== 'image/png' || input.png === 'still';
+  const eligible = input.optimize && isOptimizableMime(input.mimeType) && pngCanOptimize;
   if (!eligible) {
     if (imageExceedsArchiveFile(input.bytes)) {
       return { action: 'reject', warning: `Skipped ${name}: images larger than ${archiveFileLimitLabel()} cannot be included in canvas backups.` };

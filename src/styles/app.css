@@ -325,6 +325,8 @@ button:focus-visible, .title-input:focus-visible, select:focus-visible {
 }
 
 .banner p { margin: 0; }
+.banner.is-summary { align-items: center; }
+.banner.is-summary p { display: flex; align-items: center; }
 
 .pwa-stack {
   position: absolute;
