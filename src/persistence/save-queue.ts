@@ -10,6 +10,7 @@ export class SaveQueue {
   private dirty = false;
   private suspended = false;
   private recoverable: { board: Board; assets: AssetRecord[] } | null = null;
+  private inflight: { board: Board; upserts: AssetRecord[]; deleteIds: string[] } | null = null;
   private expected: StoredExpectation | null = null;
   private upserts = new Map<string, AssetRecord>();
   private deleteIds = new Set<string>();
@@ -24,6 +25,8 @@ export class SaveQueue {
   adopt(board: Board): void {
     this.expected = { id: board.id, revision: board.revision };
     this.suspended = false;
+    this.recoverable = null;
+    this.inflight = null;
     this.discardPending();
   }
 
@@ -43,9 +46,12 @@ export class SaveQueue {
       clearTimeout(this.timer);
       this.timer = null;
     }
-    const dirty = this.dirty || this.upserts.size > 0 || this.deleteIds.size > 0;
-    if (dirty) {
-      this.recoverable = { board: structuredClone(this.getBoard()), assets: [...this.upserts.values()] };
+    const assets = new Map<string, AssetRecord>();
+    for (const asset of this.inflight?.upserts ?? []) assets.set(asset.id, asset);
+    for (const asset of this.upserts.values()) assets.set(asset.id, asset);
+    const pending = this.dirty || assets.size > 0 || this.deleteIds.size > 0 || this.inflight !== null;
+    if (pending) {
+      this.recoverable = { board: structuredClone(this.getBoard()), assets: [...assets.values()] };
       this.onStatus('unsaved');
     }
   }
@@ -55,7 +61,7 @@ export class SaveQueue {
   }
 
   hasUnpersisted(): boolean {
-    return this.dirty || this.upserts.size > 0 || this.deleteIds.size > 0 || this.recoverable !== null;
+    return this.dirty || this.upserts.size > 0 || this.deleteIds.size > 0 || this.recoverable !== null || this.inflight !== null;
   }
 
   resume(): void {
@@ -149,23 +155,20 @@ export class SaveQueue {
         const plan = planAssetWrite(board, [...this.upserts.values()], [...this.deleteIds]);
         this.upserts.clear();
         this.deleteIds.clear();
+        this.inflight = { board, upserts: plan.upserts, deleteIds: plan.deleteIds };
         this.onStatus('saving');
         const expected = this.expected;
         try {
           await writeBoardSnapshot(this.database, board, plan.upserts, plan.deleteIds, expected);
+          this.inflight = null;
           this.expected = { id: board.id, revision: board.revision };
           this.onPersisted?.(board);
         } catch (error) {
+          this.restoreUncommitted(plan);
           if (error instanceof RevisionConflictError) {
-            for (const asset of plan.upserts) this.upserts.set(asset.id, asset);
-            for (const id of plan.deleteIds) this.deleteIds.add(id);
-            this.dirty = true;
             this.pauseForConflict();
             throw error;
           }
-          for (const asset of plan.upserts) this.upserts.set(asset.id, asset);
-          for (const id of plan.deleteIds) this.deleteIds.add(id);
-          this.dirty = true;
           throw error;
         }
       }
@@ -175,6 +178,17 @@ export class SaveQueue {
     } finally {
       this.writing = false;
     }
+  }
+
+  private restoreUncommitted(plan: { upserts: AssetRecord[]; deleteIds: string[] }): void {
+    this.inflight = null;
+    for (const asset of plan.upserts) {
+      if (!this.upserts.has(asset.id)) this.upserts.set(asset.id, asset);
+    }
+    for (const id of plan.deleteIds) {
+      if (!this.upserts.has(id)) this.deleteIds.add(id);
+    }
+    this.dirty = true;
   }
 }
 

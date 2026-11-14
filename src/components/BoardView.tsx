@@ -86,6 +86,7 @@ import { openBoardChannel, type BoardChannel } from '../project/tabs';
 import { createAssetRecord, replaceStoredBoard, RevisionConflictError, type CanvasDatabase } from '../persistence/db';
 import { createObjectUrlRegistry, type ObjectUrlRegistry } from '../persistence/object-urls';
 import { errorMessage, SaveQueue, type SaveStatus } from '../persistence/save-queue';
+import { canonicalViewportUpdate } from '../project/viewport-write';
 import { BoardActionsProvider, type BoardActions } from './board-context';
 import { Coordinates, type CoordinatesHandle } from './Coordinates';
 import { GroupNode, type GroupFlowNode } from './GroupNode';
@@ -1288,8 +1289,8 @@ function BoardSurface({ session }: { session: SessionProps }) {
           onGroup={groupSelected}
           onUngroup={ungroupSelected}
           onViewport={(viewport) => {
-            const next = setViewport(boardRef.current, viewport);
-            if (next === boardRef.current) return;
+            const next = canonicalViewportUpdate(blockedRef.current, boardRef.current, viewport);
+            if (!next) return;
             replaceBoard(next);
             queue.schedule(300);
           }}

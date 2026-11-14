@@ -1,15 +1,19 @@
 import { describe, expect, test } from 'bun:test';
 import { ARCHIVE_LIMITS } from '../archive/format';
-import { createEmptyBoard, createTextNode, renameBoard, updateText } from '../domain/board';
+import { addNodes, createEmbeddedImageNode, createEmptyBoard, createTextNode, renameBoard, setViewport, updateText } from '../domain/board';
 import { decodeGraphClipboard, encodeGraphClipboard, GRAPH_CLIPBOARD_LIMIT, looksLikeGraphClipboard, selectionClosure } from '../domain/graph-clipboard';
 import { deleteGroupContents, groupSelection, moveTargets, renameGroup, restoreGroupLabels } from '../domain/groups';
 import { createHistory, pushHistory, redoHistory, undoHistory } from '../domain/history';
 import { taskMarkerOffsets, toggleTask, toggleTaskAt } from '../domain/markdown';
 import { archiveFileLimitLabel, archivePressure, imageExceedsArchiveFile, partitionIncoming } from '../ingest/admission';
 import { SaveQueue } from '../persistence/save-queue';
-import type { AssetRecord } from '../domain/types';
+import type { CanvasDatabase } from '../persistence/db';
+import type { AssetRecord, Board } from '../domain/types';
 import { createMockLocks, createWriteSession, WRITE_LOCK_NAME } from '../project/ownership';
 import { memoryTabHub, openBoardChannel, otherTabWins } from '../project/tabs';
+import { canonicalViewportUpdate } from '../project/viewport-write';
+
+declare const Bun: { file(path: URL): { text(): Promise<string> } };
 
 const tasks = [
   '- [ ] Alpha',
@@ -209,4 +213,188 @@ describe('conflict recovery', () => {
     queue.schedule(0);
     expect(queue.pendingSummary().suspended).toBe(true);
   });
+
+  test('a read-only toolbar zoom stays local and an owning tab can store it', async () => {
+    const board = createEmptyBoard();
+    const zoomed = { x: 12, y: -4, zoom: 1.5 };
+    expect(canonicalViewportUpdate(true, board, zoomed)).toBeNull();
+    const stored = canonicalViewportUpdate(false, board, zoomed);
+    expect(stored?.viewport).toEqual(zoomed);
+    expect(stored?.revision).toBe(board.revision + 1);
+    expect(canonicalViewportUpdate(false, stored ?? board, zoomed)).toBeNull();
+    const source = await Bun.file(new URL('../components/BoardView.tsx', import.meta.url)).text();
+    expect(source.includes('canonicalViewportUpdate(blockedRef.current, boardRef.current, viewport)')).toBe(true);
+    expect(source.includes('handlers.current.onMoveEnd = (viewport) => {\n    if (blockedRef.current) return;')).toBe(true);
+  });
+
+  test('a conflict during an uncommitted save keeps the open board and does not overwrite the newer revision', async () => {
+    const image = createEmbeddedImageNode({ center: { x: 0, y: 0 }, assetId: 'asset', intrinsicWidth: 80, intrinsicHeight: 40 });
+    const board = addNodes(createEmptyBoard(), [image]);
+    const asset = { id: 'asset', mimeType: 'image/png', byteSize: 4, createdAt: board.createdAt, blob: new Blob(['test']) };
+    const database = scriptedDatabase(board);
+    database.holdRead();
+    let open = board;
+    const statuses: string[] = [];
+    const queue = new SaveQueue(database.database, () => open, (status) => statuses.push(status));
+    queue.adopt(board);
+    queue.addAssets([asset]);
+    queue.saveNow();
+    expect(queue.pendingSummary()).toEqual({ suspended: false, dirty: false, upserts: 0, deletes: 0 });
+    expect(queue.hasUnpersisted()).toBe(true);
+    const newer = { ...board, revision: board.revision + 1, title: 'Other tab' };
+    database.releaseRead(newer);
+    await queue.idle();
+    expect(database.puts.length).toBe(0);
+    expect(database.stored().revision).toBe(newer.revision);
+    expect(database.stored().title).toBe('Other tab');
+    expect(queue.recovery()?.board.revision).toBe(open.revision);
+    expect(queue.recovery()?.assets[0]?.id).toBe('asset');
+    expect(queue.hasUnpersisted()).toBe(true);
+    expect(statuses.includes('saved')).toBe(false);
+    queue.saveNow();
+    await queue.idle();
+    expect(database.puts.length).toBe(0);
+  });
+
+  test('a successful commit keeps only later edits and a failed write stays recoverable', async () => {
+    const image = createEmbeddedImageNode({ center: { x: 0, y: 0 }, assetId: 'asset', intrinsicWidth: 80, intrinsicHeight: 40 });
+    const board = addNodes(createEmptyBoard(), [image]);
+    const asset = { id: 'asset', mimeType: 'image/png', byteSize: 4, createdAt: board.createdAt, blob: new Blob(['test']) };
+    const database = scriptedDatabase(board);
+    database.holdCommit();
+    let open = board;
+    const statuses: string[] = [];
+    const queue = new SaveQueue(database.database, () => open, (status) => statuses.push(status));
+    queue.adopt(board);
+    queue.addAssets([asset]);
+    queue.saveNow();
+    expect(queue.hasUnpersisted()).toBe(true);
+    open = setViewport(open, { x: 30, y: 0, zoom: 1 });
+    queue.markUnsaved();
+    database.releaseCommit();
+    await queue.idle();
+    expect(database.puts.map((entry) => entry.viewport.x)).toEqual([board.viewport.x, 30]);
+    expect(database.assetPuts).toEqual(['asset']);
+    expect(queue.hasUnpersisted()).toBe(false);
+    expect(statuses[statuses.length - 1]).toBe('saved');
+
+    const failed = scriptedDatabase(board);
+    failed.holdRead();
+    const failedStatuses: string[] = [];
+    const failedQueue = new SaveQueue(failed.database, () => board, (status) => failedStatuses.push(status));
+    failedQueue.adopt(board);
+    failedQueue.addAssets([asset]);
+    failedQueue.saveNow();
+    failed.rejectRead(new Error('storage unavailable'));
+    await failedQueue.idle();
+    expect(failed.puts.length).toBe(0);
+    expect(failedQueue.pendingSummary()).toEqual({ suspended: false, dirty: true, upserts: 1, deletes: 0 });
+    expect(failedQueue.hasUnpersisted()).toBe(true);
+    expect(failedStatuses.includes('saved')).toBe(false);
+  });
+
+  test('losing ownership during an uncommitted save still requires a deliberate reload', async () => {
+    const image = createEmbeddedImageNode({ center: { x: 0, y: 0 }, assetId: 'asset', intrinsicWidth: 80, intrinsicHeight: 40 });
+    const board = addNodes(createEmptyBoard(), [image]);
+    const asset = { id: 'asset', mimeType: 'image/png', byteSize: 4, createdAt: board.createdAt, blob: new Blob(['test']) };
+    const database = scriptedDatabase(board);
+    database.holdCommit();
+    const queue = new SaveQueue(database.database, () => board, () => {});
+    queue.adopt(board);
+    queue.addAssets([asset]);
+    queue.saveNow();
+    queue.pauseForConflict();
+    expect(queue.recovery()?.board.id).toBe(board.id);
+    expect(queue.recovery()?.assets.map((entry) => entry.id)).toEqual(['asset']);
+    expect(queue.hasUnpersisted()).toBe(true);
+    database.releaseCommit();
+    await queue.idle();
+    expect(database.puts.length).toBe(1);
+    expect(database.puts[0]?.revision).toBe(board.revision);
+    expect(queue.hasUnpersisted()).toBe(true);
+    expect(queue.pendingSummary().suspended).toBe(true);
+    queue.saveNow();
+    await queue.idle();
+    expect(database.puts.length).toBe(1);
+  });
 });
+
+function scriptedDatabase(initial: Board) {
+  let stored = initial;
+  const puts: Board[] = [];
+  const assetPuts: string[] = [];
+  let read: { resolve: (board: Board) => void; reject: (error: Error) => void } | null = null;
+  let commit: { resolve: () => void; reject: (error: Error) => void } | null = null;
+  return {
+    puts,
+    assetPuts,
+    stored: () => stored,
+    holdRead() {
+      read = { resolve() {}, reject() {} };
+    },
+    releaseRead(board: Board) {
+      const pending = read;
+      read = null;
+      stored = board;
+      pending?.resolve(board);
+    },
+    rejectRead(error: Error) {
+      const pending = read;
+      read = null;
+      pending?.reject(error);
+    },
+    holdCommit() {
+      commit = { resolve() {}, reject() {} };
+    },
+    releaseCommit() {
+      const pending = commit;
+      commit = null;
+      pending?.resolve();
+    },
+    database: {
+      transaction() {
+        const pendingRead = read;
+        const pendingCommit = commit;
+        let aborted = false;
+        const finished = new Promise<void>((resolve, reject) => {
+          if (!pendingCommit) {
+            resolve();
+            return;
+          }
+          pendingCommit.resolve = () => {
+            if (aborted) reject(new DOMException('The transaction was aborted.', 'AbortError'));
+            else resolve();
+          };
+          pendingCommit.reject = reject;
+        });
+        return {
+          objectStore(name: string) {
+            if (name === 'board') {
+              return {
+                get: () => pendingRead ? new Promise<Board>((resolve, reject) => {
+                  pendingRead.resolve = resolve;
+                  pendingRead.reject = reject;
+                }) : Promise.resolve(stored),
+                put: (value: Board) => {
+                  if (aborted) return;
+                  stored = value;
+                  puts.push(value);
+                },
+              };
+            }
+            return {
+              put: (value: AssetRecord) => {
+                if (!aborted) assetPuts.push(value.id);
+              },
+              delete: () => undefined,
+            };
+          },
+          abort() {
+            aborted = true;
+          },
+          done: finished,
+        };
+      },
+    } as unknown as CanvasDatabase,
+  };
+}
