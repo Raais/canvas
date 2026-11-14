@@ -31,6 +31,9 @@ uniform int uDitherMode;
 uniform vec2 uSmoothFade;
 uniform vec2 uCells;
 uniform float uLodBlend;
+uniform int uVoidEnabled;
+uniform float uVoidCutoff;
+uniform float uVoidSoftness;
 
 out vec4 fragColor;
 
@@ -85,6 +88,13 @@ float bayer(ivec2 cell) {
   return value / 16.0;
 }
 
+float landMask(float density, float cutoff, float softness) {
+  if (softness <= 0.0) return density > cutoff ? 1.0 : 0.0;
+  float upper = min(1.0, cutoff + softness);
+  if (upper <= cutoff) return density > cutoff ? 1.0 : 0.0;
+  return smoothstep(cutoff, upper, density);
+}
+
 float toneAt(vec2 world, float density, float cell) {
   float threshold = bayer(ivec2(floor(world / max(cell, 0.001))));
   float dithered = step(threshold, density);
@@ -105,6 +115,7 @@ void main() {
   float terrain = large * uNoiseWeights.x + medium * uNoiseWeights.y + detail * uNoiseWeights.z;
   float density = smoothstep(uDensityThresholds.x, uDensityThresholds.y, terrain);
   float tone = mix(toneAt(world, density, uCells.x), toneAt(world, density, uCells.y), clamp(uLodBlend, 0.0, 1.0));
+  if (uVoidEnabled == 1) tone *= landMask(density, uVoidCutoff, uVoidSoftness);
   vec3 color = mix(uBaseColor, uInkColor, clamp(tone, 0.0, 1.0) * clamp(uInkStrength, 0.0, 1.0));
   fragColor = vec4(color, 1.0);
 }

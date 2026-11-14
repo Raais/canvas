@@ -57,7 +57,7 @@ function buildGpu(gl: WebGL2RenderingContext): GpuResources | null {
     gl.deleteVertexArray(vao);
     return null;
   }
-  const names = ['uCssResolution', 'uBackingResolution', 'uTile', 'uLocalOrigin', 'uZoom', 'uSeedA', 'uSeedB', 'uSeedC', 'uBaseColor', 'uInkColor', 'uNoiseScales', 'uNoiseWeights', 'uDensityThresholds', 'uInkStrength', 'uDitherMode', 'uSmoothFade', 'uCells', 'uLodBlend'];
+  const names = ['uCssResolution', 'uBackingResolution', 'uTile', 'uLocalOrigin', 'uZoom', 'uSeedA', 'uSeedB', 'uSeedC', 'uBaseColor', 'uInkColor', 'uNoiseScales', 'uNoiseWeights', 'uDensityThresholds', 'uInkStrength', 'uDitherMode', 'uSmoothFade', 'uCells', 'uLodBlend', 'uVoidEnabled', 'uVoidCutoff', 'uVoidSoftness'];
   const locations: Record<string, WebGLUniformLocation | null> = {};
   for (const name of names) locations[name] = gl.getUniformLocation(program, name);
   return { program, vao, locations };
@@ -154,6 +154,9 @@ export class AtlasRenderer {
     gl.uniform2f(loc.uSmoothFade ?? null, resolved.fade[0], resolved.fade[1]);
     gl.uniform2f(loc.uCells ?? null, resolved.cells[0], resolved.cells[1]);
     gl.uniform1f(loc.uLodBlend ?? null, resolved.blend);
+    gl.uniform1i(loc.uVoidEnabled ?? null, resolved.voidEnabled);
+    gl.uniform1f(loc.uVoidCutoff ?? null, resolved.voidCutoff);
+    gl.uniform1f(loc.uVoidSoftness ?? null, resolved.voidSoftness);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     this.drawn = key;
   }

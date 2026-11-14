@@ -520,6 +520,8 @@ button:focus-visible, .title-input:focus-visible, select:focus-visible {
 .atlas-lab label input { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); }
 .atlas-lab label small, .atlas-lab-actions small { color: var(--muted); font-size: 11px; line-height: 1.35; }
 .atlas-lab label.is-disabled { opacity: 0.45; }
+.atlas-lab .atlas-toggle { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.atlas-lab .atlas-toggle input { width: auto; grid-column: auto; }
 .atlas-segment { display: flex; gap: 4px; }
 .atlas-segment button, .atlas-lab header button, .atlas-lab-actions button {
   appearance: none; border: 1px solid var(--line); border-radius: var(--radius-control); background: transparent;

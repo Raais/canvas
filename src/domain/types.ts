@@ -31,7 +31,7 @@ export type BackgroundTone = 'slate' | 'sage' | 'sand' | 'rose';
 export type TextTone = 'muted' | 'blue' | 'sage' | 'warm';
 export type CodeLanguage = 'javascript' | 'typescript' | 'python' | 'json' | 'html' | 'css' | 'shell' | 'plain';
 export type BackgroundPattern = 'dots' | 'grid' | 'cross' | 'blank' | 'dither-atlas';
-export type DitherAtlasConfig = { seed: number; rendererVersion: 1 };
+export type DitherAtlasConfig = { seed: number; rendererVersion: 1 | 2 };
 export type CornerStyle = 'rounded' | 'square';
 
 export type HandleSide = 'top' | 'right' | 'bottom' | 'left';

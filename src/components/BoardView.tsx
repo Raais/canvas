@@ -33,6 +33,7 @@ import {
   setNoteTone,
   setPresentation,
   setViewport,
+  upgradeAtlasRenderer,
   toggleImageFlip,
   staggeredPositions,
   updateText,
@@ -88,7 +89,7 @@ import { SelectionBar } from './SelectionBar';
 import { TextNoteNode, type TextFlowNode } from './TextNoteNode';
 import { AtlasBoundary } from '../backgrounds/AtlasBoundary';
 import { AtlasTuningPanel } from '../backgrounds/AtlasTuningPanel';
-import { ATLAS_LAB_ENABLED, ATLAS_TUNING_DEFAULTS, clampAtlasTuning, effectiveAtlasTuning, type AtlasPreview, type AtlasTuning } from '../backgrounds/atlas-tuning';
+import { ATLAS_LAB_ENABLED, clampAtlasTuning, defaultsForAtlasVersion, effectiveAtlasTuning, type AtlasPreview, type AtlasTuning } from '../backgrounds/atlas-tuning';
 import { ProjectMenu } from './ProjectMenu';
 
 const DitherAtlasLayer = lazy(() => import('../backgrounds/DitherAtlasLayer'));
@@ -140,13 +141,15 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const [historyStamp, setHistoryStamp] = useState(0);
   const [chromeHidden, setChromeHidden] = useState(false);
   const [atlasBlocked, setAtlasBlocked] = useState(false);
-  const [atlasTuning, setAtlasTuning] = useState<AtlasTuning>(ATLAS_TUNING_DEFAULTS);
+  const atlasVersion = board.ditherAtlas?.rendererVersion === 1 ? 1 : 2;
+  const [atlasTuning, setAtlasTuning] = useState<AtlasTuning>(() => defaultsForAtlasVersion(session.board.ditherAtlas?.rendererVersion === 1 ? 1 : 2));
   const [atlasPreview, setAtlasPreview] = useState<AtlasPreview>('experimental');
   const [atlasLabOpen, setAtlasLabOpen] = useState(false);
   const blockAtlas = useCallback(() => setAtlasBlocked(true), []);
-  const activeAtlasTuning = effectiveAtlasTuning(atlasPreview, atlasTuning);
+  const activeAtlasTuning = effectiveAtlasTuning(atlasPreview, atlasTuning, atlasVersion);
   useEffect(() => {
-    setAtlasTuning(ATLAS_TUNING_DEFAULTS);
+    const version = board.ditherAtlas?.rendererVersion === 1 ? 1 : 2;
+    setAtlasTuning(defaultsForAtlasVersion(version));
     setAtlasPreview('experimental');
     setAtlasLabOpen(false);
   }, [board.id]);
@@ -1226,7 +1229,18 @@ function BoardSurface({ session }: { session: SessionProps }) {
               persisted={persisted}
               pattern={board.backgroundPattern}
               atlasBlocked={atlasBlocked}
+              rendererVersion={board.ditherAtlas?.rendererVersion ?? null}
               onTune={() => { setProjectOpen(false); setAtlasLabOpen(true); }}
+              onUpgrade={() => {
+                if (blockedRef.current) return;
+                const next = upgradeAtlasRenderer(boardRef.current);
+                if (next === boardRef.current) return;
+                replaceBoard(next);
+                queue.schedule(300);
+                setAtlasTuning(defaultsForAtlasVersion(2));
+                setAtlasPreview('experimental');
+                setProjectOpen(false);
+              }}
               onPattern={(pattern) => {
                 setAtlasBlocked(false);
                 if (blockedRef.current) return;
@@ -1414,9 +1428,10 @@ function BoardSurface({ session }: { session: SessionProps }) {
             seed={board.ditherAtlas?.seed ?? 0}
             title={board.title}
             zoom={board.viewport.zoom}
-            onChange={(next) => setAtlasTuning(clampAtlasTuning(next))}
+            rendererVersion={atlasVersion}
+            onChange={(next) => setAtlasTuning(clampAtlasTuning(next, defaultsForAtlasVersion(atlasVersion)))}
             onPreview={setAtlasPreview}
-            onReset={() => { setAtlasTuning(ATLAS_TUNING_DEFAULTS); setAtlasPreview('experimental'); }}
+            onReset={() => { setAtlasTuning(defaultsForAtlasVersion(atlasVersion)); setAtlasPreview('experimental'); }}
             onClose={() => setAtlasLabOpen(false)}
           />
         )}

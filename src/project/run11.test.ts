@@ -30,7 +30,7 @@ describe('atlas rename seeding', () => {
     expect(renamed.title).toBe('Ideas 2027');
     expect(renamed.ditherAtlas?.seed).toBe(seedFromProjectName('Ideas 2027'));
     expect(renamed.ditherAtlas?.seed === atlas.ditherAtlas?.seed).toBe(false);
-    expect(renamed.ditherAtlas?.rendererVersion).toBe(1);
+    expect(renamed.ditherAtlas?.rendererVersion).toBe(2);
   });
 
   test('renaming while dots is selected still updates a saved seed', () => {
@@ -73,8 +73,9 @@ describe('atlas tuning', () => {
       largeWeight: 0.57, mediumWeight: 0.28, detailWeight: 0.15,
       densityLow: -0.18, densityHigh: 0.42, cellSize: 4, inkStrength: 0.72,
       ditherMode: 'smooth', smoothFadeStart: 0.8, smoothFadeEnd: 2.4, adaptiveTargetPixels: 2.5,
+      voidEnabled: false, voidCutoff: 0.15, voidSoftness: 0,
     });
-    expect(Object.values(ATLAS_TUNING_DEFAULTS).every((value) => value === 'smooth' || Number.isFinite(value))).toBe(true);
+    expect(Object.values(ATLAS_TUNING_DEFAULTS).every((value) => typeof value === 'boolean' || value === 'smooth' || Number.isFinite(value))).toBe(true);
   });
 
   test('rejects invalid scales, modes, and threshold order', () => {
@@ -99,7 +100,7 @@ describe('atlas tuning', () => {
 
   test('original preview and reset do not overwrite experimental values', () => {
     const experimental = clampAtlasTuning({ ...ATLAS_TUNING_DEFAULTS, largeScale: 1200, ditherMode: 'adaptive' });
-    expect(effectiveAtlasTuning('original', experimental).largeScale).toBe(900);
+    expect(effectiveAtlasTuning('original', experimental, 1).largeScale).toBe(900);
     expect(experimental.largeScale).toBe(1200);
     expect(clampAtlasTuning({}).ditherMode).toBe('smooth');
   });

@@ -249,12 +249,17 @@ export function setPresentation(
 
 export function setBackgroundPattern(board: Board, backgroundPattern: BackgroundPattern, now?: string): Board {
   if (backgroundPattern === 'dither-atlas') {
-    const ditherAtlas = board.ditherAtlas ?? { seed: seedFromProjectName(board.title), rendererVersion: 1 as const };
+    const ditherAtlas = board.ditherAtlas ?? { seed: seedFromProjectName(board.title), rendererVersion: 2 as const };
     if (board.backgroundPattern === 'dither-atlas' && board.ditherAtlas?.seed === ditherAtlas.seed) return board;
     return touch(board, { backgroundPattern, ditherAtlas }, now);
   }
   if (board.backgroundPattern === backgroundPattern) return board;
   return touch(board, { backgroundPattern }, now);
+}
+
+export function upgradeAtlasRenderer(board: Board, now?: string): Board {
+  if (board.backgroundPattern !== 'dither-atlas' || board.ditherAtlas?.rendererVersion !== 1) return board;
+  return touch(board, { ditherAtlas: { seed: board.ditherAtlas.seed, rendererVersion: 2 } }, now);
 }
 
 export function setGroupBackgroundTone(board: Board, id: string, tone: BackgroundTone | 'default', now?: string): Board {
@@ -464,9 +469,9 @@ function parsePattern(schemaVersion: unknown, value: unknown): BackgroundPattern
 
 function parseDither(value: unknown): Board['ditherAtlas'] | null {
   if (value == null) return undefined;
-  if (!isRecord(value) || value.rendererVersion !== 1) return null;
+  if (!isRecord(value) || (value.rendererVersion !== 1 && value.rendererVersion !== 2)) return null;
   if (typeof value.seed !== 'number' || !Number.isInteger(value.seed) || value.seed < 0 || value.seed > 4294967295) return null;
-  return { seed: value.seed, rendererVersion: 1 };
+  return { seed: value.seed, rendererVersion: value.rendererVersion };
 }
 
 function parseTone<T extends string>(value: unknown, allowed: readonly T[]): T | undefined | null {
