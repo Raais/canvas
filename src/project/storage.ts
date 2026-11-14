@@ -44,6 +44,7 @@ export function boardSnapshotKey(board: Board): string {
     appearance: board.appearance,
     backgroundPattern: board.backgroundPattern,
     ditherAtlas: board.ditherAtlas ?? null,
+    topographicContours: board.topographicContours ?? null,
     nodes: board.nodes,
     edges: board.edges,
     viewport: board.viewport,

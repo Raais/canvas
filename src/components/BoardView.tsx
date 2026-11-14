@@ -102,10 +102,13 @@ import { SelectionBar } from './SelectionBar';
 import { TextNoteNode, type TextFlowNode } from './TextNoteNode';
 import { AtlasBoundary } from '../backgrounds/AtlasBoundary';
 import { AtlasTuningPanel } from '../backgrounds/AtlasTuningPanel';
+import { ContoursTuningPanel } from '../backgrounds/ContoursTuningPanel';
 import { ATLAS_LAB_ENABLED, clampAtlasTuning, defaultsForAtlasVersion, effectiveAtlasTuning, storedAtlasVersion, type AtlasPreview, type AtlasTuning } from '../backgrounds/atlas-tuning';
+import { CONTOURS_V1_DEFAULTS, clampContoursTuning, effectiveContoursTuning, type ContoursPreview, type ContoursTuning } from '../backgrounds/contours-tuning';
 import { ProjectMenu } from './ProjectMenu';
 
 const DitherAtlasLayer = lazy(() => import('../backgrounds/DitherAtlasLayer'));
+const TopographicContoursLayer = lazy(() => import('../backgrounds/TopographicContoursLayer'));
 import { Toolbar } from './Toolbar';
 
 type CanvasFlowNode = TextFlowNode | ImageFlowNode | GroupFlowNode;
@@ -157,17 +160,28 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const [historyStamp, setHistoryStamp] = useState(0);
   const [chromeHidden, setChromeHidden] = useState(false);
   const [atlasBlocked, setAtlasBlocked] = useState(false);
+  const [contoursBlocked, setContoursBlocked] = useState(false);
   const atlasVersion = storedAtlasVersion(board.ditherAtlas?.rendererVersion);
   const [atlasTuning, setAtlasTuning] = useState<AtlasTuning>(() => defaultsForAtlasVersion(storedAtlasVersion(session.board.ditherAtlas?.rendererVersion)));
   const [atlasPreview, setAtlasPreview] = useState<AtlasPreview>('experimental');
   const [atlasLabOpen, setAtlasLabOpen] = useState(false);
+  const [contoursTuning, setContoursTuning] = useState<ContoursTuning>(CONTOURS_V1_DEFAULTS);
+  const [contoursPreview, setContoursPreview] = useState<ContoursPreview>('experimental');
+  const [contoursLabOpen, setContoursLabOpen] = useState(false);
   const blockAtlas = useCallback(() => setAtlasBlocked(true), []);
+  const blockContours = useCallback(() => setContoursBlocked(true), []);
   const activeAtlasTuning = effectiveAtlasTuning(atlasPreview, atlasTuning, atlasVersion);
+  const activeContoursTuning = effectiveContoursTuning(contoursPreview, contoursTuning);
+  const atlasActive = board.backgroundPattern === 'dither-atlas' && Boolean(board.ditherAtlas) && !atlasBlocked;
+  const contoursActive = board.backgroundPattern === 'topographic-contours' && Boolean(board.topographicContours) && !contoursBlocked;
   useEffect(() => {
     const version = storedAtlasVersion(board.ditherAtlas?.rendererVersion);
     setAtlasTuning(defaultsForAtlasVersion(version));
     setAtlasPreview('experimental');
     setAtlasLabOpen(false);
+    setContoursTuning(CONTOURS_V1_DEFAULTS);
+    setContoursPreview('experimental');
+    setContoursLabOpen(false);
   }, [board.id]);
   const [confirming, setConfirming] = useState<
     | null
@@ -1343,7 +1357,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
     <BoardActionsProvider value={actions}>
       <div
         ref={boardEl}
-        className={`${tool === 'frame' ? 'board is-framing' : 'board'}${board.backgroundPattern === 'dither-atlas' && board.ditherAtlas && !atlasBlocked ? ' has-dither-atlas' : ''}`}
+        className={`${tool === 'frame' ? 'board is-framing' : 'board'}${atlasActive ? ' has-dither-atlas' : ''}${contoursActive ? ' has-topographic-contours' : ''}`}
         onDragEnter={(event) => {
           if (!hasFiles(event.dataTransfer)) return;
           event.preventDefault();
@@ -1376,10 +1390,17 @@ function BoardSurface({ session }: { session: SessionProps }) {
             });
         }}
       >
-        {board.backgroundPattern === 'dither-atlas' && board.ditherAtlas && !atlasBlocked ? (
+        {atlasActive && board.ditherAtlas ? (
           <AtlasBoundary onUnavailable={blockAtlas}>
             <Suspense fallback={null}>
               <DitherAtlasLayer seed={board.ditherAtlas.seed} appearance={board.appearance} tuning={activeAtlasTuning} onUnavailable={blockAtlas} />
+            </Suspense>
+          </AtlasBoundary>
+        ) : null}
+        {contoursActive && board.topographicContours ? (
+          <AtlasBoundary onUnavailable={blockContours}>
+            <Suspense fallback={null}>
+              <TopographicContoursLayer seed={board.topographicContours.seed} appearance={board.appearance} tuning={activeContoursTuning} onUnavailable={blockContours} />
             </Suspense>
           </AtlasBoundary>
         ) : null}
@@ -1452,8 +1473,10 @@ function BoardSurface({ session }: { session: SessionProps }) {
               persisted={persisted}
               pattern={board.backgroundPattern}
               atlasBlocked={atlasBlocked}
+              contoursBlocked={contoursBlocked}
               rendererVersion={board.ditherAtlas?.rendererVersion ?? null}
-              onTune={() => { setProjectOpen(false); setAtlasLabOpen(true); }}
+              onTune={() => { setProjectOpen(false); setContoursLabOpen(false); setAtlasLabOpen(true); }}
+              onTuneContours={() => { setProjectOpen(false); setAtlasLabOpen(false); setContoursLabOpen(true); }}
               onUpgrade={() => {
                 if (blockedRef.current) return;
                 const next = upgradeAtlasRenderer(boardRef.current);
@@ -1465,8 +1488,9 @@ function BoardSurface({ session }: { session: SessionProps }) {
                 setProjectOpen(false);
               }}
               onPattern={(pattern) => {
-                setAtlasBlocked(false);
                 if (blockedRef.current) return;
+                setAtlasBlocked(false);
+                setContoursBlocked(false);
                 const next = setBackgroundPattern(boardRef.current, pattern);
                 if (next === boardRef.current) return;
                 replaceBoard(next);
@@ -1499,6 +1523,11 @@ function BoardSurface({ session }: { session: SessionProps }) {
         {atlasBlocked && board.backgroundPattern === 'dither-atlas' ? (
           <div className="banner" role="status">
             <p>Dither Atlas unavailable on this device. Showing Dots.</p>
+          </div>
+        ) : null}
+        {contoursBlocked && board.backgroundPattern === 'topographic-contours' ? (
+          <div className="banner" role="status">
+            <p>Topographic Contours unavailable on this device. Showing Dots.</p>
           </div>
         ) : null}
         {readOnly ? (
@@ -1685,7 +1714,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
           fitView={false}
           defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
         >
-          {board.backgroundPattern === 'blank' || (board.backgroundPattern === 'dither-atlas' && !atlasBlocked) ? null : (
+          {board.backgroundPattern === 'blank' || atlasActive || contoursActive ? null : (
             <Background variant={board.backgroundPattern === 'grid' ? BackgroundVariant.Lines : board.backgroundPattern === 'cross' ? BackgroundVariant.Cross : BackgroundVariant.Dots} gap={20} size={1.4} color={board.appearance === 'light' ? '#d2c9be' : '#3c4652'} />
           )}
           {draft ? (
@@ -1697,6 +1726,19 @@ function BoardSurface({ session }: { session: SessionProps }) {
             </ViewportPortal>
           ) : null}
         </ReactFlow>
+        {chromeHidden || !contoursLabOpen || board.backgroundPattern !== 'topographic-contours' || contoursBlocked ? null : (
+          <ContoursTuningPanel
+            tuning={contoursTuning}
+            preview={contoursPreview}
+            seed={board.topographicContours?.seed ?? 0}
+            title={board.title}
+            zoom={board.viewport.zoom}
+            onChange={(next) => setContoursTuning(clampContoursTuning(next))}
+            onPreview={setContoursPreview}
+            onReset={() => { setContoursTuning(CONTOURS_V1_DEFAULTS); setContoursPreview('experimental'); }}
+            onClose={() => setContoursLabOpen(false)}
+          />
+        )}
         {chromeHidden || !ATLAS_LAB_ENABLED || !atlasLabOpen || board.backgroundPattern !== 'dither-atlas' ? null : (
           <AtlasTuningPanel
             tuning={atlasTuning}

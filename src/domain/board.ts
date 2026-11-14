@@ -163,10 +163,11 @@ export function addNodes(board: Board, nodes: BoardNode[], now?: string): Board 
 
 export function renameBoard(board: Board, title: string, now?: string): Board {
   if (board.title === title) return board;
-  if (!board.ditherAtlas) return touch(board, { title }, now);
+  const seed = seedFromProjectName(title);
   return touch(board, {
     title,
-    ditherAtlas: { ...board.ditherAtlas, seed: seedFromProjectName(title) },
+    ...(board.ditherAtlas ? { ditherAtlas: { ...board.ditherAtlas, seed } } : {}),
+    ...(board.topographicContours ? { topographicContours: { ...board.topographicContours, seed } } : {}),
   }, now);
 }
 
@@ -262,6 +263,11 @@ export function setBackgroundPattern(board: Board, backgroundPattern: Background
     if (board.backgroundPattern === 'dither-atlas' && board.ditherAtlas?.seed === ditherAtlas.seed) return board;
     return touch(board, { backgroundPattern, ditherAtlas }, now);
   }
+  if (backgroundPattern === 'topographic-contours') {
+    const topographicContours = board.topographicContours ?? { seed: seedFromProjectName(board.title), rendererVersion: 1 as const };
+    if (board.backgroundPattern === 'topographic-contours' && board.topographicContours) return board;
+    return touch(board, { backgroundPattern, topographicContours }, now);
+  }
   if (board.backgroundPattern === backgroundPattern) return board;
   return touch(board, { backgroundPattern }, now);
 }
@@ -334,7 +340,7 @@ export function migrateStoredAppearance(
   storedAppearance: Appearance | null,
   legacy: Appearance,
 ): Board {
-  if (storedAppearance && (storedSchema === 5 || storedSchema === SCHEMA_VERSION)) return board;
+  if (storedAppearance && (storedSchema === 5 || storedSchema === 6 || storedSchema === SCHEMA_VERSION)) return board;
   return { ...board, appearance: storedAppearance ?? legacy };
 }
 
@@ -407,8 +413,9 @@ export function revise(
 export function parseBoard(value: unknown): Board | null {
   if (!isRecord(value)) return null;
   if (value.schemaVersion === 1) return migrateVersion1(value);
-  const current = value.schemaVersion === SCHEMA_VERSION;
-  if (!current && value.schemaVersion !== 2 && value.schemaVersion !== 3 && value.schemaVersion !== 4 && value.schemaVersion !== 5) return null;
+  const version = value.schemaVersion;
+  if (version !== 2 && version !== 3 && version !== 4 && version !== 5 && version !== 6 && version !== SCHEMA_VERSION) return null;
+  const relationshipStrict = version === 6 || version === SCHEMA_VERSION;
   if (!isNonEmptyString(value.id) || typeof value.title !== 'string') return null;
   if (typeof value.createdAt !== 'string' || typeof value.updatedAt !== 'string') return null;
   if (!isFiniteNumber(value.revision)) return null;
@@ -426,20 +433,22 @@ export function parseBoard(value: unknown): Board | null {
   const edges: BoardEdge[] = [];
   const edgeIds = new Set<string>();
   for (const entry of value.edges) {
-    const edge = parseEdge(entry, current);
+    const edge = parseEdge(entry, relationshipStrict);
     if (!edge || edgeIds.has(edge.id)) return null;
     edgeIds.add(edge.id);
     edges.push(edge);
   }
-  const savedViews = parseSavedViews(value.savedViews, current);
+  const savedViews = parseSavedViews(value.savedViews, relationshipStrict);
   if (!savedViews) return null;
 
   const viewport = parseViewport(value.viewport);
   const appearance = parseAppearanceField(value.schemaVersion, value.appearance);
   const backgroundPattern = parsePattern(value.schemaVersion, value.backgroundPattern);
   const ditherAtlas = parseDither(value.ditherAtlas);
-  if (!viewport || !appearance || !backgroundPattern || ditherAtlas === null || !validGraph(nodes, edges)) return null;
+  const topographicContours = parseContours(value.schemaVersion, value.topographicContours);
+  if (!viewport || !appearance || !backgroundPattern || ditherAtlas === null || topographicContours === null || !validGraph(nodes, edges)) return null;
   if (backgroundPattern === 'dither-atlas' && !ditherAtlas) return null;
+  if (backgroundPattern === 'topographic-contours' && !topographicContours) return null;
 
   return {
     schemaVersion: SCHEMA_VERSION,
@@ -451,6 +460,7 @@ export function parseBoard(value: unknown): Board | null {
     appearance,
     backgroundPattern,
     ...(ditherAtlas ? { ditherAtlas } : {}),
+    ...(topographicContours ? { topographicContours } : {}),
     nodes,
     edges,
     savedViews,
@@ -468,7 +478,7 @@ export function isSafeHttpUrl(value: string): boolean {
 }
 
 function strictDocument(schemaVersion: unknown): boolean {
-  return schemaVersion === 5 || schemaVersion === SCHEMA_VERSION;
+  return schemaVersion === 5 || schemaVersion === 6 || schemaVersion === SCHEMA_VERSION;
 }
 
 function parseAppearanceField(schemaVersion: unknown, value: unknown): Appearance | null {
@@ -480,9 +490,18 @@ function parseAppearanceField(schemaVersion: unknown, value: unknown): Appearanc
 
 function parsePattern(schemaVersion: unknown, value: unknown): BackgroundPattern | null {
   if (value === 'dots' || value === 'grid' || value === 'cross' || value === 'blank' || value === 'dither-atlas') return value;
+  if (value === 'topographic-contours' && schemaVersion === SCHEMA_VERSION) return value;
   if (strictDocument(schemaVersion)) return null;
   if (value == null) return 'dots';
   return null;
+}
+
+function parseContours(schemaVersion: unknown, value: unknown): Board['topographicContours'] | null {
+  if (schemaVersion !== SCHEMA_VERSION) return undefined;
+  if (value == null) return undefined;
+  if (!isRecord(value) || value.rendererVersion !== 1) return null;
+  if (typeof value.seed !== 'number' || !Number.isInteger(value.seed) || value.seed < 0 || value.seed > 4294967295) return null;
+  return { seed: value.seed, rendererVersion: 1 };
 }
 
 function parseDither(value: unknown): Board['ditherAtlas'] | null {
@@ -516,7 +535,7 @@ function mapNode(
 
 function touch(
   board: Board,
-  patch: Partial<Pick<Board, 'title' | 'nodes' | 'edges' | 'viewport' | 'appearance' | 'backgroundPattern' | 'ditherAtlas' | 'savedViews'>>,
+  patch: Partial<Pick<Board, 'title' | 'nodes' | 'edges' | 'viewport' | 'appearance' | 'backgroundPattern' | 'ditherAtlas' | 'topographicContours' | 'savedViews'>>,
   now = new Date().toISOString(),
 ): Board {
   return {

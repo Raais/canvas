@@ -36,7 +36,7 @@ describe('dither atlas seed and schema', () => {
   test('migrates older patterns and rejects malformed atlas metadata', () => {
     const empty = createEmptyBoard();
     const grid = parseBoard({ ...empty, schemaVersion: 4, backgroundPattern: 'grid', ditherAtlas: undefined });
-    expect(grid?.schemaVersion).toBe(6);
+    expect(grid?.schemaVersion).toBe(7);
     expect(grid?.backgroundPattern).toBe('grid');
     expect(grid?.ditherAtlas).toBe(undefined);
     expect(parseBoard({ ...empty, schemaVersion: 9 })).toBeNull();

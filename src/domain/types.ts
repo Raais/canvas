@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 6 as const;
+export const SCHEMA_VERSION = 7 as const;
 export const MAX_SAVED_VIEWS = 32;
 export const MAX_SAVED_VIEW_NAME = 60;
 export const MAX_EDGE_LABEL = 80;
@@ -35,8 +35,9 @@ export type NotePresentation = 'text' | 'markdown' | 'code';
 export type BackgroundTone = 'slate' | 'sage' | 'sand' | 'rose';
 export type TextTone = 'muted' | 'blue' | 'sage' | 'warm';
 export type CodeLanguage = 'javascript' | 'typescript' | 'python' | 'json' | 'html' | 'css' | 'shell' | 'plain';
-export type BackgroundPattern = 'dots' | 'grid' | 'cross' | 'blank' | 'dither-atlas';
+export type BackgroundPattern = 'dots' | 'grid' | 'cross' | 'blank' | 'dither-atlas' | 'topographic-contours';
 export type DitherAtlasConfig = { seed: number; rendererVersion: 1 | 2 | 3 };
+export type TopographicContoursConfig = { seed: number; rendererVersion: 1 };
 export type CornerStyle = 'rounded' | 'square';
 
 export type HandleSide = 'top' | 'right' | 'bottom' | 'left';
@@ -129,6 +130,7 @@ export type Board = {
   appearance: Appearance;
   backgroundPattern: BackgroundPattern;
   ditherAtlas?: DitherAtlasConfig;
+  topographicContours?: TopographicContoursConfig;
   nodes: BoardNode[];
   edges: BoardEdge[];
   savedViews: SavedView[];

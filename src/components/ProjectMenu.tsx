@@ -12,9 +12,11 @@ type ProjectMenuProps = {
   persisted: boolean | null;
   pattern: BackgroundPattern;
   atlasBlocked: boolean;
+  contoursBlocked: boolean;
   rendererVersion: 1 | 2 | 3 | null;
   onPattern: (pattern: BackgroundPattern) => void;
   onTune: () => void;
+  onTuneContours: () => void;
   onUpgrade: () => void;
   onToggle: () => void;
   onExport: () => void;
@@ -32,9 +34,11 @@ export function ProjectMenu({
   persisted,
   pattern,
   atlasBlocked,
+  contoursBlocked,
   rendererVersion,
   onPattern,
   onTune,
+  onTuneContours,
   onUpgrade,
   onToggle,
   onExport,
@@ -64,6 +68,9 @@ export function ProjectMenu({
             <button type="button" className="atlas-choice" aria-pressed={pattern === 'dither-atlas'} onClick={() => onPattern('dither-atlas')}>
               Dither Atlas
             </button>
+            <button type="button" className="atlas-choice" aria-pressed={pattern === 'topographic-contours'} onClick={() => onPattern('topographic-contours')}>
+              Topographic Contours
+            </button>
             {pattern === 'dither-atlas' && (rendererVersion === 1 || rendererVersion === 2) ? (
               <button type="button" onClick={onUpgrade} title="Upgrade this project to Dither Atlas v3. Keeps the current terrain seed.">
                 Use new Atlas look
@@ -73,6 +80,12 @@ export function ProjectMenu({
               <button type="button" onClick={onTune} disabled={atlasBlocked} title={atlasBlocked ? 'Dither Atlas is unavailable on this device' : 'Tune Atlas'}>
                 <SlidersHorizontal size={14} strokeWidth={1.75} />
                 Tune Atlas
+              </button>
+            ) : null}
+            {pattern === 'topographic-contours' ? (
+              <button type="button" onClick={onTuneContours} disabled={contoursBlocked} title={contoursBlocked ? 'Topographic Contours is unavailable on this device' : 'Tune Contours'}>
+                <SlidersHorizontal size={14} strokeWidth={1.75} />
+                Tune Contours
               </button>
             ) : null}
           </section>
