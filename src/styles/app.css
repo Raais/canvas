@@ -371,22 +371,26 @@ button:focus-visible, .title-input:focus-visible, select:focus-visible {
 .text-body { overflow: auto; }
 
 .text-body::-webkit-scrollbar,
-.text-note textarea::-webkit-scrollbar {
+.text-note textarea::-webkit-scrollbar,
+.code-body::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 .text-body::-webkit-scrollbar-track,
-.text-note textarea::-webkit-scrollbar-track { background: transparent; }
+.text-note textarea::-webkit-scrollbar-track,
+.code-body::-webkit-scrollbar-track { background: transparent; }
 
 .text-body::-webkit-scrollbar-thumb,
-.text-note textarea::-webkit-scrollbar-thumb {
+.text-note textarea::-webkit-scrollbar-thumb,
+.code-body::-webkit-scrollbar-thumb {
   background: color-mix(in srgb, var(--muted) 55%, transparent);
   border-radius: var(--radius-control);
 }
 
 .text-body::-webkit-scrollbar-thumb:hover,
-.text-note textarea::-webkit-scrollbar-thumb:hover {
+.text-note textarea::-webkit-scrollbar-thumb:hover,
+.code-body::-webkit-scrollbar-thumb:hover {
   background: color-mix(in srgb, var(--muted) 85%, transparent);
 }
 
@@ -891,7 +895,17 @@ html[data-theme='light'] .note-ink-warm { color: #8a5a32; }
 .markdown-body h1, .markdown-body h2, .markdown-body h3 { margin: 0 0 6px; font-size: 15px; }
 .markdown-body p, .markdown-body ul, .markdown-body ol { margin: 0 0 8px; }
 .md-mark { background: color-mix(in srgb, #e2b15a 45%, transparent); color: inherit; border-radius: 4px; padding: 0 2px; }
-.code-body { margin: 0; padding: 12px 14px 32px; height: 100%; overflow: auto; font-family: 'Geist Mono', monospace; font-size: 12.5px; white-space: pre-wrap; }
+.code-body {
+  margin: 0;
+  padding: 12px 14px 32px;
+  height: 100%;
+  overflow: auto;
+  font-family: 'Geist Mono', monospace;
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--muted) 75%, transparent) transparent;
+}
 .hl-keyword { color: #d7b08a; }
 .hl-string { color: #8eae98; }
 .hl-comment { color: var(--muted); }
