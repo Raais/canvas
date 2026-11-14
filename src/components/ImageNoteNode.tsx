@@ -1,5 +1,5 @@
 import { NodeResizer, type Node, type NodeProps } from '@xyflow/react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { FlipHorizontal, FlipVertical, RotateCw } from 'lucide-react';
 import {
   cancelRotationDrag,
@@ -14,6 +14,7 @@ import {
 import type { ImageDisplayMode } from '../domain/types';
 import { useBoardActions } from './board-context';
 import { PortHandles } from './PortHandles';
+import { placeRotationPanel } from './rotation-placement';
 
 export type ImageNodeData = {
   mode: ImageDisplayMode;
@@ -33,7 +34,42 @@ export function ImageNoteNode({ id, data, selected, width, height }: NodeProps<I
   const [open, setOpen] = useState(false);
   const [drag, setDrag] = useState<RotationDrag | null>(null);
   const dragRef = useRef<RotationDrag | null>(null);
+  const toolsRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   dragRef.current = drag;
+
+  useLayoutEffect(() => {
+    const panel = panelRef.current;
+    if (!open || !panel) return;
+    if (!panel.matches(':popover-open')) panel.showPopover();
+    let frame = 0;
+    let last = '';
+    const place = () => {
+      const anchor = toolsRef.current?.getBoundingClientRect();
+      const width = panel.offsetWidth;
+      const height = panel.scrollHeight;
+      if (anchor && width > 0 && height > 0) {
+        const key = `${anchor.top}|${anchor.left}|${anchor.bottom}|${anchor.right}|${width}|${height}|${window.innerWidth}|${window.innerHeight}`;
+        if (key !== last) {
+          last = key;
+          const next = placeRotationPanel(
+            anchor,
+            { width, height },
+            { width: window.innerWidth, height: window.innerHeight },
+          );
+          panel.style.top = `${next.top}px`;
+          panel.style.left = `${next.left}px`;
+          panel.style.maxHeight = `${next.maxHeight}px`;
+        }
+      }
+      frame = requestAnimationFrame(place);
+    };
+    place();
+    return () => {
+      cancelAnimationFrame(frame);
+      if (panel.isConnected && panel.matches(':popover-open')) panel.hidePopover();
+    };
+  }, [open]);
 
   useEffect(() => {
     setFailed(false);
@@ -127,7 +163,7 @@ export function ImageNoteNode({ id, data, selected, width, height }: NodeProps<I
       />
       <PortHandles />
       {selected ? (
-        <div className="image-tools nodrag nopan nowheel" onPointerDown={(event) => event.stopPropagation()}>
+        <div ref={toolsRef} className="image-tools nodrag nopan nowheel" onPointerDown={(event) => event.stopPropagation()}>
           <button type="button" aria-pressed={data.mode === 'aspect'} onClick={() => actions.setMode(id, 'aspect')}>
             Lock ratio
           </button>
@@ -187,9 +223,13 @@ export function ImageNoteNode({ id, data, selected, width, height }: NodeProps<I
           </button>
           {open ? (
             <div
+              ref={panelRef}
+              popover="manual"
               className="rotation-panel nodrag nopan nowheel"
               role="dialog"
               aria-label="Rotate image"
+              onPointerDown={(event) => event.stopPropagation()}
+              onWheel={(event) => event.stopPropagation()}
               onKeyDown={(event) => {
                 event.stopPropagation();
                 if (event.key !== 'Escape') return;

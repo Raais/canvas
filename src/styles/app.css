@@ -487,14 +487,15 @@ button:focus-visible, .title-input:focus-visible, select:focus-visible {
 .image-note img.is-rotated { object-fit: cover; }
 .image-note.is-stretch img.is-rotated { object-fit: fill; }
 .rotation-panel {
-  position: absolute;
-  z-index: 2;
-  top: calc(100% + 6px);
-  left: 0;
+  position: fixed;
+  inset: auto;
+  z-index: 32;
   display: grid;
   gap: 8px;
   width: 220px;
+  margin: 0;
   padding: 10px;
+  overflow: auto;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius-panel);
@@ -534,6 +535,8 @@ button:focus-visible, .title-input:focus-visible, select:focus-visible {
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
 }
+
+.image-tools { z-index: 5; }
 
 .image-missing {
   width: 100%;

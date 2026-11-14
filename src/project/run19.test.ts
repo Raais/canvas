@@ -30,6 +30,9 @@ import {
 } from '../domain/image-rotation';
 import { SCHEMA_VERSION, type Board, type ImageNode } from '../domain/types';
 import { decidePwaUpdate, type PwaUpdateInput } from './pwa-update';
+import { placeRotationPanel } from '../components/rotation-placement';
+
+declare const Bun: { file(path: URL): { text(): Promise<string> } };
 
 const now = '2026-11-14T00:00:00.000Z';
 
@@ -215,5 +218,39 @@ describe('image content rotation', () => {
     expect(pendingRotationBlocksReplacement(true)).toBe(true);
     expect(pendingRotationBlocksReplacement(false)).toBe(false);
     expect(setImageRotation(board, 'pic', 0, now)).toBe(board);
+  });
+
+  test('keeps the rotation panel above the image and inside the viewport', async () => {
+    const above = placeRotationPanel(
+      { top: 200, right: 420, bottom: 240, left: 100 },
+      { width: 220, height: 140 },
+      { width: 1000, height: 800 },
+    );
+    expect(above).toEqual({ top: 54, left: 100, maxHeight: 784 });
+    const flipped = placeRotationPanel(
+      { top: 10, right: 320, bottom: 50, left: 100 },
+      { width: 220, height: 140 },
+      { width: 1000, height: 800 },
+    );
+    expect(flipped.top).toBe(56);
+    const shifted = placeRotationPanel(
+      { top: 200, right: 990, bottom: 240, left: 900 },
+      { width: 220, height: 140 },
+      { width: 1000, height: 800 },
+    );
+    expect(shifted.left).toBe(772);
+    const clamped = placeRotationPanel(
+      { top: 4, right: 40, bottom: 40, left: -30 },
+      { width: 220, height: 140 },
+      { width: 1000, height: 120 },
+    );
+    expect(clamped.top).toBe(8);
+    expect(clamped.left).toBe(8);
+    expect(clamped.maxHeight).toBe(104);
+    const css = await Bun.file(new URL('../styles/app.css', import.meta.url)).text();
+    const node = await Bun.file(new URL('../components/ImageNoteNode.tsx', import.meta.url)).text();
+    expect(css.includes('.image-tools { z-index: 5; }')).toBe(true);
+    expect(css.includes('top: calc(100% + 6px)')).toBe(false);
+    expect(node.includes('popover="manual"')).toBe(true);
   });
 });
