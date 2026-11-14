@@ -1,4 +1,4 @@
-import { NodeResizer, type Node, type NodeProps } from '@xyflow/react';
+import { NodeResizer, NodeToolbar, Position, useInternalNode, useViewport, type Node, type NodeProps } from '@xyflow/react';
 import { Palette } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { BackgroundTone } from '../domain/types';
@@ -21,6 +21,10 @@ export function GroupNode({ id, data, selected }: NodeProps<GroupFlowNode>) {
   const [editing, setEditing] = useState(false);
   const [tonesOpen, setTonesOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const internal = useInternalNode(id);
+  const viewport = useViewport();
+  const screenTop = (internal?.internals.positionAbsolute.y ?? 0) * viewport.zoom + viewport.y;
+  const toolbarPosition = screenTop < 56 ? Position.Bottom : Position.Top;
 
   useEffect(() => {
     if (!editing) return;
@@ -71,7 +75,8 @@ export function GroupNode({ id, data, selected }: NodeProps<GroupFlowNode>) {
           </button>
         )}
         {selected ? (
-          <span className="group-actions nodrag nopan nowheel">
+          <NodeToolbar className="nodrag nopan nowheel" position={toolbarPosition} offset={10}>
+          <span className="group-actions" onPointerDown={(event) => event.stopPropagation()}>
             <button type="button" onClick={() => actions.createNoteIn(id)}>
               Note inside
             </button>
@@ -106,6 +111,7 @@ export function GroupNode({ id, data, selected }: NodeProps<GroupFlowNode>) {
               </span>
             ) : null}
           </span>
+          </NodeToolbar>
         ) : null}
       </div>
     </div>

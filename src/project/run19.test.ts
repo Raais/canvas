@@ -252,5 +252,9 @@ describe('image content rotation', () => {
     expect(css.includes('.image-tools { z-index: 5; }')).toBe(true);
     expect(css.includes('top: calc(100% + 6px)')).toBe(false);
     expect(node.includes('popover="manual"')).toBe(true);
+    expect(node.includes('<NodeToolbar')).toBe(true);
+    const group = await Bun.file(new URL('../components/GroupNode.tsx', import.meta.url)).text();
+    expect(group.includes('<NodeToolbar')).toBe(true);
+    expect(css.includes('transform: translateY(calc(-100% - 6px))')).toBe(false);
   });
 });

@@ -1,4 +1,4 @@
-import { NodeResizer, type Node, type NodeProps } from '@xyflow/react';
+import { NodeResizer, NodeToolbar, Position, useInternalNode, useViewport, type Node, type NodeProps } from '@xyflow/react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { FlipHorizontal, FlipVertical, RotateCw } from 'lucide-react';
 import {
@@ -126,6 +126,10 @@ export function ImageNoteNode({ id, data, selected, width, height }: NodeProps<I
     .filter(Boolean)
     .join(' ');
 
+  const internal = useInternalNode(id);
+  const viewport = useViewport();
+  const screenTop = (internal?.internals.positionAbsolute.y ?? 0) * viewport.zoom + viewport.y;
+  const toolbarPosition = screenTop < 56 ? Position.Bottom : Position.Top;
   const showImage = Boolean(data.src) && !failed;
   const angle = drag?.active ? drag.preview : data.rotation;
   const frameWidth = width && width > 0 ? width : 1;
@@ -163,7 +167,8 @@ export function ImageNoteNode({ id, data, selected, width, height }: NodeProps<I
       />
       <PortHandles />
       {selected ? (
-        <div ref={toolsRef} className="image-tools nodrag nopan nowheel" onPointerDown={(event) => event.stopPropagation()}>
+        <NodeToolbar className="nodrag nopan nowheel" position={toolbarPosition} offset={10}>
+        <div ref={toolsRef} className="image-tools" onPointerDown={(event) => event.stopPropagation()}>
           <button type="button" aria-pressed={data.mode === 'aspect'} onClick={() => actions.setMode(id, 'aspect')}>
             Lock ratio
           </button>
@@ -291,6 +296,7 @@ export function ImageNoteNode({ id, data, selected, width, height }: NodeProps<I
             </div>
           ) : null}
         </div>
+        </NodeToolbar>
       ) : null}
       {showImage ? (
         <div className="image-clip">
