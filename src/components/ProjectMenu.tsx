@@ -11,7 +11,7 @@ type ProjectMenuProps = {
   persisted: boolean | null;
   pattern: BackgroundPattern;
   atlasBlocked: boolean;
-  rendererVersion: 1 | 2 | null;
+  rendererVersion: 1 | 2 | 3 | null;
   onPattern: (pattern: BackgroundPattern) => void;
   onTune: () => void;
   onUpgrade: () => void;
@@ -63,8 +63,8 @@ export function ProjectMenu({
             <button type="button" className="atlas-choice" aria-pressed={pattern === 'dither-atlas'} onClick={() => onPattern('dither-atlas')}>
               Dither Atlas
             </button>
-            {pattern === 'dither-atlas' && rendererVersion === 1 ? (
-              <button type="button" onClick={onUpgrade} title="Upgrade this project to Dither Atlas v2. Keeps the current terrain seed.">
+            {pattern === 'dither-atlas' && (rendererVersion === 1 || rendererVersion === 2) ? (
+              <button type="button" onClick={onUpgrade} title="Upgrade this project to Dither Atlas v3. Keeps the current terrain seed.">
                 Use new Atlas look
               </button>
             ) : null}

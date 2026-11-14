@@ -44,7 +44,8 @@ describe('dither atlas seed and schema', () => {
     expect(parseBoard({ ...empty, backgroundPattern: 'dither-atlas', ditherAtlas: { seed: -1, rendererVersion: 1 } })).toBeNull();
     expect(parseBoard({ ...empty, backgroundPattern: 'dither-atlas', ditherAtlas: { seed: 1.5, rendererVersion: 1 } })).toBeNull();
     expect(parseBoard({ ...empty, backgroundPattern: 'dither-atlas', ditherAtlas: { seed: 1, rendererVersion: 2 } })?.ditherAtlas?.rendererVersion).toBe(2);
-    expect(parseBoard({ ...empty, backgroundPattern: 'dither-atlas', ditherAtlas: { seed: 1, rendererVersion: 3 } })).toBeNull();
+    expect(parseBoard({ ...empty, backgroundPattern: 'dither-atlas', ditherAtlas: { seed: 1, rendererVersion: 3 } })?.ditherAtlas?.rendererVersion).toBe(3);
+    expect(parseBoard({ ...empty, backgroundPattern: 'dither-atlas', ditherAtlas: { seed: 1, rendererVersion: 4 } })).toBeNull();
     expect(parseBoard({ ...empty, backgroundPattern: 'marble' })).toBeNull();
     expect(parseBoard({ ...empty, nodes: [ { ...group(), backgroundTone: 'neon' } ] })).toBeNull();
   });

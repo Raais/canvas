@@ -63,10 +63,38 @@ export const ATLAS_V2_DEFAULTS: AtlasTuning = {
   voidSoftness: 0,
 };
 
+export const ATLAS_V3_DEFAULTS: AtlasTuning = {
+  largeScale: 2490,
+  mediumScale: 790,
+  detailScale: 305,
+  largeWeight: 0.76,
+  mediumWeight: 0.36,
+  detailWeight: 0.12,
+  densityLow: -0.06,
+  densityHigh: 0.41,
+  cellSize: 7,
+  inkStrength: 0.07,
+  ditherMode: 'adaptive',
+  smoothFadeStart: 0.8,
+  smoothFadeEnd: 2.4,
+  adaptiveTargetPixels: 2.25,
+  voidEnabled: true,
+  voidCutoff: 0,
+  voidSoftness: 0,
+};
+
+export type AtlasRendererVersion = 1 | 2 | 3;
+
 export const ATLAS_TUNING_DEFAULTS = ATLAS_V1_DEFAULTS;
 
-export function defaultsForAtlasVersion(version: 1 | 2): AtlasTuning {
-  return version === 1 ? ATLAS_V1_DEFAULTS : ATLAS_V2_DEFAULTS;
+export function storedAtlasVersion(version: number | undefined): AtlasRendererVersion {
+  return version === 1 || version === 2 || version === 3 ? version : 3;
+}
+
+export function defaultsForAtlasVersion(version: AtlasRendererVersion): AtlasTuning {
+  if (version === 1) return ATLAS_V1_DEFAULTS;
+  if (version === 2) return ATLAS_V2_DEFAULTS;
+  return ATLAS_V3_DEFAULTS;
 }
 
 const LIMITS = {
@@ -193,7 +221,7 @@ export function resolveAtlas(tuning: AtlasTuning, zoom: number, pixelScale = 1):
   };
 }
 
-export function effectiveAtlasTuning(preview: AtlasPreview, experimental: AtlasTuning, version: 1 | 2): AtlasTuning {
+export function effectiveAtlasTuning(preview: AtlasPreview, experimental: AtlasTuning, version: AtlasRendererVersion): AtlasTuning {
   return preview === 'original' ? defaultsForAtlasVersion(version) : experimental;
 }
 
@@ -210,7 +238,7 @@ export function atlasSceneKey(scene: {
   ].join(':');
 }
 
-export function atlasLabDocument(settings: AtlasTuning, context: { seed: number; title: string; zoom: number; rendererVersion: 1 | 2 }) {
+export function atlasLabDocument(settings: AtlasTuning, context: { seed: number; title: string; zoom: number; rendererVersion: AtlasRendererVersion }) {
   return {
     format: 'canvas-dither-atlas-lab' as const,
     configVersion: 2 as const,

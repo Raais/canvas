@@ -89,7 +89,7 @@ import { SelectionBar } from './SelectionBar';
 import { TextNoteNode, type TextFlowNode } from './TextNoteNode';
 import { AtlasBoundary } from '../backgrounds/AtlasBoundary';
 import { AtlasTuningPanel } from '../backgrounds/AtlasTuningPanel';
-import { ATLAS_LAB_ENABLED, clampAtlasTuning, defaultsForAtlasVersion, effectiveAtlasTuning, type AtlasPreview, type AtlasTuning } from '../backgrounds/atlas-tuning';
+import { ATLAS_LAB_ENABLED, clampAtlasTuning, defaultsForAtlasVersion, effectiveAtlasTuning, storedAtlasVersion, type AtlasPreview, type AtlasTuning } from '../backgrounds/atlas-tuning';
 import { ProjectMenu } from './ProjectMenu';
 
 const DitherAtlasLayer = lazy(() => import('../backgrounds/DitherAtlasLayer'));
@@ -141,14 +141,14 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const [historyStamp, setHistoryStamp] = useState(0);
   const [chromeHidden, setChromeHidden] = useState(false);
   const [atlasBlocked, setAtlasBlocked] = useState(false);
-  const atlasVersion = board.ditherAtlas?.rendererVersion === 1 ? 1 : 2;
-  const [atlasTuning, setAtlasTuning] = useState<AtlasTuning>(() => defaultsForAtlasVersion(session.board.ditherAtlas?.rendererVersion === 1 ? 1 : 2));
+  const atlasVersion = storedAtlasVersion(board.ditherAtlas?.rendererVersion);
+  const [atlasTuning, setAtlasTuning] = useState<AtlasTuning>(() => defaultsForAtlasVersion(storedAtlasVersion(session.board.ditherAtlas?.rendererVersion)));
   const [atlasPreview, setAtlasPreview] = useState<AtlasPreview>('experimental');
   const [atlasLabOpen, setAtlasLabOpen] = useState(false);
   const blockAtlas = useCallback(() => setAtlasBlocked(true), []);
   const activeAtlasTuning = effectiveAtlasTuning(atlasPreview, atlasTuning, atlasVersion);
   useEffect(() => {
-    const version = board.ditherAtlas?.rendererVersion === 1 ? 1 : 2;
+    const version = storedAtlasVersion(board.ditherAtlas?.rendererVersion);
     setAtlasTuning(defaultsForAtlasVersion(version));
     setAtlasPreview('experimental');
     setAtlasLabOpen(false);
@@ -1237,7 +1237,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
                 if (next === boardRef.current) return;
                 replaceBoard(next);
                 queue.schedule(300);
-                setAtlasTuning(defaultsForAtlasVersion(2));
+                setAtlasTuning(defaultsForAtlasVersion(3));
                 setAtlasPreview('experimental');
                 setProjectOpen(false);
               }}

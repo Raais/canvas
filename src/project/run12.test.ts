@@ -29,16 +29,16 @@ describe('atlas renderer versions', () => {
     expect(v1?.ditherAtlas?.rendererVersion).toBe(1);
     expect(v2?.ditherAtlas?.rendererVersion).toBe(2);
     expect(v2?.ditherAtlas?.seed).toBe(4294967295);
-    for (const rendererVersion of [0, 3, -1, 1.5, '2']) {
+    for (const rendererVersion of [0, 4, -1, 1.5, '2']) {
       expect(parseBoard({ ...empty, backgroundPattern: 'dither-atlas', ditherAtlas: { seed: 1, rendererVersion } })).toBeNull();
     }
   });
 
   test('new atlas uses v2 and an existing version survives switching, import, and rename', async () => {
     const created = setBackgroundPattern(createEmptyBoard(), 'dither-atlas');
-    expect(created.ditherAtlas?.rendererVersion).toBe(2);
+    expect(created.ditherAtlas?.rendererVersion).toBe(3);
     const returned = setBackgroundPattern(setBackgroundPattern(created, 'dots'), 'dither-atlas');
-    expect(returned.ditherAtlas?.rendererVersion).toBe(2);
+    expect(returned.ditherAtlas?.rendererVersion).toBe(3);
     const legacy = { ...created, ditherAtlas: { seed: created.ditherAtlas?.seed ?? 0, rendererVersion: 1 as const } };
     const reopened = parseBoard(legacy);
     expect(reopened?.ditherAtlas?.rendererVersion).toBe(1);
@@ -59,7 +59,7 @@ describe('atlas renderer versions', () => {
       ditherAtlas: { seed: 42, rendererVersion: 1 as const },
     };
     const upgraded = upgradeAtlasRenderer(legacy);
-    expect(upgraded.ditherAtlas).toEqual({ seed: 42, rendererVersion: 2 });
+    expect(upgraded.ditherAtlas).toEqual({ seed: 42, rendererVersion: 3 });
     expect(upgraded.nodes).toEqual(legacy.nodes);
     expect(upgraded.edges).toEqual(legacy.edges);
     expect(upgraded.title).toBe(legacy.title);
@@ -170,8 +170,8 @@ describe('atlas v2 wiring', () => {
     expect(renderer.includes('drawArrays')).toBe(true);
     expect(board.includes("import('../backgrounds/DitherAtlasLayer')")).toBe(true);
     expect(board.includes('atlas-shader')).toBe(false);
-    expect(board.includes('defaultsForAtlasVersion(2)')).toBe(true);
+    expect(board.includes('defaultsForAtlasVersion(3)')).toBe(true);
     expect(menu.includes('Use new Atlas look')).toBe(true);
-    expect(menu.includes('rendererVersion === 1')).toBe(true);
+    expect(menu.includes('rendererVersion === 1 || rendererVersion === 2')).toBe(true);
   });
 });

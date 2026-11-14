@@ -30,7 +30,7 @@ describe('atlas rename seeding', () => {
     expect(renamed.title).toBe('Ideas 2027');
     expect(renamed.ditherAtlas?.seed).toBe(seedFromProjectName('Ideas 2027'));
     expect(renamed.ditherAtlas?.seed === atlas.ditherAtlas?.seed).toBe(false);
-    expect(renamed.ditherAtlas?.rendererVersion).toBe(2);
+    expect(renamed.ditherAtlas?.rendererVersion).toBe(3);
   });
 
   test('renaming while dots is selected still updates a saved seed', () => {

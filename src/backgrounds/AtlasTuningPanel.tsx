@@ -39,7 +39,7 @@ export function AtlasTuningPanel({
   seed: number;
   title: string;
   zoom: number;
-  rendererVersion: 1 | 2;
+  rendererVersion: 1 | 2 | 3;
   onChange: (tuning: AtlasTuning) => void;
   onPreview: (preview: AtlasPreview) => void;
   onReset: () => void;
