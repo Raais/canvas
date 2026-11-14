@@ -204,6 +204,26 @@ export function duplicateSelection(board: Board, ids: readonly string[], now?: s
   return revise(board, { nodes: [...board.nodes, ...copies], edges: [...board.edges, ...edges] }, now);
 }
 
+export function restoreGroupLabels(current: Board, original: Board): Board {
+  let next = current;
+  for (const node of original.nodes) {
+    if (node.kind !== 'group') continue;
+    next = renameGroup(next, node.id, node.label);
+  }
+  return next;
+}
+
+export function moveTargets(board: Board, selectedIds: readonly string[]): { ids: string[]; groups: { id: string; label: string }[] } {
+  const ids = board.nodes
+    .filter((node) => selectedIds.includes(node.id) && isContentNode(node) && !node.parentId)
+    .map((node) => node.id);
+  if (ids.length === 0) return { ids, groups: [] };
+  return {
+    ids,
+    groups: board.nodes.flatMap((node) => (node.kind === 'group' ? [{ id: node.id, label: node.label }] : [])),
+  };
+}
+
 export function renameGroup(board: Board, id: string, label: string, now?: string): Board {
   let changed = false;
   const nodes = board.nodes.map((node) => {

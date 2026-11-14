@@ -23,6 +23,7 @@ import {
   createTextNode,
   noteImageIntrinsic,
   placeNode,
+  referencedAssetIds,
   renameBoard,
   setImageMode,
   setAppearance,
@@ -43,7 +44,7 @@ import { toggleTaskAt } from '../domain/markdown';
 import { gesturePhase, sameSelection } from '../editor/interaction';
 import { plainShortcutBlocked } from '../editor/shortcuts';
 import { connectNodes, deleteEdges, hasUndirectedLink } from '../domain/graph';
-import { decodeGraphClipboard, encodeGraphClipboard, GRAPH_MIME, pasteGraph, selectionClosure } from '../domain/graph-clipboard';
+import { decodeGraphClipboard, encodeGraphClipboard, GRAPH_CLIPBOARD_LIMIT, GRAPH_MIME, looksLikeGraphClipboard, pasteGraph, selectionClosure } from '../domain/graph-clipboard';
 import {
   createTextInside,
   deleteGroupContents,
@@ -53,8 +54,10 @@ import {
   expandGroup,
   groupFrame,
   groupSelection,
+  moveTargets,
   moveToGroup,
   renameGroup,
+  restoreGroupLabels,
   ungroup,
 } from '../domain/groups';
 import { createHistory, pushHistory, redoHistory, retainedAssetIds, undoHistory, type History } from '../domain/history';
@@ -71,12 +74,14 @@ import {
   type Point,
   type Rect,
 } from '../domain/types';
+import { partitionIncoming } from '../ingest/admission';
 import { ingestClipboard, ingestFileList, type PreparedItem } from '../ingest/browser';
 import { captureClipboardData } from '../ingest/clipboard';
 import { archiveFilename } from '../archive/format';
 import { buildArchive, readArchive } from '../archive/zip';
 import { downloadBytes } from '../project/download';
 import { boardSnapshotKey, logicalUsage, snapshotAssets, type LogicalUsage } from '../project/storage';
+import { releaseWriteLock, retainWriteLock } from '../project/ownership';
 import { openBoardChannel, type BoardChannel } from '../project/tabs';
 import { createAssetRecord, replaceStoredBoard, RevisionConflictError, type CanvasDatabase } from '../persistence/db';
 import { createObjectUrlRegistry, type ObjectUrlRegistry } from '../persistence/object-urls';
@@ -158,6 +163,8 @@ function BoardSurface({ session }: { session: SessionProps }) {
     | { kind: 'blank' | 'clear' | 'exported-clear' }
     | { kind: 'export'; thenClear: boolean; summary: string; unsaved: boolean }
     | { kind: 'import'; summary: string; board: Board; assets: AssetRecord[] }
+    | { kind: 'delete-contents'; groupId: string; label: string; count: number }
+    | { kind: 'reload' }
   >(null);
 
   const boardRef = useRef(session.board);
@@ -178,7 +185,8 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const frameRef = useRef<Point | null>(null);
   const coordinatesRef = useRef<CoordinatesHandle>(null);
   const channelRef = useRef<BoardChannel | null>(null);
-  const blockedRef = useRef(false);
+  const blockedRef = useRef(true);
+  const writerRef = useRef(false);
   const overlayRef = useRef(false);
   overlayRef.current = projectOpen || confirming !== null;
   const foreignRef = useRef(false);
@@ -327,9 +335,27 @@ function BoardSurface({ session }: { session: SessionProps }) {
     if (blockedRef.current || items.length === 0) return;
     const registry = registryRef.current;
     if (!registry) return;
-    const positions = staggeredPositions(origin, items.length);
+    const referenced = referencedAssetIds(boardRef.current);
+    let imageKey = 0;
+    const incoming = items.flatMap((item) => item.type === 'image' ? [{ key: String(imageKey++), name: 'image', bytes: item.blob.size }] : []);
+    const decision = partitionIncoming({
+      board: boardRef.current,
+      existingBytes: [...referenced].reduce((sum, id) => sum + (libraryRef.current.get(id)?.byteSize ?? 0), 0),
+      existingCount: referenced.size,
+      incoming,
+    });
+    if (decision.warnings.length > 0) showWarnings(decision.warnings);
+    const allowed = new Set(decision.accepted);
+    let seenImage = 0;
+    const acceptedItems = items.filter((item) => {
+      if (item.type !== 'image') return true;
+      const key = String(seenImage++);
+      return allowed.has(key);
+    });
+    if (acceptedItems.length === 0) return;
+    const positions = staggeredPositions(origin, acceptedItems.length);
     const nodes: BoardNode[] = [];
-    items.forEach((item, index) => {
+    acceptedItems.forEach((item, index) => {
       const center = positions[index] ?? origin;
       if (item.type === 'text') {
         nodes.push(createTextNode(center, item.text));
@@ -395,6 +421,10 @@ function BoardSurface({ session }: { session: SessionProps }) {
       const payload = selectionClosure(boardRef.current, selectedRef.current);
       if (!payload) return;
       const encoded = encodeGraphClipboard(payload);
+      if (encoded.length > GRAPH_CLIPBOARD_LIMIT) {
+        setNotice({ text: 'That selection is too large to copy.', source: 'ingest' });
+        return;
+      }
       event.clipboardData?.setData('text/plain', encoded);
       event.clipboardData?.setData(GRAPH_MIME, encoded);
       event.preventDefault();
@@ -409,8 +439,13 @@ function BoardSurface({ session }: { session: SessionProps }) {
       const data = event.clipboardData;
       if (!data) return;
       const encoded = data.getData(GRAPH_MIME) || data.getData('text/plain');
-      const graph = decodeGraphClipboard(encoded);
-      if (graph) {
+      if (looksLikeGraphClipboard(encoded)) {
+        const graph = decodeGraphClipboard(encoded);
+        if (!graph) {
+          event.preventDefault();
+          setNotice({ text: 'The copied canvas selection is invalid or too large to paste.', source: 'ingest' });
+          return;
+        }
         event.preventDefault();
         const repeat = pasteRepeat.current.key === encoded ? pasteRepeat.current.count + 1 : 0;
         pasteRepeat.current = { key: encoded, count: repeat };
@@ -706,6 +741,16 @@ function BoardSurface({ session }: { session: SessionProps }) {
         }
         queue.saveNow();
       },
+      cancelRename() {
+        const before = renameBefore.current;
+        renameBefore.current = null;
+        if (!before) return;
+        const next = restoreGroupLabels(boardRef.current, before);
+        if (next === boardRef.current) return;
+        boardRef.current = next;
+        setBoard(next);
+        queue.schedule(300);
+      },
       createNoteIn(groupId) {
         if (blockedRef.current) return;
         const before = boardRef.current;
@@ -717,6 +762,13 @@ function BoardSurface({ session }: { session: SessionProps }) {
         textBefore.current = structuredClone(boardRef.current);
         editingRef.current = note.id;
         setEditingId(note.id);
+      },
+      requestDeleteContents(groupId) {
+        if (blockedRef.current) return;
+        const group = boardRef.current.nodes.find((node) => node.id === groupId && node.kind === 'group');
+        if (!group || group.kind !== 'group') return;
+        const count = boardRef.current.nodes.filter((node) => node.kind !== 'group' && node.parentId === groupId).length;
+        setConfirming({ kind: 'delete-contents', groupId, label: group.label || 'Group', count });
       },
       deleteContents(groupId) {
         if (blockedRef.current) return;
@@ -866,33 +918,53 @@ function BoardSurface({ session }: { session: SessionProps }) {
   useEffect(() => {
     const openedAt = Date.now();
     const tabId = crypto.randomUUID();
+    let alive = true;
+    const locksAuthoritative = typeof navigator !== 'undefined' && Boolean(navigator.locks);
+    const becomeReader = (text: string) => {
+      foreignRef.current = true;
+      blockedRef.current = true;
+      writerRef.current = false;
+      queue.pauseForConflict();
+      editingRef.current = null;
+      setEditingId(null);
+      setReadOnly(true);
+      setNotice({ text, source: 'save' });
+    };
+    void retainWriteLock().then((claim) => {
+      if (!alive) return;
+      if (claim === 'denied') {
+        becomeReader('This board is open in another tab. Reload before editing so this tab does not overwrite it.');
+        return;
+      }
+      writerRef.current = true;
+      blockedRef.current = false;
+      setReadOnly(false);
+    });
     const channel = openBoardChannel(
       { tabId, openedAt },
-      () => {
-        foreignRef.current = true;
-        blockedRef.current = true;
-        queue.suspend();
-        editingRef.current = null;
-        setEditingId(null);
-        setReadOnly(true);
-      },
-      (message) => {
-        const expected = queue.expectation();
-        if (message.boardId === expected.id && message.revision === expected.revision) return;
-        foreignRef.current = true;
-        blockedRef.current = true;
-        queue.suspend();
-        editingRef.current = null;
-        setEditingId(null);
-        setReadOnly(true);
-        setNotice({
-          text: 'Another tab saved this board. Reload before editing so this tab does not overwrite it.',
-          source: 'save',
-        });
+      {
+        isWriter: () => writerRef.current,
+        locksAuthoritative,
+        onYield: () => {
+          if (!alive || locksAuthoritative) return;
+          becomeReader('This board is open in another tab. Reload before editing so this tab does not overwrite it.');
+        },
+        onRemoteSave: (message) => {
+          const expected = queue.expectation();
+          if (message.boardId === expected.id && message.revision === expected.revision) return;
+          if (!alive) return;
+          becomeReader('Another tab saved this board. Download a recovery ZIP if this tab has edits, then reload.');
+        },
       },
     );
     channelRef.current = channel;
-    return () => channel.close();
+    return () => {
+      alive = false;
+      writerRef.current = false;
+      blockedRef.current = true;
+      releaseWriteLock();
+      channel.close();
+    };
   }, [queue]);
 
   async function refreshStorage() {
@@ -930,6 +1002,24 @@ function BoardSurface({ session }: { session: SessionProps }) {
     exportHold.current = { ...captured, key: boardSnapshotKey(captured.board) };
   }
 
+  async function downloadRecovery() {
+    const recovered = queue.recovery();
+    const board = recovered?.board ?? structuredClone(boardRef.current);
+    const library = new Map(libraryRef.current);
+    for (const asset of recovered?.assets ?? []) library.set(asset.id, asset);
+    const snapshot = snapshotAssets(board, library);
+    if (snapshot.missing.length > 0) {
+      setNotice({ text: 'An embedded image is missing, so the recovery archive was not created.', source: 'save' });
+      return;
+    }
+    try {
+      const bytes = await buildArchive(board, snapshot.assets, new Date().toISOString());
+      downloadBytes(bytes, archiveFilename(`${board.title} recovery`));
+    } catch (error) {
+      setNotice({ text: errorMessage(error), source: 'save' });
+    }
+  }
+
   async function runExport() {
     const captured = exportHold.current;
     const pending = confirming?.kind === 'export' ? confirming : null;
@@ -946,7 +1036,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
   }
 
   async function replaceActive(nextBoard: Board, assets: AssetRecord[]) {
-    if (foreignRef.current) {
+    if (foreignRef.current || blockedRef.current) {
       setNotice({ text: 'Reload this tab before replacing the board.', source: 'save' });
       return;
     }
@@ -1003,7 +1093,8 @@ function BoardSurface({ session }: { session: SessionProps }) {
   }
 
   const selectedNodes = board.nodes.filter((node) => selectedIds.includes(node.id));
-  const groupTargets = board.nodes.filter((node) => node.kind === 'group' && !selectedNodes.every((entry) => isContentNode(entry) && entry.parentId === node.id));
+  const movement = moveTargets(board, selectedIds);
+  const groupTargets = movement.groups;
   const selectionLabel = selectionReadout(board, selectedIds);
   const canGroup = selectedNodes.some((node) => isContentNode(node) && !node.parentId);
   const canUngroup = selectedNodes.some((node) => node.kind === 'group');
@@ -1013,6 +1104,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
     onNodesChange,
     onEdgesChange,
     onMoveEnd(viewport: Viewport) {
+      if (blockedRef.current) return;
       const next = setViewport(boardRef.current, viewport);
       if (next === boardRef.current) return;
       replaceBoard(next);
@@ -1056,6 +1148,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
   handlers.current.onNodesChange = onNodesChange;
   handlers.current.onEdgesChange = onEdgesChange;
   handlers.current.onMoveEnd = (viewport) => {
+    if (blockedRef.current) return;
     const next = setViewport(boardRef.current, viewport);
     if (next === boardRef.current) return;
     replaceBoard(next);
@@ -1280,16 +1373,44 @@ function BoardSurface({ session }: { session: SessionProps }) {
         ) : null}
         {readOnly ? (
           <div className="banner" role="status">
-            <p>This board is open in another tab. Reload before editing so this tab does not overwrite it.</p>
-            <button type="button" onClick={() => window.location.reload()}>
+            <p>{notice?.text || 'This board is open in another tab. You can inspect it and download a recovery ZIP. Reload before editing.'}</p>
+            <button
+              type="button"
+              onClick={() => {
+                void downloadRecovery();
+              }}
+            >
+              Download recovery ZIP
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (queue.hasUnpersisted()) setConfirming({ kind: 'reload' });
+                else window.location.reload();
+              }}
+            >
               Reload
             </button>
           </div>
         ) : null}
         {confirming ? (
-          <div className="banner confirm-banner" role="alertdialog" aria-label="Confirm project change">
+          <div
+            className="banner confirm-banner"
+            role="alertdialog"
+            aria-label="Confirm project change"
+            onKeyDown={(event) => {
+              if (event.key !== 'Escape') return;
+              event.preventDefault();
+              event.stopPropagation();
+              setConfirming(null);
+            }}
+          >
             <p>
-              {confirming.kind === 'export'
+              {confirming.kind === 'delete-contents'
+                ? `Delete "${confirming.label}" and its ${confirming.count} notes/images? Connected links will also be removed.`
+                : confirming.kind === 'reload'
+                  ? 'Reload will discard open edits that are not in the saved board. Download a recovery ZIP first if you need them.'
+                  : confirming.kind === 'export'
                 ? `${confirming.summary} External image addresses are not downloaded and may change later.${confirming.unsaved ? ' Some edits are not in IndexedDB yet; this archive uses the open board.' : ''}`
                 : confirming.kind === 'import'
                   ? confirming.summary
@@ -1302,7 +1423,16 @@ function BoardSurface({ session }: { session: SessionProps }) {
             <button
               type="button"
               onClick={() => {
-                if (confirming.kind === 'export') void runExport();
+                if (confirming.kind === 'delete-contents') {
+                  const before = boardRef.current;
+                  const next = deleteGroupContents(before, confirming.groupId);
+                  setConfirming(null);
+                  if (next === before) return;
+                  publish(next, before, 'save');
+                  replaceSelection([]);
+                  setUrlEpoch((value) => value + 1);
+                } else if (confirming.kind === 'reload') window.location.reload();
+                else if (confirming.kind === 'export') void runExport();
                 else if (confirming.kind === 'import') void replaceActive(confirming.board, confirming.assets);
                 else if (confirming.kind === 'exported-clear') {
                   const exported = exportHold.current;
@@ -1317,7 +1447,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
                 }
               }}
             >
-              {confirming.kind === 'export' ? 'Download' : 'Continue'}
+              {confirming.kind === 'export' ? 'Download' : confirming.kind === 'delete-contents' ? 'Delete' : confirming.kind === 'reload' ? 'Reload anyway' : 'Continue'}
             </button>
             <button type="button" onClick={() => setConfirming(null)}>
               Cancel
@@ -1329,7 +1459,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
           canGroup={canGroup}
           canUngroup={canUngroup}
           canDetach={canDetach}
-          groups={groupTargets.flatMap((node) => (node.kind === 'group' ? [{ id: node.id, label: node.label }] : []))}
+          groups={groupTargets}
           onGroup={groupSelected}
           onUngroup={ungroupSelected}
           onDetach={() => {
@@ -1340,7 +1470,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
           }}
           onAddTo={(groupId) => {
             const before = boardRef.current;
-            const result = moveToGroup(before, selectedRef.current.filter((id) => before.nodes.some((node) => node.id === id && node.kind !== 'group')), groupId);
+            const result = moveToGroup(before, moveTargets(before, selectedRef.current).ids, groupId);
             if ('error' in result) {
               setNotice({ text: result.error, source: 'ingest' });
               return;

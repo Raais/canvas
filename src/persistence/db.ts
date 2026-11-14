@@ -186,9 +186,16 @@ export function openSession(): Promise<{ database: CanvasDatabase; board: Board;
 
 async function initialize(): Promise<{ database: CanvasDatabase; board: Board; assets: AssetRecord[] }> {
   const database = await openDatabase();
-  const existing = await readSession(database);
-  if (existing) return { database, ...existing };
+  const transaction = database.transaction('board', 'readwrite');
+  const stored = asBoard(await transaction.store.get(ACTIVE_BOARD_KEY));
+  if (stored) {
+    await transaction.done;
+    const existing = await readSession(database);
+    if (!existing) throw new Error('The stored board could not be read. It was left unchanged.');
+    return { database, ...existing };
+  }
   const board = createEmptyBoard();
-  await writeBoardSnapshot(database, board, [], []);
+  transaction.store.put(board, ACTIVE_BOARD_KEY);
+  await transaction.done;
   return { database, board, assets: [] };
 }

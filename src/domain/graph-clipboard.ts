@@ -1,10 +1,11 @@
-import { childrenOf } from './geometry';
+import { childrenOf, worldTopLeft } from './geometry';
 import type { Board, BoardEdge, BoardNode, Point } from './types';
 import { parseBoard, revise } from './board';
 
 export const GRAPH_CLIPBOARD_FORMAT = 'canvas-graph';
 export const GRAPH_CLIPBOARD_VERSION = 1;
 export const GRAPH_MIME = 'application/x-canvas-graph';
+export const GRAPH_CLIPBOARD_LIMIT = 1_500_000;
 
 export type GraphClipboard = {
   format: typeof GRAPH_CLIPBOARD_FORMAT;
@@ -25,7 +26,15 @@ export function selectionClosure(board: Board, ids: readonly string[]): GraphCli
     }
   }
   if (included.size === 0) return null;
-  const nodes = [...included.values()].map((node) => ({ ...node }));
+  const nodes = [...included.values()].map((node) => {
+    if (node.kind !== 'group' && node.parentId && !included.has(node.parentId)) {
+      const world = worldTopLeft(board.nodes, node);
+      const { parentId, ...rest } = node;
+      void parentId;
+      return { ...rest, x: world.x, y: world.y };
+    }
+    return { ...node };
+  });
   const edges = board.edges
     .filter((edge) => included.has(edge.sourceId) && included.has(edge.targetId))
     .map((edge) => ({ ...edge }));
@@ -49,7 +58,7 @@ export function decodeGraphClipboard(raw: string): GraphClipboard | null {
   const record = value as Partial<GraphClipboard>;
   if (record.format !== GRAPH_CLIPBOARD_FORMAT || record.version !== GRAPH_CLIPBOARD_VERSION) return null;
   if (!Array.isArray(record.nodes) || !Array.isArray(record.edges)) return null;
-  if (raw.length > 1_500_000 || record.nodes.length > 2000 || record.edges.length > 4000) return null;
+  if (raw.length > GRAPH_CLIPBOARD_LIMIT || record.nodes.length > 2000 || record.edges.length > 4000) return null;
   const parsed = parseBoard({
     schemaVersion: 3,
     id: 'clipboard',
@@ -64,6 +73,10 @@ export function decodeGraphClipboard(raw: string): GraphClipboard | null {
   });
   if (!parsed || parsed.nodes.length !== record.nodes.length || parsed.edges.length !== record.edges.length) return null;
   return { format: GRAPH_CLIPBOARD_FORMAT, version: GRAPH_CLIPBOARD_VERSION, nodes: parsed.nodes, edges: parsed.edges };
+}
+
+export function looksLikeGraphClipboard(raw: string): boolean {
+  return raw.startsWith(`${GRAPH_CLIPBOARD_FORMAT}/`);
 }
 
 export function pasteGraph(

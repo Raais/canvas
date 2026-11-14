@@ -9,6 +9,7 @@ export class SaveQueue {
   private writing = false;
   private dirty = false;
   private suspended = false;
+  private recoverable: { board: Board; assets: AssetRecord[] } | null = null;
   private expected: StoredExpectation | null = null;
   private upserts = new Map<string, AssetRecord>();
   private deleteIds = new Set<string>();
@@ -34,6 +35,27 @@ export class SaveQueue {
   suspend(): void {
     this.suspended = true;
     this.discardPending();
+  }
+
+  pauseForConflict(): void {
+    this.suspended = true;
+    if (this.timer !== null) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    const dirty = this.dirty || this.upserts.size > 0 || this.deleteIds.size > 0;
+    if (dirty) {
+      this.recoverable = { board: structuredClone(this.getBoard()), assets: [...this.upserts.values()] };
+      this.onStatus('unsaved');
+    }
+  }
+
+  recovery(): { board: Board; assets: AssetRecord[] } | null {
+    return this.recoverable;
+  }
+
+  hasUnpersisted(): boolean {
+    return this.dirty || this.upserts.size > 0 || this.deleteIds.size > 0 || this.recoverable !== null;
   }
 
   resume(): void {
@@ -135,10 +157,10 @@ export class SaveQueue {
           this.onPersisted?.(board);
         } catch (error) {
           if (error instanceof RevisionConflictError) {
-            this.suspended = true;
-            this.dirty = false;
-            this.upserts.clear();
-            this.deleteIds.clear();
+            for (const asset of plan.upserts) this.upserts.set(asset.id, asset);
+            for (const id of plan.deleteIds) this.deleteIds.add(id);
+            this.dirty = true;
+            this.pauseForConflict();
             throw error;
           }
           for (const asset of plan.upserts) this.upserts.set(asset.id, asset);

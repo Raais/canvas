@@ -51,7 +51,14 @@ export function GroupNode({ id, data, selected }: NodeProps<GroupFlowNode>) {
               actions.endRename();
             }}
             onKeyDown={(event) => {
-              if (event.key !== 'Escape' && event.key !== 'Enter') return;
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                event.stopPropagation();
+                actions.cancelRename();
+                setEditing(false);
+                return;
+              }
+              if (event.key !== 'Enter') return;
               event.preventDefault();
               event.stopPropagation();
               setEditing(false);
@@ -68,7 +75,7 @@ export function GroupNode({ id, data, selected }: NodeProps<GroupFlowNode>) {
             <button type="button" onClick={() => actions.createNoteIn(id)}>
               Note inside
             </button>
-            <button type="button" onClick={() => actions.deleteContents(id)}>
+            <button type="button" onClick={() => actions.requestDeleteContents(id)}>
               Delete contents
             </button>
             <button type="button" className="icon-button" aria-label="Group background" title="Group background" aria-pressed={tonesOpen} onClick={() => setTonesOpen((open) => !open)}>

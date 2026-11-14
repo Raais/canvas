@@ -3,6 +3,7 @@ import {
   FALLBACK_IMAGE_WIDTH,
   type Point,
 } from '../domain/types';
+import { archiveFileLimitLabel, imageExceedsArchiveFile } from './admission';
 import {
   canonicalRasterMime,
   captureClipboardData,
@@ -82,6 +83,11 @@ async function collectFiles(list: FileList | readonly File[]): Promise<{
     const mimeType = canonicalRasterMime(file.type) ?? mimeFromFileName(file.name);
     if (!mimeType) {
       warnings.push(file.name ? `Skipped unsupported file "${file.name}".` : 'Skipped an unsupported file.');
+      continue;
+    }
+    if (imageExceedsArchiveFile(file.size)) {
+      const name = file.name || 'image';
+      warnings.push(`Skipped ${name}: images larger than ${archiveFileLimitLabel()} cannot be included in canvas backups.`);
       continue;
     }
     const bytes = new Uint8Array(await file.arrayBuffer());

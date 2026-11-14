@@ -1,7 +1,8 @@
+import { fromMarkdown } from 'mdast-util-from-markdown';
+import { gfmFromMarkdown } from 'mdast-util-gfm';
+import { gfm } from 'micromark-extension-gfm';
 import { visit } from 'unist-util-visit';
 import type { ListItem, Root } from 'mdast';
-
-const TASK = /^(\s*[-*+] )\[([ xX])\]/;
 
 type HastNode = {
   type: string;
@@ -9,6 +10,27 @@ type HastNode = {
   properties?: Record<string, unknown>;
   children?: HastNode[];
 };
+
+export function taskMarkerOffsets(source: string): number[] {
+  const tree = fromMarkdown(source, { extensions: [gfm()], mdastExtensions: [gfmFromMarkdown()] });
+  const offsets: number[] = [];
+  visit(tree, 'listItem', (node: ListItem) => {
+    const offset = markerInItem(source, node);
+    if (offset != null) offsets.push(offset);
+  });
+  return offsets;
+}
+
+function markerInItem(source: string, node: ListItem): number | null {
+  if (typeof node.checked !== 'boolean') return null;
+  const start = node.position?.start.offset;
+  if (start == null) return null;
+  const lineEnd = source.indexOf('\n', start);
+  const slice = source.slice(start, lineEnd === -1 ? source.length : lineEnd);
+  const match = /\[([ xX])\]/.exec(slice);
+  if (!match) return null;
+  return start + match.index + 1;
+}
 
 export function remarkTaskIndex() {
   return (tree: Root) => {
@@ -38,35 +60,23 @@ export function rehypeTaskInputs() {
 }
 
 export function toggleTaskAt(source: string, offset: number): string {
+  const direct = source[offset];
+  if (source[offset - 1] === '[' && source[offset + 1] === ']' && (direct === ' ' || direct === 'x' || direct === 'X')) {
+    const mark = direct === ' ' ? 'x' : ' ';
+    return source.slice(0, offset) + mark + source.slice(offset + 1);
+  }
   const lineStart = source.lastIndexOf('\n', Math.max(0, offset - 1)) + 1;
   const lineEnd = source.indexOf('\n', offset);
   const end = lineEnd === -1 ? source.length : lineEnd;
-  const match = TASK.exec(source.slice(lineStart, end));
-  if (!match) return source;
-  const markAt = lineStart + match.index + match[1].length + 1;
-  const mark = source[markAt] === ' ' ? 'x' : ' ';
-  return source.slice(0, markAt) + mark + source.slice(markAt + 1);
+  const parsed = taskMarkerOffsets(source).find((marker) => marker >= lineStart && marker < end);
+  if (parsed == null) return source;
+  return toggleTaskAt(source, parsed);
 }
 
 export function toggleTask(source: string, taskIndex: number): string {
-  const newline = source.includes('\r\n') ? '\r\n' : '\n';
-  const lines = source.split(/\r?\n/);
-  let fence = false;
-  let seen = 0;
-  const next = lines.map((line) => {
-    if (line.trim().startsWith('```')) {
-      fence = !fence;
-      return line;
-    }
-    if (fence) return line;
-    if (line.includes('`') && !TASK.test(line)) return line;
-    const match = TASK.exec(line);
-    if (!match) return line;
-    if (seen++ !== taskIndex) return line;
-    const mark = match[2] === ' ' ? 'x' : ' ';
-    return `${match[1]}[${mark}]${line.slice(match[0].length)}`;
-  });
-  return next.join(newline);
+  const marker = taskMarkerOffsets(source)[taskIndex];
+  if (marker == null) return source;
+  return toggleTaskAt(source, marker);
 }
 
 export function toggleHighlight(source: string, start: number, end: number): { text: string; start: number; end: number } | null {

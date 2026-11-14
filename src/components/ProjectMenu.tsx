@@ -1,5 +1,6 @@
 import { SlidersHorizontal } from 'lucide-react';
 import { ATLAS_LAB_ENABLED } from '../backgrounds/atlas-tuning';
+import { archivePressure } from '../ingest/admission';
 import type { LogicalUsage } from '../project/storage';
 import { formatBytes, formatOriginEstimate } from '../project/storage';
 import type { BackgroundPattern } from '../domain/types';
@@ -128,7 +129,9 @@ export function ProjectMenu({
             </div>
           </dl>
           <p className="project-note">
-            Browser data can still be removed. An exported archive is the copy to keep.
+            Browser data can still be removed. An exported archive is the copy to keep. Embedded images must be 64 MiB or smaller, and the whole archive must stay within 256 MiB.
+            {usage && archivePressure(usage.totalBytes, usage.embeddedAssets) === 'near' ? ' This board is near the backup limit. Remove or replace a large image before it can no longer be exported.' : ''}
+            {usage && archivePressure(usage.totalBytes, usage.embeddedAssets) === 'over' ? ' This board is too large for a complete backup. Remove or replace large embedded images, then export again.' : ''}
           </p>
           {persisted === false ? (
             <button type="button" onClick={onPersist}>

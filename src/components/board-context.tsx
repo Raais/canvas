@@ -15,7 +15,9 @@ export type BoardActions = {
   noteIntrinsicSize: (id: string, width: number, height: number) => void;
   renameGroup: (id: string, label: string) => void;
   endRename: () => void;
+  cancelRename: () => void;
   createNoteIn: (groupId: string) => void;
+  requestDeleteContents: (groupId: string) => void;
   deleteContents: (groupId: string) => void;
   setGroupTone: (id: string, tone: string) => void;
 };

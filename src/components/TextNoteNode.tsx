@@ -179,6 +179,13 @@ function TextNoteNodeComponent({ id, data, selected }: NodeProps<Node<TextNodeDa
             aria-label="Note text"
             onChange={(event) => actions.updateText(id, event.target.value)}
             onBlur={() => actions.endEditing()}
+            onKeyDown={(event) => {
+              const finish = event.key === 'Escape' || (event.key === 'Enter' && (event.metaKey || event.ctrlKey));
+              if (!finish) return;
+              event.preventDefault();
+              event.stopPropagation();
+              event.currentTarget.blur();
+            }}
             onPointerDown={(event) => event.stopPropagation()}
           />
         ) : data.presentation === 'markdown' ? (
