@@ -3,7 +3,7 @@ import { createEmptyBoard } from '../domain/board';
 import { facingHandles } from '../domain/geometry';
 import { connectNodes } from '../domain/graph';
 import { createHistory, pushHistory, redoHistory, undoHistory } from '../domain/history';
-import { canEditSelection, canLinkSelection, plainShortcutBlocked, type ShortcutGuard } from '../editor/shortcuts';
+import { canEditSelection, canLinkSelection, plainShortcutBlocked, zoomSelectionKey, type ShortcutGuard } from '../editor/shortcuts';
 import type { BoardNode } from '../domain/types';
 
 declare const Bun: { file(path: URL): { text(): Promise<string> } };
@@ -119,5 +119,10 @@ describe('link and edit shortcuts', () => {
     expect(canEditSelection(1, 'group')).toBe(false);
     expect(canEditSelection(0, 'text')).toBe(false);
     expect(canEditSelection(2, 'text')).toBe(false);
+    expect(zoomSelectionKey('g', 1)).toBe(true);
+    expect(zoomSelectionKey('G', 1)).toBe(true);
+    expect(zoomSelectionKey('g', 0)).toBe(false);
+    expect(zoomSelectionKey('g', 2)).toBe(false);
+    expect(zoomSelectionKey('l', 1)).toBe(false);
   });
 });

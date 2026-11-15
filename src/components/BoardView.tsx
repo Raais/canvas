@@ -50,7 +50,7 @@ import { facingHandles, isContentNode, normalizeRect, worldTopLeft } from '../do
 import { toggleTaskAt } from '../domain/markdown';
 import { gesturePhase, sameSelection } from '../editor/interaction';
 import { dragBodyUpdates, FLOW_MULTI_SELECTION_KEYS, FLOW_SELECTION_KEY, nextShiftHeld, relaxDrag, shouldRelaxDrag, syncDragLedger } from '../editor/pulling';
-import { plainShortcutBlocked, searchShortcut } from '../editor/shortcuts';
+import { plainShortcutBlocked, searchShortcut, zoomSelectionKey } from '../editor/shortcuts';
 import { connectNodes, deleteEdges, hasUndirectedLink } from '../domain/graph';
 import { cameraDuration, frameViewport, noteJumpZoom } from '../domain/camera';
 import { setEdgeLabel, setEdgeStyle } from '../domain/relationships';
@@ -892,6 +892,27 @@ function BoardSurface({ session }: { session: SessionProps }) {
         if (commands.current.edit()) event.preventDefault();
         return;
       }
+      if (zoomSelectionKey(event.key, selectedRef.current.length) && !plainShortcutBlocked({
+        defaultPrevented: event.defaultPrevented,
+        composing: event.isComposing,
+        repeat: event.repeat,
+        meta: event.metaKey,
+        ctrl: event.ctrlKey,
+        alt: event.altKey,
+        shift: event.shiftKey,
+        tag: element?.tagName ?? null,
+        editable: element?.isContentEditable ?? false,
+        inOverlay: overlayRef.current || edgeEditorRef.current || Boolean(element?.closest('[role="dialog"], [role="alertdialog"], [role="menu"]')),
+        editing: editingRef.current !== null,
+        blocked: false,
+      })) {
+        const id = selectedRef.current[0];
+        if (id) {
+          event.preventDefault();
+          frameNode(id);
+        }
+        return;
+      }
       if (blockedRef.current) return;
       if (!event.metaKey && !event.ctrlKey) return;
       const key = event.key.toLowerCase();
@@ -1312,7 +1333,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
     if (active instanceof HTMLElement && active.closest('.search-palette')) active.blur();
   }
 
-  function jumpToNode(id: string) {
+  function frameNode(id: string) {
     const bounds = resultBounds(boardRef.current.nodes, id);
     const node = boardRef.current.nodes.find((entry) => entry.id === id);
     if (!bounds || !node) return;
@@ -1327,6 +1348,10 @@ function BoardSurface({ session }: { session: SessionProps }) {
       const center = centerOf(bounds);
       void flowRef.current.setCenter(center.x, center.y, { zoom: noteJumpZoom(flowRef.current.getViewport().zoom), duration });
     }
+  }
+
+  function jumpToNode(id: string) {
+    frameNode(id);
     replaceSelection([id]);
     replaceEdgeSelection([]);
     closeSearch();

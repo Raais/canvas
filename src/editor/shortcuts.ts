@@ -22,6 +22,10 @@ export function plainShortcutBlocked(guard: ShortcutGuard): boolean {
   return false;
 }
 
+export function zoomSelectionKey(key: string, selectedCount: number): boolean {
+  return key.toLowerCase() === 'g' && selectedCount === 1;
+}
+
 export function canLinkSelection(count: number, alreadyLinked: boolean): boolean {
   return count === 2 && !alreadyLinked;
 }

@@ -2,9 +2,9 @@
 
 **Implemented by Cursor Grok 4.7.**
 
-canvas is a local-first spatial notebook and moodboard. Arrange plain-text notes, code notes, images, file attachments, undirected links, and rigid clusters on an infinite, zoomable canvas. The board lives in this browser. There is no account, backend, or upload server.
+canvas is a local-first spatial notebook and moodboard. Arrange text, Markdown, code, images, file attachments, links, and groups on an infinite canvas. The board stays in this browser. There is no account, backend, or upload server.
 
-A new board opens on Dither Atlas renderer v3: the finalized Earth-like terrain, adaptive dithering, a subdued ink strength, and the Void Mask on with a hard cutoff at zero. The seed comes from the title. Existing boards keep the background they already saved, including Dots, Grid, Cross, Blank, and Atlas v1 or v2. Project → Canvas background still changes the open board. Topographic Contours is a separate choice beside Dither Atlas. It draws the same title-seeded landmass as Atlas v3, but as thin elevation lines instead of dither, and it does not replace Atlas as the default. Contours renderer v1 is the stored look. Tune Contours appears only while Contours is selected. Its sliders are temporary: Copy configuration exports the current experimental JSON, and Reset to defaults returns to the frozen v1 lines. Neither action writes the sliders into the board or a ZIP. Use new Atlas look upgrades a stored v1 or v2 selection to v3 and keeps the current seed. Renaming a project recalculates the saved seed of each stored procedural background and leaves the renderer version unchanged. The generated pixels are not stored; a ZIP archive keeps the seed and renderer version, and a device without WebGL2 falls back to Dots without changing the saved choice. Tune Atlas stays available for v1, v2, and v3. Its slider values are temporary and are not written into the board or a ZIP. There is no animation loop. Each procedural shader loads only when that background is selected. Dark and light themes both redraw the lines from the same terrain. Group frames can use a translucent Slate, Sage, Sand, or Rose tint. Checklists still live in the Markdown source, and highlighting stays display-only.
+A new board starts dark. Project → Canvas background can switch it to light, and can use dots, a grid, a cross, a blank canvas, Dither Atlas, or topographic contours. An existing board keeps the background it already saved.
 
 ## What you can do
 
@@ -20,6 +20,7 @@ A new board opens on Dither Atlas renderer v3: the finalized Earth-like terrain,
 - Group notes from a selection or with the Frame tool. Groups stay flat, move as one body, and keep their children at the same world position when grouped or ungrouped.
 - Undo and redo recent edits until the page reloads. History is not stored in IndexedDB.
 - Read the cursor and the selected object in world coordinates.
+- Press G with one node selected to bring that node into view. Cmd+G or Ctrl+G still groups the selection, and Shift with that shortcut ungroups it.
 - Export the open board as a `.canvas.zip` archive, start a blank board, or import an archive in place of the current one.
 - See an approximate size for canvas data, plus the browser's estimate for this whole origin.
 
