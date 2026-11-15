@@ -227,7 +227,7 @@ function TextNoteNodeComponent({ id, data, selected }: NodeProps<Node<TextNodeDa
   }, [data.editing, id]);
 
   return (
-    <article className={`text-note ${tone}${selected ? ' is-selected' : ''}${data.mirror ? ' is-mirror' : ''}`} onDoubleClick={() => actions.beginEditing(id)}>
+    <article className={`text-note ${tone}${selected ? ' is-selected' : ''}${data.mirror ? ' is-mirror' : ''}${selected || data.editing ? ' nowheel' : ''}`} onDoubleClick={() => actions.beginEditing(id)}>
       <NodeResizer isVisible={selected} minWidth={TEXT_MIN_WIDTH} minHeight={TEXT_RESIZE_MIN_HEIGHT} />
       {showChrome ? <NoteChrome id={id} data={data} editorRef={editorRef} /> : null}
       {HANDLE_SIDES.map((side) => (
