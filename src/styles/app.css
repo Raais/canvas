@@ -435,7 +435,27 @@ button:focus-visible, .title-input:focus-visible, select:focus-visible {
   color: var(--text);
   padding: 8px 10px;
 }
-.password-actions { display: flex; gap: 8px; }
+.password-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.password-dialog button {
+  appearance: none;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 14px;
+  cursor: pointer;
+}
+.password-dialog button:hover { background: var(--pressed); }
+.password-dialog button:disabled:hover { background: var(--surface-2); }
+.password-dialog button[type='submit'] {
+  background: var(--pressed);
+  color: var(--accent-ink);
+  border-color: var(--accent);
+}
+.password-dialog button[type='submit']:hover { background: color-mix(in srgb, var(--accent) 24%, var(--surface)); }
+.password-dialog button[type='submit']:disabled:hover { background: var(--pressed); }
 .password-error { margin: 0; color: var(--danger); font-size: 13px; }
 
 .text-note.is-selected, .text-note.is-editing, .image-note.is-selected, .group-node.is-selected {
