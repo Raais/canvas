@@ -1,13 +1,18 @@
 import { File, Frame, Globe, Image, StickyNote } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { SearchResult } from '../domain/search';
+import { xrayQueryLabel } from '../domain/xray';
 
 export function SearchPalette({
   query,
   results,
   notice,
   dateLabel,
+  xray,
+  showConnections,
   onQuery,
+  onXray,
+  onShowConnections,
   onJump,
   onClose,
 }: {
@@ -15,7 +20,11 @@ export function SearchPalette({
   results: readonly SearchResult[];
   notice: string | null;
   dateLabel: string | null;
+  xray: boolean;
+  showConnections: boolean;
   onQuery: (query: string) => void;
+  onXray: (enabled: boolean) => void;
+  onShowConnections: (enabled: boolean) => void;
   onJump: (id: string) => void;
   onClose: () => void;
 }) {
@@ -74,6 +83,12 @@ export function SearchPalette({
           }
         }}
       />
+      <div className="xray-toggles" role="group" aria-label="X-ray search">
+        <button type="button" aria-pressed={xray} onClick={() => onXray(!xray)}>X-ray</button>
+        {xray ? (
+          <button type="button" aria-pressed={showConnections} onClick={() => onShowConnections(!showConnections)}>Show connections</button>
+        ) : null}
+      </div>
       <div ref={listRef} id="search-results" role="listbox" aria-label="Search results">
         {notice ? <p className="search-empty">{notice}</p> : null}
         {query.trim() && !notice && results.length === 0 ? <p className="search-empty">No matches.</p> : null}
@@ -104,6 +119,30 @@ export function SearchPalette({
           );
         })}
       </div>
+    </div>
+  );
+}
+
+export function XrayStatusChip({
+  query,
+  count,
+  onEdit,
+  onExit,
+}: {
+  query: string;
+  count: number;
+  onEdit: () => void;
+  onExit: () => void;
+}) {
+  const label = xrayQueryLabel(query);
+  const matches = count === 1 ? '1 match' : `${count} matches`;
+  return (
+    <div className="xray-chip nodrag nopan" role="status" aria-live="polite">
+      <span>X-ray</span>
+      <span className="xray-query" title={query.trim()}>{label}</span>
+      <span>{matches}</span>
+      <button type="button" onClick={onEdit}>Edit search</button>
+      <button type="button" onClick={onExit}>Exit X-ray</button>
     </div>
   );
 }

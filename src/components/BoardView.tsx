@@ -56,11 +56,13 @@ import { toggleTaskAt } from '../domain/markdown';
 import { gesturePhase, sameSelection } from '../editor/interaction';
 import { dragBodyUpdates, FLOW_MULTI_SELECTION_KEYS, FLOW_SELECTION_KEY, nextShiftHeld, relaxDrag, shouldRelaxDrag, syncDragLedger } from '../editor/pulling';
 import { collapseSelectionKey, eraserToolKey, penToolKey, plainShortcutBlocked, searchShortcut, zoomSelectionKey } from '../editor/shortcuts';
+import { decideEscape } from '../editor/xray-escape';
 import { connectNodes, deleteEdges, hasUndirectedLink } from '../domain/graph';
 import { cameraDuration, frameViewport, noteJumpZoom } from '../domain/camera';
 import { setEdgeLabel, setEdgeStyle } from '../domain/relationships';
 import { editSavedView, recallViewport } from '../domain/saved-views';
 import { centerOf, contentSignature, resultBounds, type SearchOutcome } from '../domain/search';
+import { classifyXray, clearedXrayLens, xrayLensActive } from '../domain/xray';
 import { decodeGraphClipboard, encodeGraphClipboard, GRAPH_CLIPBOARD_LIMIT, GRAPH_MIME, looksLikeGraphClipboard, pasteGraph, selectionClosure } from '../domain/graph-clipboard';
 import {
   createTextInside,
@@ -108,7 +110,8 @@ import { canonicalViewportUpdate } from '../project/viewport-write';
 import { BoardActionsProvider, type BoardActions } from './board-context';
 import { edgeTypes } from './RelationshipEdge';
 import { SavedViewsPanel } from './SavedViewsPanel';
-import { SearchPalette } from './SearchPalette';
+import { SearchPalette, XrayStatusChip } from './SearchPalette';
+import { createXrayPresentation } from './xray-presentation';
 import { NodeClockProvider, useMinuteClock } from './node-clock';
 import { Coordinates, type CoordinatesHandle } from './Coordinates';
 import { GroupNode } from './GroupNode';
@@ -205,6 +208,8 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const [passwordBusy, setPasswordBusy] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [xrayEnabled, setXrayEnabled] = useState(false);
+  const [xrayConnections, setXrayConnections] = useState(false);
   const [viewsOpen, setViewsOpen] = useState(false);
   const [historyStamp, setHistoryStamp] = useState(0);
   const [chromeHidden, setChromeHidden] = useState(false);
@@ -231,6 +236,11 @@ function BoardSurface({ session }: { session: SessionProps }) {
     setContoursTuning(CONTOURS_V1_DEFAULTS);
     setContoursPreview('experimental');
     setContoursLabOpen(false);
+    const cleared = clearedXrayLens();
+    setXrayEnabled(cleared.enabled);
+    setXrayConnections(cleared.showConnections);
+    setSearchQuery(cleared.query);
+    setSearchOpen(false);
   }, [board.id]);
   const [confirming, setConfirming] = useState<
     | null
@@ -291,6 +301,12 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const boardEl = useRef<HTMLDivElement>(null);
   const nodeProjection = useRef(createNodeProjection());
   const edgeProjection = useRef(createEdgeProjection());
+  const xrayPresentation = useRef(createXrayPresentation<CanvasFlowNode, Edge>());
+  const xrayLensRef = useRef(false);
+  const websiteDialogRef = useRef(false);
+  const draftRef = useRef(false);
+  websiteDialogRef.current = websiteDialog !== null;
+  draftRef.current = draft !== null;
   toWorldRef.current = screenToFlowPosition;
   flowRef.current = flow;
   toolRef.current = tool;
@@ -861,15 +877,46 @@ function BoardSurface({ session }: { session: SessionProps }) {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (passwordPromptRef.current && event.key === 'Escape') {
-        event.preventDefault();
-        setPasswordPrompt(null);
-        setPasswordError('');
-        return;
-      }
       const target = event.target;
       const element = target instanceof HTMLElement ? target : null;
       const editingField = Boolean(element && (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA' || element.isContentEditable));
+      if (event.key === 'Escape') {
+        const decision = decideEscape({
+          passwordPrompt: passwordPromptRef.current !== null,
+          searchOpen: searchOpenRef.current,
+          viewsOpen: viewsOpenRef.current,
+          editingField,
+          editing: editingRef.current !== null,
+          inDialog: confirmingRef.current || websiteDialogRef.current || edgeEditorRef.current || Boolean(element?.closest('[role="dialog"], [role="alertdialog"], [role="menu"]')),
+          inkGesture: inkGestureRef.current,
+          framing: frameRef.current !== null || draftRef.current,
+          tool: toolRef.current,
+          xrayLens: xrayLensRef.current,
+        });
+        if (decision === 'password') {
+          event.preventDefault();
+          setPasswordPrompt(null);
+          setPasswordError('');
+          return;
+        }
+        if (decision === 'close-search') {
+          setSearchOpen(false);
+          return;
+        }
+        if (decision === 'close-views') {
+          setViewsOpen(false);
+          return;
+        }
+        if (decision === 'ignore') return;
+        frameRef.current = null;
+        setDraft(null);
+        if (decision === 'exit-xray') {
+          setXrayEnabled(false);
+          return;
+        }
+        setTool('select');
+        return;
+      }
       if (searchShortcut({
         key: event.key,
         meta: event.metaKey,
@@ -887,21 +934,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
         setSearchOpen((open) => !open);
         return;
       }
-      if (event.key === 'Escape' && searchOpenRef.current) {
-        setSearchOpen(false);
-        return;
-      }
-      if (event.key === 'Escape' && viewsOpenRef.current && !editingField) {
-        setViewsOpen(false);
-        return;
-      }
       if (editingField) return;
-      if (event.key === 'Escape') {
-        frameRef.current = null;
-        setDraft(null);
-        setTool('select');
-        return;
-      }
       const plainBlocked = plainShortcutBlocked({
         defaultPrevented: event.defaultPrevented,
         composing: event.isComposing,
@@ -1396,9 +1429,12 @@ function BoardSurface({ session }: { session: SessionProps }) {
     [searchModule, searchKey],
   );
   const searchOutcome = useMemo<SearchOutcome>(() => {
-    if (!searchModule || !contentIndex) return { results: [], notice: searchOpen && searchQuery.trim() ? 'Search is loading.' : null, dateLabel: null };
+    if (!searchModule || !contentIndex) return { results: [], matchIds: [], notice: searchOpen && searchQuery.trim() ? 'Search is loading.' : null, dateLabel: null };
     return searchModule.queryBoard(board.nodes, contentIndex, searchQuery, clock);
   }, [searchModule, contentIndex, searchQuery, clock, searchKey, searchOpen]);
+  const searchReady = Boolean(searchModule && contentIndex);
+  const xrayLens = xrayLensActive(xrayEnabled, searchQuery, searchOutcome.notice, searchReady);
+  xrayLensRef.current = xrayLens;
 
   function closeSearch() {
     setSearchOpen(false);
@@ -1454,7 +1490,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
     void flowRef.current.setViewport(recallViewport(view), { duration: cameraDuration(300) });
   }
 
-  const nodes = useMemo(() => {
+  const projectedNodes = useMemo(() => {
     return nodeProjection.current.project(board.nodes, {
       selected: new Set(selectedIds),
       editingId,
@@ -1465,9 +1501,28 @@ function BoardSurface({ session }: { session: SessionProps }) {
     });
   }, [board.nodes, editingId, selectedIds, urlEpoch, unlockEpoch, readOnly]);
 
-  const edges = useMemo<Edge[]>(() => {
+  const projectedEdges = useMemo<Edge[]>(() => {
     return edgeProjection.current.project(board.edges, new Set(selectedEdgeIds));
   }, [board.edges, selectedEdgeIds]);
+
+  const xrayScene = useMemo(
+    () => classifyXray({
+      nodes: board.nodes,
+      edges: board.edges,
+      matchIds: searchOutcome.matchIds,
+      enabled: xrayLens,
+      showConnections: xrayConnections,
+      active: xrayLens,
+    }),
+    [board.nodes, board.edges, searchOutcome.matchIds, xrayLens, xrayConnections],
+  );
+
+  const presented = useMemo(
+    () => xrayPresentation.current.present(projectedNodes, projectedEdges, xrayScene),
+    [projectedNodes, projectedEdges, xrayScene],
+  );
+  const nodes = presented.nodes;
+  const edges = presented.edges;
 
   function commitDrawing(node: DrawingBoardNode) {
     if (blockedRef.current) return;
@@ -2300,7 +2355,22 @@ function BoardSurface({ session }: { session: SessionProps }) {
           />
         ) : null}
         {searchOpen ? (
-          <SearchPalette query={searchQuery} results={searchOutcome.results} notice={searchOutcome.notice} dateLabel={searchOutcome.dateLabel} onQuery={setSearchQuery} onJump={jumpToNode} onClose={closeSearch} />
+          <SearchPalette
+            query={searchQuery}
+            results={searchOutcome.results}
+            notice={searchOutcome.notice}
+            dateLabel={searchOutcome.dateLabel}
+            xray={xrayEnabled}
+            showConnections={xrayConnections}
+            onQuery={setSearchQuery}
+            onXray={setXrayEnabled}
+            onShowConnections={setXrayConnections}
+            onJump={jumpToNode}
+            onClose={closeSearch}
+          />
+        ) : null}
+        {!searchOpen && xrayLens ? (
+          <XrayStatusChip query={searchQuery} count={xrayScene.matchCount} onEdit={() => setSearchOpen(true)} onExit={() => setXrayEnabled(false)} />
         ) : null}
         {viewsOpen && !chromeHidden ? (
           <SavedViewsPanel

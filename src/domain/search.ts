@@ -25,6 +25,7 @@ export type SearchResult = {
 
 export type SearchOutcome = {
   results: SearchResult[];
+  matchIds: readonly string[];
   notice: string | null;
   dateLabel: string | null;
 };

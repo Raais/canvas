@@ -42,16 +42,35 @@ export function buildContentIndex(nodes: readonly BoardNode[]): ContentIndex {
 
 export function queryBoard(nodes: readonly BoardNode[], index: ContentIndex, raw: string, now: Date): SearchOutcome {
   const interpreted = interpretDateQuery(raw, now);
-  if (interpreted.invalid) return { results: [], notice: 'That date was not recognized.', dateLabel: null };
+  if (interpreted.invalid) return { results: [], matchIds: [], notice: 'That date was not recognized.', dateLabel: null };
   const content = interpreted.dateOnly || !interpreted.content.trim()
     ? []
     : mergeContent(index, interpreted.content);
   const dated = interpreted.range ? dateHits(nodes, interpreted.range.start, interpreted.range.end, now) : [];
-  if (!interpreted.range) return { results: content.slice(0, SEARCH_LIMIT).map(asContent), notice: null, dateLabel: null };
+  if (!interpreted.range) {
+    return { results: content.slice(0, SEARCH_LIMIT).map(asContent), matchIds: content.map((hit) => hit.id), notice: null, dateLabel: null };
+  }
   const dateIds = new Set(dated.map((hit) => hit.id));
   const contentOnly = content.filter((hit) => !dateIds.has(hit.id));
-  if (interpreted.dateOnly) return { results: dated.slice(0, SEARCH_LIMIT), notice: null, dateLabel: interpreted.range.label };
-  return { results: shareResults(dated, contentOnly.map(asContent)), notice: null, dateLabel: interpreted.range.label };
+  const matchIds = unionMatchIds(dated, content);
+  if (interpreted.dateOnly) return { results: dated.slice(0, SEARCH_LIMIT), matchIds, notice: null, dateLabel: interpreted.range.label };
+  return { results: shareResults(dated, contentOnly.map(asContent)), matchIds, notice: null, dateLabel: interpreted.range.label };
+}
+
+function unionMatchIds(primary: readonly { id: string }[], extra: readonly { id: string }[]): string[] {
+  const seen = new Set<string>();
+  const ids: string[] = [];
+  for (const hit of primary) {
+    if (seen.has(hit.id)) continue;
+    seen.add(hit.id);
+    ids.push(hit.id);
+  }
+  for (const hit of extra) {
+    if (seen.has(hit.id)) continue;
+    seen.add(hit.id);
+    ids.push(hit.id);
+  }
+  return ids;
 }
 
 function mergeContent(index: ContentIndex, query: string): SearchHit[] {
