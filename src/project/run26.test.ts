@@ -26,7 +26,7 @@ import { createHistory, pushHistory, redoHistory, undoHistory } from '../domain/
 import { relaxBoard } from '../domain/physics';
 import { buildSearchIndex, contentSignature, searchNodes } from '../domain/search';
 import { MAX_DRAWING_NODES, SCHEMA_VERSION, type DrawingNode, type Point } from '../domain/types';
-import { onInkPointerDown, onInkPointerFinish } from '../editor/ink-gesture';
+import { onInkPointerDown, onInkPointerFinish, reduceInkGesture, type InkEvent, type InkGestureState } from '../editor/ink-gesture';
 import { dragBodyUpdates } from '../editor/pulling';
 import { createNodeProjection } from '../components/flow-projection';
 import { SaveQueue } from '../persistence/save-queue';
@@ -43,6 +43,30 @@ function must<T>(value: T | null): T {
 
 function stroke(points: readonly Point[], color: DrawingNode['color'] = 'ink', width = 4, id?: string): DrawingNode {
   return must(drawingFromWorld(points, color, width, now, id));
+}
+
+type GestureStep = 'down' | 'move' | 'up' | 'lost-capture' | 'revision' | 'escape' | 'tool' | 'blur' | 'viewport' | InkEvent;
+
+function play(steps: readonly GestureStep[]) {
+  let state: InkGestureState = { open: false, pointerId: null, sessionId: 'board-a', readOnly: false };
+  const effects: string[] = [];
+  for (const step of steps) {
+    if (step === 'move') {
+      effects.push('ignore');
+      continue;
+    }
+    const event: InkEvent = typeof step === 'string'
+      ? step === 'down'
+        ? { type: 'down', pointerId: 7, isPrimary: true, button: 0, readOnly: false, spaceHeld: false, sessionId: 'board-a' }
+        : step === 'up' || step === 'lost-capture'
+          ? { type: step, pointerId: state.pointerId ?? 7 }
+          : { type: step }
+      : step;
+    const result = reduceInkGesture(state, event);
+    state = result.state;
+    effects.push(result.effect);
+  }
+  return { state, effects };
 }
 
 describe('drawing nodes', () => {
@@ -330,6 +354,88 @@ describe('drawing nodes', () => {
     expect(onInkPointerFinish(finished.state, true, 'up').effect).toBe('ignore');
     expect(onInkPointerDown({ open: false }, { ...primary, button: 2 }).effect).toBe('ignore');
     expect(onInkPointerDown({ open: true }, { ...primary, readOnly: true }).effect).toBe('cancel');
+  });
+
+  test('commits one stroke, one dot, and each rapid stroke once', () => {
+    const stroke = play(['down', 'move', 'up']);
+    expect(stroke.effects).toEqual(['start', 'ignore', 'commit']);
+    expect(stroke.state.open).toBe(false);
+    const dot = play(['down', 'up']);
+    expect(dot.effects).toEqual(['start', 'commit']);
+    const rapid = play(['down', 'up', 'down', 'up', 'down', 'move', 'up']);
+    expect(rapid.effects.filter((effect) => effect === 'commit')).toHaveLength(3);
+    expect(rapid.effects.filter((effect) => effect === 'start')).toHaveLength(3);
+    const repeated = play(['down', 'up', 'up']);
+    expect(repeated.effects.filter((effect) => effect === 'commit')).toHaveLength(1);
+  });
+
+  test('keeps a gesture through document revisions and viewport saves', () => {
+    const revised = play(['down', 'revision', 'revision', 'up']);
+    expect(revised.effects).toEqual(['start', 'ignore', 'ignore', 'commit']);
+    expect(revised.state.open).toBe(false);
+    const saved = play(['down', 'move', 'revision', 'up']);
+    expect(saved.effects).toEqual(['start', 'ignore', 'ignore', 'commit']);
+    expect(saved.state.pointerId).toBeNull();
+  });
+
+  test('cancels for board replacement, read-only, and escape without a later commit', () => {
+    const replaced = play(['down', 'move', { type: 'replace', sessionId: 'board-b' }, 'up']);
+    expect(replaced.effects).toEqual(['start', 'ignore', 'cancel', 'ignore']);
+    expect(replaced.state.sessionId).toBe('board-b');
+    const sameBoard = play(['down', { type: 'replace', sessionId: 'board-a' }, 'up']);
+    expect(sameBoard.effects).toEqual(['start', 'ignore', 'commit']);
+    const locked = play(['down', { type: 'read-only', readOnly: true }, 'up']);
+    expect(locked.effects).toEqual(['start', 'cancel', 'ignore']);
+    expect(locked.state.readOnly).toBe(true);
+    const escaped = play(['down', 'move', 'escape', 'up']);
+    expect(escaped.effects).toEqual(['start', 'ignore', 'cancel', 'ignore']);
+    expect(play(['down', 'tool', 'up']).effects).toEqual(['start', 'cancel', 'ignore']);
+    expect(play(['down', 'blur', 'up']).effects).toEqual(['start', 'cancel', 'ignore']);
+    expect(play(['down', 'viewport', 'up']).effects).toEqual(['start', 'cancel', 'ignore']);
+  });
+
+  test('pointercancel and lost capture follow the active pointer only', () => {
+    const cancelled = play(['down', 'move', { type: 'cancel', pointerId: 7 }, 'up']);
+    expect(cancelled.effects).toEqual(['start', 'ignore', 'cancel', 'ignore']);
+    const otherCancel = play(['down', { type: 'cancel', pointerId: 9 }, 'up']);
+    expect(otherCancel.effects).toEqual(['start', 'ignore', 'commit']);
+    const otherUp = play(['down', { type: 'up', pointerId: 9 }, { type: 'lost-capture', pointerId: 9 }, 'up']);
+    expect(otherUp.effects).toEqual(['start', 'ignore', 'ignore', 'commit']);
+    const captureThenUp = play(['down', 'move', 'lost-capture', 'up']);
+    expect(captureThenUp.effects).toEqual(['start', 'ignore', 'ignore', 'commit']);
+    const upThenCapture = play(['down', 'up', 'lost-capture', 'up']);
+    expect(upThenCapture.effects.filter((effect) => effect === 'commit')).toHaveLength(1);
+    expect(upThenCapture.effects).toEqual(['start', 'commit', 'ignore', 'ignore']);
+    const fallback = play(['down', 'move', 'up', 'up']);
+    expect(fallback.effects.filter((effect) => effect === 'commit')).toHaveLength(1);
+  });
+
+  test('a committed stroke survives parsing and one undo, and one eraser sweep is one undo', () => {
+    const board = createEmptyBoard(now);
+    const drawn = addDrawing(board, stroke([{ x: 4, y: 8 }, { x: 40, y: 18 }], 'blue', 4, 'kept'), now);
+    if ('error' in drawn) throw new Error(drawn.error);
+    const parsed = parseBoard(drawn);
+    const kept = parsed?.nodes.find((node) => node.id === 'kept');
+    expect(kept?.kind === 'drawing' ? kept.points : []).toEqual(
+      drawn.nodes.find((node) => node.kind === 'drawing')?.points ?? [],
+    );
+    const history = pushHistory(createHistory(), board);
+    const undone = undoHistory(history, drawn);
+    expect(undone?.board.nodes.some((node) => node.kind === 'drawing')).toBe(false);
+    const redone = undone ? redoHistory(undone.history, undone.board) : null;
+    expect(redone?.board.nodes.filter((node) => node.kind === 'drawing')).toHaveLength(1);
+    expect(redone?.history.past).toHaveLength(1);
+    const again = redone ? undoHistory(redone.history, redone.board) : null;
+    expect(again?.history.past).toHaveLength(0);
+    const first = stroke([{ x: 0, y: 0 }, { x: 30, y: 0 }], 'ink', 4, 'a');
+    const second = stroke([{ x: 0, y: 20 }, { x: 30, y: 20 }], 'ink', 4, 'b');
+    const page = addNodes(createEmptyBoard(now), [first, second], now);
+    const swept = eraseDrawings(page, ['a', 'b'], later);
+    expect(swept.nodes.filter((node) => node.kind === 'drawing')).toHaveLength(0);
+    const sweepHistory = pushHistory(createHistory(), page);
+    const restored = undoHistory(sweepHistory, swept);
+    expect(restored?.board.nodes.filter((node) => node.kind === 'drawing')).toHaveLength(2);
+    expect(restored?.history.past).toHaveLength(0);
   });
 
   test('measures drawing history, hit testing, and projection', () => {

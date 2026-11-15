@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { beginStroke, cancelStroke, DRAWING_THEME_COLORS, drawingHits, eraserWorldRadius, extendStroke, finishStroke, pathFromPairs, type StrokeDraft } from '../domain/drawing';
-import { onInkPointerDown, onInkPointerFinish } from '../editor/ink-gesture';
+import { reduceInkGesture, type InkEvent, type InkGestureState } from '../editor/ink-gesture';
 import { MAX_ZOOM, MIN_ZOOM, type BoardNode, type DrawingColor, type DrawingNode, type Point, type Viewport } from '../domain/types';
 
 type DrawingOverlayProps = {
@@ -8,7 +8,7 @@ type DrawingOverlayProps = {
   color: DrawingColor;
   screenWidth: number;
   appearance: 'dark' | 'light';
-  generation: number;
+  sessionId: string;
   readOnly: boolean;
   getViewport: () => Viewport;
   screenToFlow: (point: Point) => Point;
@@ -32,68 +32,16 @@ export function DrawingOverlay(props: DrawingOverlayProps) {
   const viewportRef = useRef<Viewport | null>(null);
   const closedRef = useRef(true);
   const spaceRef = useRef(false);
-  const tokenRef = useRef(0);
+  const sessionRef = useRef(props.sessionId);
+  const gestureRef = useRef<InkGestureState>({ open: false, pointerId: null, sessionId: props.sessionId, readOnly: props.readOnly });
+  const onUpRef = useRef<(pointerId: number) => void>(() => {});
+  const onCancelRef = useRef<(pointerId: number) => void>(() => {});
 
-  useEffect(() => {
-    const root = rootRef.current;
-    if (!root) return;
-    const onWheel = (event: WheelEvent) => {
-      if (!closedRef.current) {
-        event.preventDefault();
-        return;
-      }
-      event.preventDefault();
-      const bounds = root.getBoundingClientRect();
-      const sx = event.clientX - bounds.left;
-      const sy = event.clientY - bounds.top;
-      const viewport = propsRef.current.getViewport();
-      const worldX = (sx - viewport.x) / viewport.zoom;
-      const worldY = (sy - viewport.y) / viewport.zoom;
-      const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, viewport.zoom * Math.exp(-event.deltaY * 0.0015)));
-      propsRef.current.setViewport({ x: sx - worldX * zoom, y: sy - worldY * zoom, zoom });
-    };
-    root.addEventListener('wheel', onWheel, { passive: false });
-    return () => root.removeEventListener('wheel', onWheel);
-  }, []);
-
-  useEffect(() => {
-    abandon();
-  }, [props.generation, props.mode, props.readOnly]);
-
-  useEffect(() => {
-    const stop = () => {
-      if (document.hidden) abandon();
-    };
-    document.addEventListener('visibilitychange', stop);
-    window.addEventListener('blur', abandon);
-    return () => {
-      document.removeEventListener('visibilitychange', stop);
-      window.removeEventListener('blur', abandon);
-      abandon();
-    };
-  }, []);
-
-  useEffect(() => {
-    const down = (event: KeyboardEvent) => {
-      if (event.code !== 'Space' || event.repeat) return;
-      const target = event.target;
-      if (target instanceof HTMLElement && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
-      spaceRef.current = true;
-      if (rootRef.current) rootRef.current.style.pointerEvents = 'none';
-      abandon();
-    };
-    const up = (event: KeyboardEvent) => {
-      if (event.code !== 'Space') return;
-      spaceRef.current = false;
-      if (rootRef.current) rootRef.current.style.pointerEvents = 'auto';
-    };
-    window.addEventListener('keydown', down);
-    window.addEventListener('keyup', up);
-    return () => {
-      window.removeEventListener('keydown', down);
-      window.removeEventListener('keyup', up);
-    };
-  }, []);
+  function apply(event: InkEvent) {
+    const result = reduceInkGesture(gestureRef.current, event);
+    gestureRef.current = result.state;
+    return result.effect;
+  }
 
   function paint() {
     const draft = draftRef.current;
@@ -127,7 +75,8 @@ export function DrawingOverlay(props: DrawingOverlayProps) {
   }
 
   function abandon() {
-    if (closedRef.current && pointerRef.current === null) return;
+    gestureRef.current = { ...gestureRef.current, open: false, pointerId: null };
+    if (closedRef.current && pointerRef.current === null && draftRef.current === null) return;
     closedRef.current = true;
     pointerRef.current = null;
     if (draftRef.current) draftRef.current = cancelStroke(draftRef.current);
@@ -138,27 +87,128 @@ export function DrawingOverlay(props: DrawingOverlayProps) {
     propsRef.current.onActive(false);
   }
 
-  function finish(commit: boolean) {
+  function commitDraft() {
     if (closedRef.current) return;
-    const token = tokenRef.current;
-    closedRef.current = true;
     const draft = draftRef.current;
     const erased = [...eraserRef.current];
+    const mode = propsRef.current.mode;
+    closedRef.current = true;
     pointerRef.current = null;
     draftRef.current = null;
     viewportRef.current = null;
     clearMarks();
     eraserRef.current = new Set();
     propsRef.current.onActive(false);
-    if (!commit || token !== propsRef.current.generation || propsRef.current.readOnly) return;
-    if (propsRef.current.mode === 'eraser') {
+    if (propsRef.current.readOnly || propsRef.current.sessionId !== sessionRef.current) return;
+    if (mode === 'eraser') {
       propsRef.current.onErase(erased);
       return;
     }
-    if (!draft) return;
+    if (!draft || draft.cancelled) return;
     const node = finishStroke(draft, new Date().toISOString());
-    if (node) propsRef.current.onCommit(node);
+    if (!node) throw new Error('Pen stroke could not be committed.');
+    propsRef.current.onCommit(node);
   }
+
+  function onUp(pointerId: number) {
+    const effect = apply({ type: 'up', pointerId });
+    if (effect === 'commit') commitDraft();
+  }
+
+  function onCancel(pointerId: number) {
+    const effect = apply({ type: 'cancel', pointerId });
+    if (effect === 'cancel') abandon();
+  }
+
+  onUpRef.current = onUp;
+  onCancelRef.current = onCancel;
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const onWheel = (event: WheelEvent) => {
+      if (!closedRef.current) {
+        event.preventDefault();
+        return;
+      }
+      event.preventDefault();
+      const bounds = root.getBoundingClientRect();
+      const sx = event.clientX - bounds.left;
+      const sy = event.clientY - bounds.top;
+      const viewport = propsRef.current.getViewport();
+      const worldX = (sx - viewport.x) / viewport.zoom;
+      const worldY = (sy - viewport.y) / viewport.zoom;
+      const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, viewport.zoom * Math.exp(-event.deltaY * 0.0015)));
+      propsRef.current.setViewport({ x: sx - worldX * zoom, y: sy - worldY * zoom, zoom });
+    };
+    root.addEventListener('wheel', onWheel, { passive: false });
+    return () => root.removeEventListener('wheel', onWheel);
+  }, []);
+
+  useEffect(() => {
+    const effect = apply({ type: 'replace', sessionId: props.sessionId });
+    if (effect === 'cancel') abandon();
+  }, [props.sessionId]);
+
+  useEffect(() => {
+    const effect = apply({ type: 'read-only', readOnly: props.readOnly });
+    if (effect === 'cancel') abandon();
+  }, [props.readOnly]);
+
+  useEffect(() => {
+    const effect = apply({ type: 'tool' });
+    if (effect === 'cancel') abandon();
+  }, [props.mode]);
+
+  useEffect(() => {
+    const stop = () => {
+      if (!document.hidden) return;
+      if (apply({ type: 'blur' }) === 'cancel') abandon();
+    };
+    const blur = () => {
+      if (apply({ type: 'blur' }) === 'cancel') abandon();
+    };
+    document.addEventListener('visibilitychange', stop);
+    window.addEventListener('blur', blur);
+    return () => {
+      document.removeEventListener('visibilitychange', stop);
+      window.removeEventListener('blur', blur);
+      abandon();
+    };
+  }, []);
+
+  useEffect(() => {
+    const down = (event: KeyboardEvent) => {
+      if (event.code !== 'Space' || event.repeat) return;
+      const target = event.target;
+      if (target instanceof HTMLElement && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+      spaceRef.current = true;
+      if (rootRef.current) rootRef.current.style.pointerEvents = 'none';
+      if (apply({ type: 'blur' }) === 'cancel') abandon();
+    };
+    const up = (event: KeyboardEvent) => {
+      if (event.code !== 'Space') return;
+      spaceRef.current = false;
+      if (rootRef.current) rootRef.current.style.pointerEvents = 'auto';
+    };
+    window.addEventListener('keydown', down);
+    window.addEventListener('keyup', up);
+    return () => {
+      window.removeEventListener('keydown', down);
+      window.removeEventListener('keyup', up);
+    };
+  }, []);
+
+  useEffect(() => {
+    const up = (event: PointerEvent) => onUpRef.current(event.pointerId);
+    const cancel = (event: PointerEvent) => onCancelRef.current(event.pointerId);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', cancel);
+    return () => {
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', cancel);
+    };
+  }, []);
 
   const { mode, color, screenWidth, appearance } = props;
   return (
@@ -166,18 +216,23 @@ export function DrawingOverlay(props: DrawingOverlayProps) {
       ref={rootRef}
       className={mode === 'eraser' ? 'ink-overlay is-eraser' : 'ink-overlay'}
       onPointerDown={(event) => {
-        const decision = onInkPointerDown(
-          { open: pointerRef.current !== null },
-          { isPrimary: event.isPrimary, button: event.button, readOnly: props.readOnly, spaceHeld: spaceRef.current },
-        );
-        if (decision.effect === 'cancel') {
-          finish(false);
+        const effect = apply({
+          type: 'down',
+          pointerId: event.pointerId,
+          isPrimary: event.isPrimary,
+          button: event.button,
+          readOnly: props.readOnly,
+          spaceHeld: spaceRef.current,
+          sessionId: props.sessionId,
+        });
+        if (effect === 'cancel') {
+          abandon();
           return;
         }
-        if (decision.effect === 'ignore') return;
+        if (effect === 'ignore') return;
         const viewport = props.getViewport();
         viewportRef.current = { ...viewport };
-        tokenRef.current = props.generation;
+        sessionRef.current = props.sessionId;
         closedRef.current = false;
         pointerRef.current = event.pointerId;
         props.onActive(true);
@@ -201,7 +256,7 @@ export function DrawingOverlay(props: DrawingOverlayProps) {
         const viewport = props.getViewport();
         const start = viewportRef.current;
         if (start && (start.x !== viewport.x || start.y !== viewport.y || start.zoom !== viewport.zoom)) {
-          finish(false);
+          if (apply({ type: 'viewport' }) === 'cancel') abandon();
           return;
         }
         const point = props.screenToFlow({ x: event.clientX, y: event.clientY });
@@ -219,17 +274,10 @@ export function DrawingOverlay(props: DrawingOverlayProps) {
           document.querySelector(`.react-flow__node[data-id="${CSS.escape(id)}"]`)?.classList.add('drawing-pending-erase');
         }
       }}
-      onPointerUp={(event) => {
-        const decision = onInkPointerFinish({ open: pointerRef.current === event.pointerId && !closedRef.current }, true, 'up');
-        if (decision.effect === 'commit') finish(true);
-      }}
-      onPointerCancel={() => {
-        const decision = onInkPointerFinish({ open: pointerRef.current !== null && !closedRef.current }, true, 'cancel');
-        if (decision.effect === 'cancel') finish(false);
-      }}
-      onLostPointerCapture={() => {
-        const decision = onInkPointerFinish({ open: pointerRef.current !== null && !closedRef.current }, true, 'cancel');
-        if (decision.effect === 'cancel') finish(false);
+      onPointerUp={(event) => onUp(event.pointerId)}
+      onPointerCancel={(event) => onCancel(event.pointerId)}
+      onLostPointerCapture={(event) => {
+        apply({ type: 'lost-capture', pointerId: event.pointerId });
       }}
       onContextMenu={(event) => event.preventDefault()}
     >

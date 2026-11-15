@@ -2282,7 +2282,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
             color={penColor}
             screenWidth={penScreenPx(penSize)}
             appearance={board.appearance}
-            generation={board.revision}
+            sessionId={board.id}
             readOnly={readOnly}
             getViewport={() => flowRef.current.getViewport()}
             screenToFlow={(point) => flowRef.current.screenToFlowPosition(point)}
