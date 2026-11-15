@@ -19,7 +19,9 @@ import { deleteGroupContents, deleteSelection, duplicateSelection, groupSelectio
 import { createHistory, pushHistory, undoHistory } from '../domain/history';
 import { placeNode } from '../domain/board';
 import { deriveKey, openProtected, protectPlaintext, reseal } from '../domain/text-crypto';
-import { TEXT_KDF, isProtectedTextNode, parseProtectedPayload, passwordIsUsable, preferProtectedBoard, randomBytes } from '../domain/text-protection';
+import { TEXT_KDF, forgetRemovedSessions, isProtectedTextNode, parseProtectedPayload, passwordIsUsable, preferProtectedBoard, randomBytes } from '../domain/text-protection';
+import { SaveQueue } from '../persistence/save-queue';
+import type { CanvasDatabase } from '../persistence/db';
 import { buildSearchIndex, searchNodes } from '../domain/search';
 import { effectivePullingForce } from '../editor/pulling';
 import { buildContentIndex, queryBoard } from '../search/query';
@@ -204,6 +206,184 @@ describe('protected notes', () => {
     expect(source.includes('forgetUnlocked()')).toBe(true);
   });
 });
+
+describe('protected session cleanup', () => {
+  test('keyboard deletion clears an unlocked note and undo restores it locked', async () => {
+    const board = await protectedBoard();
+    const kept = createTextNode({ x: 40, y: 40 }, 'ordinary', now);
+    const open = addNodes(board, [kept], now);
+    const sessions = new Map<string, { text: string }>([
+      ['note', { text: secret }],
+      [kept.id, { text: 'ordinary' }],
+    ]);
+    const removed = deleteSelection(open, ['note'], later);
+    const live = new Set(removed.board.nodes.map((node) => node.id));
+    expect(forgetRemovedSessions(sessions, live)).toBe(true);
+    expect(sessions.has('note')).toBe(false);
+    expect(sessions.get(kept.id)?.text).toBe('ordinary');
+    expect(JSON.stringify(removed.board).includes(secret)).toBe(false);
+    const restored = undoHistory(pushHistory(createHistory(), open), removed.board);
+    const noteNode = restored?.board.nodes.find((node) => node.id === 'note');
+    expect(noteNode?.kind === 'text' ? noteNode.text : 'x').toBe('');
+    expect(noteNode != null && isProtectedTextNode(noteNode)).toBe(true);
+    expect(sessions.has('note')).toBe(false);
+    const source = await Bun.file(new URL('../components/BoardView.tsx', import.meta.url)).text();
+    expect(source.includes("deleteKeyCode={['Backspace', 'Delete']}")).toBe(true);
+    expect(source.includes('forgetRemovedSessions(unlockedRef.current, liveIds)')).toBe(true);
+  });
+
+  test('deleting a group clears unlocked children and a locked deletion needs no session', async () => {
+    const board = await protectedBoard();
+    const framed = groupSelection(board, ['note'], now);
+    if ('error' in framed) throw new Error(framed.error);
+    const group = framed.board.nodes.find((node) => node.kind === 'group');
+    const sessions = new Map<string, { text: string }>([['note', { text: secret }]]);
+    const cleared = deleteGroupContents(framed.board, group?.id ?? '', later);
+    expect(forgetRemovedSessions(sessions, new Set(cleared.nodes.map((node) => node.id)))).toBe(true);
+    expect(sessions.has('note')).toBe(false);
+    expect(cleared.nodes.some((node) => node.id === 'note')).toBe(false);
+    const locked = new Map<string, { text: string }>();
+    const deleted = deleteSelection(board, ['note'], later);
+    expect(forgetRemovedSessions(locked, new Set(deleted.board.nodes.map((node) => node.id)))).toBe(false);
+    expect(deleted.board.nodes.some((node) => node.id === 'note')).toBe(false);
+  });
+
+  test('moving a protected note keeps its unlocked session', async () => {
+    const board = await protectedBoard();
+    const sessions = new Map<string, { text: string }>([['note', { text: secret }]]);
+    const moved = placeNode(board, 'note', { x: 80 });
+    const movedNote = moved.nodes.find((node) => node.id === 'note');
+    expect(movedNote?.x).toBe(80);
+    expect(forgetRemovedSessions(sessions, new Set(moved.nodes.map((node) => node.id)))).toBe(false);
+    expect(sessions.get('note')?.text).toBe(secret);
+  });
+
+  test('an in-flight plaintext save is followed by the protected board', async () => {
+    const plain = addNodes(createEmptyBoard(now), [note()], now);
+    const database = delayedDatabase(plain);
+    let open = plain;
+    const statuses: string[] = [];
+    const queue = new SaveQueue(database.database, () => open, (status) => statuses.push(status));
+    queue.adopt(plain);
+    database.hold();
+    queue.saveNow();
+    await pause();
+    const payload = await protectPlaintext(secret, password, fast);
+    open = protectTextNode(open, 'note', payload);
+    database.release();
+    await queue.idle();
+    const stored = database.stored();
+    expect(stored.nodes.some((node) => isProtectedTextNode(node))).toBe(true);
+    expect(JSON.stringify(stored).includes(secret)).toBe(false);
+    expect(statuses[statuses.length - 1]).toBe('saved');
+    expect(database.puts.length).toBe(2);
+  });
+
+  test('a failed protection save keeps the recoverable note and is not reported as saved', async () => {
+    const plain = addNodes(createEmptyBoard(now), [note()], now);
+    const database = delayedDatabase(plain);
+    let open = plain;
+    const statuses: string[] = [];
+    const messages: string[] = [];
+    const queue = new SaveQueue(database.database, () => open, (status, message) => {
+      statuses.push(status);
+      if (message) messages.push(message);
+    });
+    queue.adopt(plain);
+    database.hold();
+    queue.saveNow();
+    await pause();
+    const payload = await protectPlaintext(secret, password, fast);
+    open = protectTextNode(open, 'note', payload);
+    database.rejectFollowUp();
+    database.release();
+    await queue.idle();
+    expect(JSON.stringify(database.stored()).includes(secret)).toBe(true);
+    expect(database.stored().nodes.some((node) => isProtectedTextNode(node))).toBe(false);
+    expect(statuses[statuses.length - 1]).toBe('error');
+    expect(statuses.includes('saved')).toBe(false);
+    expect(messages[0]).toBe('storage unavailable');
+    expect(queue.hasUnpersisted()).toBe(true);
+    const source = await Bun.file(new URL('../components/BoardView.tsx', import.meta.url)).text();
+    expect(source.includes('Unable to remove password protection because saving failed.')).toBe(true);
+    expect(source.includes('Unable to protect because saving failed.')).toBe(true);
+  });
+});
+
+function pause(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+function delayedDatabase(initial: Board) {
+  let stored = initial;
+  const puts: Board[] = [];
+  let commit: { resolve: () => void; reject: (error: Error) => void } | null = null;
+  let rejectFollowUp = false;
+  return {
+    puts,
+    stored: () => stored,
+    hold() {
+      commit = { resolve() {}, reject() {} };
+    },
+    release() {
+      const pending = commit;
+      commit = null;
+      pending?.resolve();
+    },
+    rejectFollowUp() {
+      rejectFollowUp = true;
+    },
+    database: {
+      transaction() {
+        const pendingCommit = commit;
+        let staged: Board | null = null;
+        const commitStaged = () => {
+          if (!staged) return;
+          stored = staged;
+          puts.push(staged);
+        };
+        let resolveDone: () => void = () => {};
+        let rejectDone: (error: Error) => void = () => {};
+        const finished = new Promise<void>((resolve, reject) => {
+          resolveDone = resolve;
+          rejectDone = reject;
+        });
+        if (pendingCommit) {
+          pendingCommit.resolve = () => {
+            commitStaged();
+            resolveDone();
+          };
+          pendingCommit.reject = rejectDone;
+        }
+        return {
+          objectStore(name: string) {
+            if (name === 'board') {
+              return {
+                get: () => Promise.resolve(stored),
+                put: (value: Board) => {
+                  staged = value;
+                },
+              };
+            }
+            return { put: () => undefined, delete: () => undefined };
+          },
+          abort() {},
+          done: pendingCommit ? finished : {
+            then(onFulfilled: () => void, onRejected: (error: Error) => void) {
+              if (rejectFollowUp) {
+                rejectFollowUp = false;
+                onRejected(new Error('storage unavailable'));
+                return;
+              }
+              commitStaged();
+              onFulfilled();
+            },
+          },
+        };
+      },
+    } as unknown as CanvasDatabase,
+  };
+}
 
 function payloadFrom(board: Board) {
   const node = board.nodes.find((entry) => entry.id === 'note');

@@ -152,20 +152,19 @@ export class SaveQueue {
     try {
       while (!this.suspended && (this.dirty || this.upserts.size > 0 || this.deleteIds.size > 0)) {
         this.dirty = false;
-        const board = preferProtectedBoard(this.getBoard(), this.getBoard());
-        const plan = planAssetWrite(board, [...this.upserts.values()], [...this.deleteIds]);
+        const captured = this.getBoard();
+        const plan = planAssetWrite(captured, [...this.upserts.values()], [...this.deleteIds]);
         this.upserts.clear();
         this.deleteIds.clear();
-        this.inflight = { board, upserts: plan.upserts, deleteIds: plan.deleteIds };
+        this.inflight = { board: captured, upserts: plan.upserts, deleteIds: plan.deleteIds };
         this.onStatus('saving');
         const expected = this.expected;
         try {
-          await writeBoardSnapshot(this.database, board, plan.upserts, plan.deleteIds, expected);
+          await writeBoardSnapshot(this.database, captured, plan.upserts, plan.deleteIds, expected);
           this.inflight = null;
-          this.expected = { id: board.id, revision: board.revision };
-          const follow = this.getBoard();
-          if (follow !== board && preferProtectedBoard(board, follow) === follow) this.dirty = true;
-          this.onPersisted?.(board);
+          this.expected = { id: captured.id, revision: captured.revision };
+          if (preferProtectedBoard(captured, this.getBoard()) !== captured) this.dirty = true;
+          this.onPersisted?.(captured);
         } catch (error) {
           this.restoreUncommitted(plan);
           if (error instanceof RevisionConflictError) {

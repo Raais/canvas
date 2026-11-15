@@ -82,6 +82,16 @@ export function preferProtectedBoard(captured: Board, live: Board): Board {
   return captured;
 }
 
+export function forgetRemovedSessions<T>(sessions: Map<string, T>, liveIds: ReadonlySet<string>): boolean {
+  let removed = false;
+  for (const id of [...sessions.keys()]) {
+    if (liveIds.has(id)) continue;
+    sessions.delete(id);
+    removed = true;
+  }
+  return removed;
+}
+
 export function randomBytes(length: number): Uint8Array {
   const bytes = new Uint8Array(length);
   crypto.getRandomValues(bytes);

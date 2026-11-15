@@ -73,7 +73,7 @@ import {
 } from '../domain/groups';
 import { createHistory, pushHistory, redoHistory, retainedAssetIds, undoHistory, type History } from '../domain/history';
 import { lookupEmbeddedByteSize } from '../domain/image-size';
-import { isProtectedTextNode, passwordIsUsable } from '../domain/text-protection';
+import { forgetRemovedSessions, isProtectedTextNode, passwordIsUsable } from '../domain/text-protection';
 import {
   GROUP_MIN_HEIGHT,
   GROUP_MIN_WIDTH,
@@ -391,6 +391,8 @@ function BoardSurface({ session }: { session: SessionProps }) {
   }, [session.assets]);
 
   function replaceBoard(next: Board) {
+    const liveIds = new Set(next.nodes.map((node) => node.id));
+    if (forgetRemovedSessions(unlockedRef.current, liveIds)) setUnlockEpoch((value) => value + 1);
     boardRef.current = next;
     setBoard(next);
   }
@@ -1114,7 +1116,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
           textBefore.current = null;
         }
         setPasswordBusy(true);
-        void commitSensitive(next, previous, 'Unable to protect because saving failed.').then((saved) => {
+        void commitSensitive(next, previous, 'Unable to remove password protection because saving failed.').then((saved) => {
           setPasswordBusy(false);
           if (!saved) return;
           unlockedRef.current.delete(id);
@@ -1705,7 +1707,6 @@ function BoardSurface({ session }: { session: SessionProps }) {
       const result = deleteSelection(withoutEdges, doomed.map((node) => node.id));
       if (result.board !== before) {
         publish(result.board, before, 'save');
-        forgetUnlocked(doomed.map((node) => node.id));
         const live = new Set(result.board.nodes.map((node) => node.id));
         replaceSelection(selectedRef.current.filter((id) => live.has(id)));
         replaceEdgeSelection(selectedEdgeRef.current.filter((id) => result.board.edges.some((edge) => edge.id === id)));
