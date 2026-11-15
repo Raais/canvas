@@ -314,8 +314,8 @@ button:disabled { opacity: 0.45; cursor: default; }
   display: block;
 }
 
-.pen-palette { display: flex; align-items: center; gap: 4px; }
-.pen-swatch, .pen-width {
+.pen-palette { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; max-width: min(520px, calc(100vw - 48px)); }
+.pen-swatch, .pen-brush {
   height: 28px;
   border: 1px solid var(--line);
   border-radius: var(--radius-control);
@@ -323,13 +323,16 @@ button:disabled { opacity: 0.45; cursor: default; }
   color: var(--text);
 }
 .pen-swatch { width: 16px; height: 16px; padding: 0; }
-.pen-width { padding: 0 8px; font: inherit; font-size: 12px; }
+.pen-brush { display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; font: inherit; font-size: 12px; white-space: nowrap; }
+.pen-sample { width: 16px; border-top: 1.5px solid currentColor; border-radius: 99px; }
+.pen-sample.is-fountain { border-top-width: 2.5px; }
+.pen-sample.is-brush { border-top-width: 4.5px; }
 .pen-swatch.stroke-ink { background: var(--ink-stroke); }
 .pen-swatch.stroke-blue { background: var(--pen-blue); }
 .pen-swatch.stroke-sage { background: var(--pen-sage); }
 .pen-swatch.stroke-rose { background: var(--pen-rose); }
 .pen-swatch.stroke-sand { background: var(--pen-sand); }
-.pen-swatch[aria-pressed='true'], .pen-width[aria-pressed='true'] { outline: 2px solid var(--accent); outline-offset: 1px; }
+.pen-swatch[aria-pressed='true'], .pen-brush[aria-pressed='true'] { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .ink-overlay {
   position: absolute;
@@ -366,6 +369,12 @@ button:disabled { opacity: 0.45; cursor: default; }
 .drawing-node { display: block; overflow: visible; pointer-events: none; }
 .drawing-hit { pointer-events: stroke; }
 .drawing-ink { pointer-events: none; fill: none; }
+.drawing-organic { pointer-events: fill; stroke: none; }
+.drawing-organic.stroke-ink { fill: var(--ink-stroke); }
+.drawing-organic.stroke-blue { fill: var(--pen-blue); }
+.drawing-organic.stroke-sage { fill: var(--pen-sage); }
+.drawing-organic.stroke-rose { fill: var(--pen-rose); }
+.drawing-organic.stroke-sand { fill: var(--pen-sand); }
 .drawing-node circle.drawing-ink { pointer-events: visiblePainted; fill: var(--ink-stroke); }
 .stroke-ink { stroke: var(--ink-stroke); }
 .stroke-blue { stroke: var(--pen-blue); }

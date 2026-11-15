@@ -69,7 +69,7 @@ describe('file classification', () => {
 
 describe('file nodes', () => {
   test('stores ciphertext-free metadata, groups, links, and a fresh duplicate time', () => {
-    expect(SCHEMA_VERSION).toBe(14);
+    expect(SCHEMA_VERSION).toBe(15);
     const file = createFileNode({ center: { x: 40, y: 40 }, assetId: 'asset-1', filename: '.env', now });
     const board = addNodes(createEmptyBoard(now), [file], now);
     const parsed = parseBoard(JSON.parse(JSON.stringify(board)));
@@ -79,7 +79,7 @@ describe('file nodes', () => {
     expect(referencedAssetIds(parsed ?? board).has('asset-1')).toBe(true);
     expect(parseBoard({ ...board, nodes: [{ ...file, filename: '../secret.env' }] })).toBeNull();
     const legacy = parseBoard({ ...createEmptyBoard(now), schemaVersion: 11, physicsEnabled: false });
-    expect(legacy?.schemaVersion).toBe(14);
+    expect(legacy?.schemaVersion).toBe(15);
     expect(legacy?.physicsEnabled).toBe(false);
     expect(legacy?.nodes.some((node) => node.kind === 'file')).toBe(false);
     const framed = groupSelection(board, [file.id], now);

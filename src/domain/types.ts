@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 14 as const;
+export const SCHEMA_VERSION = 15 as const;
 export const MAX_SAVED_VIEWS = 32;
 export const MAX_SAVED_VIEW_NAME = 60;
 export const MAX_EDGE_LABEL = 80;
@@ -148,6 +148,9 @@ export type FileNode = {
 
 export type DrawingColor = 'ink' | 'blue' | 'sage' | 'rose' | 'sand';
 
+/** `legacy` is the Run 26 constant-width stroke. It is not a toolbar brush. */
+export type DrawingBrush = 'legacy' | 'fineliner' | 'fountain' | 'brush';
+
 export type DrawingNode = {
   id: string;
   kind: 'drawing';
@@ -159,6 +162,7 @@ export type DrawingNode = {
   /** Local coordinates as flat pairs: [x0, y0, x1, y1, ...]. */
   points: number[];
   color: DrawingColor;
+  brush: DrawingBrush;
   strokeWidth: number;
   lastEditedAt: string;
 };

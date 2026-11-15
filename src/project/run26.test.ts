@@ -71,15 +71,15 @@ function play(steps: readonly GestureStep[]) {
 
 describe('drawing nodes', () => {
   test('stores schema 14 and keeps older boards', () => {
-    expect(SCHEMA_VERSION).toBe(14);
+    expect(SCHEMA_VERSION).toBe(15);
     expect(GRAPH_CLIPBOARD_VERSION).toBe(1);
-    expect(parseBoard({ ...createEmptyBoard(now), schemaVersion: 12 })?.schemaVersion).toBe(14);
+    expect(parseBoard({ ...createEmptyBoard(now), schemaVersion: 12 })?.schemaVersion).toBe(15);
     const site = createWebsiteNode({ center: { x: 0, y: 0 }, url: 'https://example.com/', title: 'Example', now });
     const legacy = parseBoard({ ...addNodes(createEmptyBoard(now), [site], now), schemaVersion: 13, physicsEnabled: false });
-    expect(legacy?.schemaVersion).toBe(14);
+    expect(legacy?.schemaVersion).toBe(15);
     expect(legacy?.physicsEnabled).toBe(false);
     expect(legacy?.nodes.some((node) => node.kind === 'website' && node.url === 'https://example.com/')).toBe(true);
-    expect(parseBoard({ ...createEmptyBoard(now), schemaVersion: 15 })).toBeNull();
+    expect(parseBoard({ ...createEmptyBoard(now), schemaVersion: 16 })).toBeNull();
   });
 
   test('builds dots, straight strokes, and negative coordinates', () => {
@@ -311,20 +311,20 @@ describe('drawing nodes', () => {
   });
 
   test('refuses duplicate and paste operations that would pass 2,000 drawings', () => {
-    const dot = (id: string): DrawingNode => ({ id, kind: 'drawing', x: 0, y: 0, width: 4, height: 4, points: [2, 2], color: 'ink', strokeWidth: 4, lastEditedAt: now });
+    const dot = (id: string): DrawingNode => ({ id, kind: 'drawing', x: 0, y: 0, width: 4, height: 4, points: [2, 2], color: 'ink', brush: 'legacy', strokeWidth: 4, lastEditedAt: now });
     const almost = addNodes(createEmptyBoard(now), Array.from({ length: 1999 }, (_, index) => dot(`d${index}`)), now);
     const room = duplicateSelection(almost, ['d0'], later);
     expect(countDrawings(room.nodes)).toBe(2000);
     expect(parseBoard(room)?.nodes.filter((node) => node.kind === 'drawing')).toHaveLength(2000);
     const full = addNodes(createEmptyBoard(now), Array.from({ length: 2000 }, (_, index) => dot(`f${index}`)), now);
     expect(duplicateSelection(full, ['f0'], later)).toBe(full);
-    expect(parseBoard(full)?.schemaVersion).toBe(14);
+    expect(parseBoard(full)?.schemaVersion).toBe(15);
     const note = { ...createTextNode({ x: 40, y: 40 }, 'plain', now), id: 'note' };
     const mixed = addNodes(full, [note], now);
     const notesOnly = duplicateSelection(mixed, ['note'], later);
     expect(countDrawings(notesOnly.nodes)).toBe(2000);
     expect(notesOnly.nodes.filter((node) => node.kind === 'text')).toHaveLength(2);
-    expect(parseBoard(notesOnly)?.schemaVersion).toBe(14);
+    expect(parseBoard(notesOnly)?.schemaVersion).toBe(15);
     expect(duplicateSelection(mixed, ['note', 'f0'], later)).toBe(mixed);
     const pair = addNodes(createEmptyBoard(now), [dot('a'), dot('b')], now);
     const grouped = groupSelection(pair, ['a', 'b']);
@@ -337,7 +337,7 @@ describe('drawing nodes', () => {
     const freed = eraseDrawings(crowded, ['g0', 'g1'], later);
     const duplicatedGroup = group ? duplicateSelection(freed, [group.id], later) : freed;
     expect(countDrawings(duplicatedGroup.nodes)).toBe(1999);
-    expect(parseBoard(duplicatedGroup)?.schemaVersion).toBe(14);
+    expect(parseBoard(duplicatedGroup)?.schemaVersion).toBe(15);
     const payload = selectionClosure(pair, ['a']);
     const decoded = payload ? decodeGraphClipboard(encodeGraphClipboard(payload)) : null;
     const blocked = decoded ? pasteGraph(full, decoded, { x: 8, y: 8 }, new Set(), 0, later) : null;
@@ -353,7 +353,7 @@ describe('drawing nodes', () => {
     expect(textPaste && !('error' in textPaste) ? parseBoard(textPaste)?.nodes.some((node) => node.kind === 'text') : false).toBe(true);
     const openPaste = decoded ? pasteGraph(almost, decoded, { x: 4, y: 4 }, new Set(), 0, later) : null;
     expect(openPaste && !('error' in openPaste) ? countDrawings(openPaste.nodes) : 0).toBe(2000);
-    expect(openPaste && !('error' in openPaste) ? parseBoard(openPaste)?.schemaVersion : 0).toBe(14);
+    expect(openPaste && !('error' in openPaste) ? parseBoard(openPaste)?.schemaVersion : 0).toBe(15);
   });
 
   test('cancels an open pen or eraser gesture when a second pointer arrives', () => {

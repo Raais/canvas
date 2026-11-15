@@ -1,11 +1,14 @@
 import { useEffect, useRef } from 'react';
-import { beginStroke, cancelStroke, DRAWING_THEME_COLORS, drawingHits, eraserWorldRadius, extendStroke, finishStroke, pathFromPairs, type StrokeDraft } from '../domain/drawing';
+import { beginStroke, cancelStroke, DRAWING_THEME_COLORS, drawingFromWorld, drawingHits, eraserWorldRadius, extendStroke, finishStroke, pathFromPairs, settledPoints, worldStrokeWidth, type StrokeDraft } from '../domain/drawing';
+import { isOrganicBrush, outlineForPairs, outlineToSvgPath } from '../domain/organic-ink';
 import { reduceInkGesture, type InkEvent, type InkGestureState } from '../editor/ink-gesture';
 import { MAX_ZOOM, MIN_ZOOM, type BoardNode, type DrawingColor, type DrawingNode, type Point, type Viewport } from '../domain/types';
+import type { OrganicBrush } from '../domain/organic-ink';
 
 type DrawingOverlayProps = {
   mode: 'pen' | 'eraser';
   color: DrawingColor;
+  brush: OrganicBrush;
   screenWidth: number;
   appearance: 'dark' | 'light';
   sessionId: string;
@@ -49,21 +52,37 @@ export function DrawingOverlay(props: DrawingOverlayProps) {
     const path = pathRef.current;
     const dot = dotRef.current;
     if (!draft || !viewport || !path || !dot) return;
-    const point = draft.points[0];
-    if (draft.points.length < 2 || !point) {
-      path.setAttribute('d', '');
+    const color = DRAWING_THEME_COLORS[propsRef.current.appearance][draft.color];
+    const node = drawingFromWorld(settledPoints(draft), draft.color, worldStrokeWidth(draft.screenWidth, draft.zoom), '1970-01-01T00:00:00.000Z', 'preview', draft.brush);
+    if (!node) return;
+    if (node.points.length <= 2 || !isOrganicBrush(node.brush)) {
+      const point = node.points.length <= 2 ? { x: node.x + (node.points[0] ?? 0), y: node.y + (node.points[1] ?? 0) } : null;
+      path.setAttribute('d', point ? '' : screenPath(draft, viewport));
+      path.setAttribute('fill', 'none');
+      path.setAttribute('stroke', color);
       if (!point) {
         dot.setAttribute('r', '0');
         return;
       }
       dot.setAttribute('cx', String(point.x * viewport.zoom + viewport.x));
       dot.setAttribute('cy', String(point.y * viewport.zoom + viewport.y));
-      dot.setAttribute('r', String(Math.max(propsRef.current.screenWidth / 2, 1)));
+      dot.setAttribute('r', String(Math.max((node.strokeWidth * viewport.zoom) / 2, 1)));
+      dot.setAttribute('fill', color);
       return;
     }
     dot.setAttribute('r', '0');
+    const outline = outlineForPairs(node.points, node.brush, node.strokeWidth).map((point) => ({
+      x: (node.x + point.x) * viewport.zoom + viewport.x,
+      y: (node.y + point.y) * viewport.zoom + viewport.y,
+    }));
+    path.setAttribute('d', outlineToSvgPath(outline));
+    path.setAttribute('fill', color);
+    path.setAttribute('stroke', 'none');
+  }
+
+  function screenPath(draft: StrokeDraft, viewport: Viewport): string {
     const local = draft.points.flatMap((entry) => [entry.x * viewport.zoom + viewport.x, entry.y * viewport.zoom + viewport.y]);
-    path.setAttribute('d', pathFromPairs(local));
+    return pathFromPairs(local);
   }
 
   function clearMarks() {
@@ -238,7 +257,7 @@ export function DrawingOverlay(props: DrawingOverlayProps) {
         props.onActive(true);
         event.currentTarget.setPointerCapture(event.pointerId);
         const point = props.screenToFlow({ x: event.clientX, y: event.clientY });
-        draftRef.current = beginStroke(point, viewport.zoom, color, screenWidth);
+        draftRef.current = beginStroke(point, viewport.zoom, color, screenWidth, props.brush);
         if (mode === 'pen') paint();
         else {
           for (const id of drawingHits(props.nodes(), point, point, eraserWorldRadius(viewport.zoom))) {

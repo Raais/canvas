@@ -21,7 +21,8 @@ import {
   Search,
 } from 'lucide-react';
 import { useRef, type ReactNode } from 'react';
-import { DRAWING_COLORS, PEN_SIZES, type PenSizeId } from '../domain/drawing';
+import { DRAWING_COLORS } from '../domain/drawing';
+import { DRAWING_BRUSHES, type OrganicBrush } from '../domain/organic-ink';
 import type { DrawingColor } from '../domain/types';
 import type { Appearance } from '../persistence/db';
 import type { SaveStatus } from '../persistence/save-queue';
@@ -40,7 +41,7 @@ type ToolbarProps = {
   status: SaveStatus;
   tool: CanvasTool;
   penColor: DrawingColor;
-  penSize: PenSizeId;
+  penBrush: OrganicBrush;
   appearance: Appearance;
   canGroup: boolean;
   canUngroup: boolean;
@@ -55,7 +56,7 @@ type ToolbarProps = {
   onViewport: (viewport: { x: number; y: number; zoom: number }) => void;
   onTool: (tool: CanvasTool) => void;
   onPenColor: (color: DrawingColor) => void;
-  onPenSize: (size: PenSizeId) => void;
+  onPenBrush: (brush: OrganicBrush) => void;
   onGroup: () => void;
   onUngroup: () => void;
   onUndo: () => void;
@@ -72,7 +73,7 @@ export function Toolbar({
   status,
   tool,
   penColor,
-  penSize,
+  penBrush,
   appearance,
   canGroup,
   canUngroup,
@@ -87,7 +88,7 @@ export function Toolbar({
   onViewport,
   onTool,
   onPenColor,
-  onPenSize,
+  onPenBrush,
   onGroup,
   onUngroup,
   onUndo,
@@ -185,8 +186,9 @@ export function Toolbar({
                   onClick={() => onPenColor(entry)}
                 />
               ))}
-              {PEN_SIZES.map((entry) => (
-                <button key={entry.id} type="button" className="pen-width" aria-pressed={penSize === entry.id} onClick={() => onPenSize(entry.id)}>
+              {DRAWING_BRUSHES.map((entry) => (
+                <button key={entry.id} type="button" className="pen-brush" aria-pressed={penBrush === entry.id} aria-label={entry.label} title={entry.label} onClick={() => onPenBrush(entry.id)}>
+                  <span className={`pen-sample is-${entry.id}`} aria-hidden="true" />
                   {entry.label}
                 </button>
               ))}

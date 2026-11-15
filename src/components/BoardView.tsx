@@ -132,7 +132,8 @@ const TopographicContoursLayer = lazy(() => import('../backgrounds/TopographicCo
 import { Toolbar, type CanvasTool } from './Toolbar';
 import { DrawingNode } from './DrawingNode';
 import { DrawingOverlay } from './DrawingOverlay';
-import { countDrawings, excessDrawings, penScreenPx, selectedDrawingCount, type PenSizeId } from '../domain/drawing';
+import { countDrawings, excessDrawings, penScreenPx, selectedDrawingCount } from '../domain/drawing';
+import type { OrganicBrush } from '../domain/organic-ink';
 import { FileNode } from './FileNode';
 import { WebsiteDialog } from './WebsiteDialog';
 import { WebsiteNode } from './WebsiteNode';
@@ -188,7 +189,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const [urlEpoch, setUrlEpoch] = useState(0);
   const [tool, setTool] = useState<Tool>('select');
   const [penColor, setPenColor] = useState<DrawingColor>('ink');
-  const [penSize, setPenSize] = useState<PenSizeId>('medium');
+  const [penBrush, setPenBrush] = useState<OrganicBrush>('fountain');
   const inkGestureRef = useRef(false);
   const [draft, setDraft] = useState<Rect | null>(null);
   const [projectOpen, setProjectOpen] = useState(false);
@@ -2031,9 +2032,9 @@ function BoardSurface({ session }: { session: SessionProps }) {
             setTool(next);
           }}
           penColor={penColor}
-          penSize={penSize}
+          penBrush={penBrush}
           onPenColor={setPenColor}
-          onPenSize={setPenSize}
+          onPenBrush={setPenBrush}
           onGroup={groupSelected}
           onUngroup={ungroupSelected}
           onViewport={(viewport) => {
@@ -2280,7 +2281,8 @@ function BoardSurface({ session }: { session: SessionProps }) {
           <DrawingOverlay
             mode={tool}
             color={penColor}
-            screenWidth={penScreenPx(penSize)}
+            brush={penBrush}
+            screenWidth={penScreenPx(penBrush)}
             appearance={board.appearance}
             sessionId={board.id}
             readOnly={readOnly}

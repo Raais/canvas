@@ -247,6 +247,7 @@ function toFlowNode(
       style: { ...base.style, pointerEvents: 'none' },
       data: {
         color: node.color,
+        brush: node.brush,
         strokeWidth: node.strokeWidth,
         points: node.points,
         dot: node.points.length <= 2,

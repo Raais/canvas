@@ -1,3 +1,4 @@
+import { getBrushPreset, isDrawingBrush, isOrganicBrush, outlineForPairs, type OrganicBrush } from './organic-ink';
 import {
   DRAWING_STROKE_MAX,
   DRAWING_STROKE_MIN,
@@ -7,20 +8,13 @@ import {
   MAX_ZOOM,
   MIN_ZOOM,
   type BoardNode,
+  type DrawingBrush,
   type DrawingColor,
   type DrawingNode,
   type Point,
 } from './types';
 
 export const DRAWING_COLORS = ['ink', 'blue', 'sage', 'rose', 'sand'] as const;
-
-export const PEN_SIZES = [
-  { id: 'thin', label: 'Thin', screenPx: 2 },
-  { id: 'medium', label: 'Medium', screenPx: 4 },
-  { id: 'thick', label: 'Thick', screenPx: 8 },
-] as const;
-
-export type PenSizeId = (typeof PEN_SIZES)[number]['id'];
 
 /** Theme-resolved stroke colors. `ink` flips with the board; the stored id does not. */
 export const DRAWING_THEME_COLORS: Record<'dark' | 'light', Record<DrawingColor, string>> = {
@@ -37,6 +31,7 @@ export type StrokeDraft = {
   zoom: number;
   color: DrawingColor;
   screenWidth: number;
+  brush: DrawingBrush;
   cancelled: boolean;
 };
 
@@ -78,8 +73,8 @@ export function selectedDrawingCount(nodes: readonly BoardNode[], ids: readonly 
   return count;
 }
 
-export function penScreenPx(size: PenSizeId): number {
-  return PEN_SIZES.find((entry) => entry.id === size)?.screenPx ?? 4;
+export function penScreenPx(brush: OrganicBrush): number {
+  return getBrushPreset(brush).screenPx;
 }
 
 export function worldStrokeWidth(screenPx: number, zoom: number): number {
@@ -96,12 +91,13 @@ export function sampleDistance(zoom: number): number {
   return SAMPLE_SCREEN_PX / clampZoom(zoom);
 }
 
-export function simplifyTolerance(zoom: number): number {
-  return SIMPLIFY_SCREEN_PX / clampZoom(zoom);
+export function simplifyTolerance(zoom: number, brush: DrawingBrush = 'legacy'): number {
+  const screen = brush === 'legacy' ? SIMPLIFY_SCREEN_PX : 0.35;
+  return screen / clampZoom(zoom);
 }
 
-export function beginStroke(point: Point, zoom: number, color: DrawingColor, screenWidth: number): StrokeDraft {
-  return { points: [roundPoint(point)], zoom: clampZoom(zoom), color, screenWidth, cancelled: false };
+export function beginStroke(point: Point, zoom: number, color: DrawingColor, screenWidth: number, brush: DrawingBrush = 'legacy'): StrokeDraft {
+  return { points: [roundPoint(point)], zoom: clampZoom(zoom), color, screenWidth, brush, cancelled: false };
 }
 
 export function extendStroke(draft: StrokeDraft, point: Point): StrokeDraft {
@@ -118,11 +114,15 @@ export function cancelStroke(draft: StrokeDraft): StrokeDraft {
   return { ...draft, cancelled: true };
 }
 
+export function settledPoints(draft: StrokeDraft): Point[] {
+  if (draft.cancelled || draft.points.length === 0) return [];
+  return limitPoints(simplifyPolyline(draft.points, simplifyTolerance(draft.zoom, draft.brush)));
+}
+
 export function finishStroke(draft: StrokeDraft, now: string, id?: string): DrawingNode | null {
-  if (draft.cancelled || draft.points.length === 0) return null;
-  const simplified = limitPoints(simplifyPolyline(draft.points, simplifyTolerance(draft.zoom)));
+  const simplified = settledPoints(draft);
   if (simplified.length === 0 || simplified.some((point) => !Number.isFinite(point.x) || !Number.isFinite(point.y))) return null;
-  return drawingFromWorld(simplified, draft.color, worldStrokeWidth(draft.screenWidth, draft.zoom), now, id ?? crypto.randomUUID());
+  return drawingFromWorld(simplified, draft.color, worldStrokeWidth(draft.screenWidth, draft.zoom), now, id ?? crypto.randomUUID(), draft.brush);
 }
 
 export function drawingFromWorld(
@@ -131,8 +131,9 @@ export function drawingFromWorld(
   strokeWidth: number,
   now: string,
   id?: string,
+  brush: DrawingBrush = 'legacy',
 ): DrawingNode | null {
-  if (!isDrawingColor(color) || worldPoints.length === 0 || worldPoints.length > MAX_DRAWING_POINTS) return null;
+  if (!isDrawingColor(color) || !isDrawingBrush(brush) || worldPoints.length === 0 || worldPoints.length > MAX_DRAWING_POINTS) return null;
   if (!Number.isFinite(strokeWidth) || strokeWidth < DRAWING_STROKE_MIN || strokeWidth > DRAWING_STROKE_MAX) return null;
   let minX = Infinity;
   let minY = Infinity;
@@ -145,17 +146,26 @@ export function drawingFromWorld(
     maxX = Math.max(maxX, point.x);
     maxY = Math.max(maxY, point.y);
   }
-  const pad = strokeWidth / 2;
-  const x = round2(minX - pad);
-  const y = round2(minY - pad);
-  const width = Math.max(round2(strokeWidth), round2(maxX - minX + strokeWidth));
-  const height = Math.max(round2(strokeWidth), round2(maxY - minY + strokeWidth));
+  const organic = isOrganicBrush(brush) && worldPoints.length > 1;
+  if (organic) {
+    for (const point of outlineForPairs(flatten(worldPoints), brush, strokeWidth)) {
+      minX = Math.min(minX, point.x);
+      minY = Math.min(minY, point.y);
+      maxX = Math.max(maxX, point.x);
+      maxY = Math.max(maxY, point.y);
+    }
+  }
+  const pad = organic ? 0 : strokeWidth / 2;
+  const x = organic ? floor2(minX) : round2(minX - pad);
+  const y = organic ? floor2(minY) : round2(minY - pad);
+  const width = organic ? Math.max(round2(strokeWidth), ceil2(maxX) - x) : Math.max(round2(strokeWidth), round2(maxX - minX + strokeWidth));
+  const height = organic ? Math.max(round2(strokeWidth), ceil2(maxY) - y) : Math.max(round2(strokeWidth), round2(maxY - minY + strokeWidth));
   if (!(width > 0) || !(height > 0)) return null;
   const points: number[] = [];
   for (const point of worldPoints) {
     points.push(clamp(round2(point.x - x), 0, width), clamp(round2(point.y - y), 0, height));
   }
-  return { id: id ?? crypto.randomUUID(), kind: 'drawing', x, y, width, height, points, color, strokeWidth, lastEditedAt: now };
+  return { id: id ?? crypto.randomUUID(), kind: 'drawing', x, y, width, height, points, color, brush, strokeWidth, lastEditedAt: now };
 }
 
 export function simplifyPolyline(points: readonly Point[], tolerance: number): Point[] {
@@ -172,7 +182,8 @@ export function pathFromPairs(points: readonly number[]): string {
 }
 
 export function parseDrawingNode(value: Record<string, unknown>, parentId: string | undefined): DrawingNode | null {
-  if (!isDrawingColor(value.color)) return null;
+  const brush = value.brush === undefined ? 'legacy' : isDrawingBrush(value.brush) ? value.brush : null;
+  if (!brush || !isDrawingColor(value.color)) return null;
   if (typeof value.strokeWidth !== 'number' || !Number.isFinite(value.strokeWidth)) return null;
   if (value.strokeWidth < DRAWING_STROKE_MIN || value.strokeWidth > DRAWING_STROKE_MAX) return null;
   if (typeof value.lastEditedAt !== 'string' || !Number.isFinite(Date.parse(value.lastEditedAt))) return null;
@@ -200,6 +211,7 @@ export function parseDrawingNode(value: Record<string, unknown>, parentId: strin
     height,
     points,
     color: value.color,
+    brush,
     strokeWidth: value.strokeWidth,
     lastEditedAt: value.lastEditedAt,
   };
@@ -227,6 +239,16 @@ export function drawingHits(
 }
 
 function strokeTouches(node: DrawingNode, origin: Point, from: Point, to: Point, radius: number): boolean {
+  if (isOrganicBrush(node.brush) && node.points.length > 2) {
+    const outline = outlineForPairs(node.points, node.brush, node.strokeWidth);
+    for (let index = 0; index < outline.length; index += 1) {
+      const start = outline[index];
+      const end = outline[(index + 1) % outline.length];
+      if (!start || !end) continue;
+      if (segmentSegmentDistance(origin.x + start.x, origin.y + start.y, origin.x + end.x, origin.y + end.y, from.x, from.y, to.x, to.y) <= radius) return true;
+    }
+    return false;
+  }
   const threshold = radius + node.strokeWidth / 2;
   const pairs = node.points;
   if (pairs.length < 2) return false;
@@ -347,8 +369,22 @@ function roundPoint(point: Point): Point {
   return { x: round2(point.x), y: round2(point.y) };
 }
 
+function flatten(points: readonly Point[]): number[] {
+  const pairs: number[] = [];
+  for (const point of points) pairs.push(point.x, point.y);
+  return pairs;
+}
+
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+function floor2(value: number): number {
+  return Math.floor(value * 100) / 100;
+}
+
+function ceil2(value: number): number {
+  return Math.ceil(value * 100) / 100;
 }
 
 function clamp(value: number, min: number, max: number): number {
