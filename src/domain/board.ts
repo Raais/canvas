@@ -6,6 +6,7 @@ import { contentExtent } from './geometry';
 import { classifyPlainText } from './code';
 import { sanitizeFilename } from './files';
 import { canonicalWebsiteUrl } from './websites';
+import { voiceDurationProblem, voiceTitleProblem } from './voice';
 import { countDrawings, parseDrawingNode } from './drawing';
 import {
   ASPECT_MIN_SIZE,
@@ -18,6 +19,10 @@ import {
   WEBSITE_NOTE_HEIGHT,
   WEBSITE_NOTE_WIDTH,
   WEBSITE_TITLE_LIMIT,
+  VOICE_MIN_HEIGHT,
+  VOICE_MIN_WIDTH,
+  VOICE_NOTE_HEIGHT,
+  VOICE_NOTE_WIDTH,
   FALLBACK_IMAGE_HEIGHT,
   FALLBACK_IMAGE_WIDTH,
   GROUP_MIN_HEIGHT,
@@ -47,6 +52,7 @@ import {
   type ImageDisplayMode,
   type ImageNode,
   type Point,
+  type VoiceNode,
   type ProtectedTextPayload,
   type TextNode,
   type Viewport,
@@ -127,6 +133,29 @@ export function updateWebsite(board: Board, id: string, input: { url: string; ti
     if (node.kind !== 'website') return node;
     if (node.url === input.url && node.title === input.title) return node;
     return { ...node, url: input.url, title: input.title, lastEditedAt: now };
+  }, now);
+}
+
+export function createVoiceNode(input: { center: Point; assetId: string; title: string; durationMs: number; now?: string }): VoiceNode {
+  const title = input.title.trim();
+  return {
+    id: crypto.randomUUID(),
+    kind: 'voice',
+    x: Math.round(input.center.x - VOICE_NOTE_WIDTH / 2),
+    y: Math.round(input.center.y - VOICE_NOTE_HEIGHT / 2),
+    width: VOICE_NOTE_WIDTH,
+    height: VOICE_NOTE_HEIGHT,
+    assetId: input.assetId,
+    title,
+    durationMs: input.durationMs,
+    lastEditedAt: input.now ?? new Date().toISOString(),
+  };
+}
+
+export function renameVoice(board: Board, id: string, title: string, now = new Date().toISOString()): Board {
+  return mapNode(board, id, (node) => {
+    if (node.kind !== 'voice' || node.title === title || voiceTitleProblem(title)) return node;
+    return { ...node, title, lastEditedAt: now };
   }, now);
 }
 
@@ -222,7 +251,7 @@ export function staggeredPositions(origin: Point, count: number): Point[] {
 }
 
 export function nodeAssetId(node: BoardNode): string | null {
-  if (node.kind === 'file') return node.assetId;
+  if (node.kind === 'file' || node.kind === 'voice') return node.assetId;
   if (node.kind === 'image' && node.source.type === 'embedded') return node.source.assetId;
   return null;
 }
@@ -301,6 +330,7 @@ export function setViewport(board: Board, viewport: Viewport, now?: string): Boa
 export function collapsedSize(nodes: readonly BoardNode[], node: BoardNode): { width: number; height: number } {
   if (node.kind === 'text') return { width: TEXT_MIN_WIDTH, height: TEXT_RESIZE_MIN_HEIGHT };
   if (node.kind === 'file') return { width: FILE_MIN_WIDTH, height: FILE_MIN_HEIGHT };
+  if (node.kind === 'voice') return { width: VOICE_MIN_WIDTH, height: VOICE_MIN_HEIGHT };
   if (node.kind === 'website') return { width: WEBSITE_MIN_WIDTH, height: WEBSITE_MIN_HEIGHT };
   if (node.kind === 'drawing') return { width: node.width, height: node.height };
   if (node.kind === 'group') {
@@ -777,6 +807,7 @@ function minWidth(node: BoardNode): number {
   if (node.kind === 'drawing') return node.width;
   if (node.kind === 'text') return TEXT_MIN_WIDTH;
   if (node.kind === 'file') return FILE_MIN_WIDTH;
+  if (node.kind === 'voice') return VOICE_MIN_WIDTH;
   if (node.kind === 'website') return WEBSITE_MIN_WIDTH;
   if (node.kind === 'group') return GROUP_MIN_WIDTH;
   if (node.mode === 'aspect') return ASPECT_MIN_SIZE;
@@ -787,6 +818,7 @@ function minHeight(node: BoardNode): number {
   if (node.kind === 'drawing') return node.height;
   if (node.kind === 'text') return TEXT_MIN_HEIGHT;
   if (node.kind === 'file') return FILE_MIN_HEIGHT;
+  if (node.kind === 'voice') return VOICE_MIN_HEIGHT;
   if (node.kind === 'website') return WEBSITE_MIN_HEIGHT;
   if (node.kind === 'group') return GROUP_MIN_HEIGHT;
   if (node.mode === 'aspect') return ASPECT_MIN_SIZE;
@@ -849,6 +881,28 @@ function parseNode(value: unknown, schemaVersion: number): BoardNode | null {
       ...(protection ? { protection } : {}),
       ...(sourceFilename ? { sourceFilename } : {}),
       ...stamped,
+    };
+  }
+  if (value.kind === 'voice') {
+    if (!schemaAtLeast(schemaVersion, 16)) return null;
+    if (typeof value.assetId !== 'string' || !isNonEmptyString(value.assetId) || value.assetId.length > 80) return null;
+    if (typeof value.title !== 'string' || voiceTitleProblem(value.title)) return null;
+    if (typeof value.durationMs !== 'number' || voiceDurationProblem(value.durationMs)) return null;
+    if (value.width < VOICE_MIN_WIDTH || value.height < VOICE_MIN_HEIGHT) return null;
+    const stamped = timestampFields(value.lastEditedAt);
+    if (!stamped || !('lastEditedAt' in stamped)) return null;
+    return {
+      id: value.id,
+      kind: 'voice',
+      ...(parentId ? { parentId } : {}),
+      x: value.x,
+      y: value.y,
+      width: value.width,
+      height: value.height,
+      assetId: value.assetId,
+      title: value.title,
+      durationMs: value.durationMs,
+      lastEditedAt: stamped.lastEditedAt,
     };
   }
   if (value.kind === 'file') {

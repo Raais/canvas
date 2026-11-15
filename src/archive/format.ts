@@ -36,6 +36,7 @@ export type ArchiveManifest = {
 export type ArchiveSummary = {
   embedded: number;
   files: number;
+  voices: number;
   external: number;
   payloadBytes: number;
 };

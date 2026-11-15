@@ -24,7 +24,9 @@ import {
   createFileNode,
   createExternalImageNode,
   createTextNode,
+  createVoiceNode,
   createWebsiteNode,
+  renameVoice,
   updateWebsite,
   noteImageIntrinsic,
   collapsedSize,
@@ -97,6 +99,7 @@ import { createImageOptimizer, type ImageOptimizer } from '../ingest/image-optim
 import { createBatchGuard, mayPlaceImages, mayReplaceBoard, readOptimizeImages, writeOptimizeImages } from '../ingest/image-optimizer-config';
 import { captureClipboardData } from '../ingest/clipboard';
 import { resolveLinkDrop, websiteEditsAllowed } from '../domain/websites';
+import { audioFilename, voiceSaveProblem } from '../domain/voice';
 import { archiveFilename } from '../archive/format';
 import { buildArchive, readArchive } from '../archive/zip';
 import { downloadBytes } from '../project/download';
@@ -104,7 +107,7 @@ import { boardSnapshotKey, exportedBoardIsCurrent, logicalUsage, snapshotAssets,
 import { releaseWriteLock, retainWriteLock } from '../project/ownership';
 import { openBoardChannel, type BoardChannel } from '../project/tabs';
 import { createAssetRecord, replaceStoredBoard, RevisionConflictError, type CanvasDatabase } from '../persistence/db';
-import { createObjectUrlRegistry, type ObjectUrlRegistry } from '../persistence/object-urls';
+import { createAudioUrlKeeper, createObjectUrlRegistry, type ObjectUrlRegistry } from '../persistence/object-urls';
 import { errorMessage, SaveQueue, type SaveStatus } from '../persistence/save-queue';
 import { canonicalViewportUpdate } from '../project/viewport-write';
 import { BoardActionsProvider, type BoardActions } from './board-context';
@@ -138,6 +141,9 @@ import { DrawingOverlay } from './DrawingOverlay';
 import { countDrawings, excessDrawings, penScreenPx, selectedDrawingCount } from '../domain/drawing';
 import type { OrganicBrush } from '../domain/organic-ink';
 import { FileNode } from './FileNode';
+import { VoiceNoteNode } from './VoiceNoteNode';
+import { VoiceRecorderDialog, type SavedVoice } from './VoiceRecorderDialog';
+import { playVoice as startVoicePlayback, stopVoice } from './voice-playback';
 import { WebsiteDialog } from './WebsiteDialog';
 import { WebsiteNode } from './WebsiteNode';
 import { createEdgeProjection, createNodeProjection, type CanvasFlowNode } from './flow-projection';
@@ -149,6 +155,7 @@ const nodeTypes = {
   text: TextNoteNode,
   image: ImageNoteNode,
   file: FileNode,
+  voice: VoiceNoteNode,
   website: WebsiteNode,
   drawing: DrawingNode,
   group: GroupNode,
@@ -203,6 +210,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const [unlockEpoch, setUnlockEpoch] = useState(0);
   const [passwordPrompt, setPasswordPrompt] = useState<{ mode: 'protect' | 'unlock'; id: string } | null>(null);
   const [websiteDialog, setWebsiteDialog] = useState<{ mode: 'create' | 'edit'; id: string | null; url: string; title: string } | null>(null);
+  const [voiceOpen, setVoiceOpen] = useState(false);
   const websiteReturn = useRef<HTMLElement | null>(null);
   const [passwordError, setPasswordError] = useState('');
   const [passwordBusy, setPasswordBusy] = useState(false);
@@ -241,6 +249,8 @@ function BoardSurface({ session }: { session: SessionProps }) {
     setXrayConnections(cleared.showConnections);
     setSearchQuery(cleared.query);
     setSearchOpen(false);
+    setVoiceOpen(false);
+    stopVoice();
   }, [board.id]);
   const [confirming, setConfirming] = useState<
     | null
@@ -294,7 +304,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
   confirmingRef.current = confirming !== null;
   const writerRef = useRef(false);
   const overlayRef = useRef(false);
-  overlayRef.current = projectOpen || confirming !== null || searchOpen || viewsOpen || passwordPrompt !== null;
+  overlayRef.current = projectOpen || confirming !== null || searchOpen || viewsOpen || passwordPrompt !== null || voiceOpen;
   const foreignRef = useRef(false);
   const exportHold = useRef<{ board: Board; assets: AssetRecord[]; unsaved: boolean; key: string } | null>(null);
   const pasteRepeat = useRef({ key: '', count: 0 });
@@ -304,8 +314,12 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const xrayPresentation = useRef(createXrayPresentation<CanvasFlowNode, Edge>());
   const xrayLensRef = useRef(false);
   const websiteDialogRef = useRef(false);
+  const voiceDialogRef = useRef(false);
+  const audioUrls = useRef(createAudioUrlKeeper());
+  const voiceUrlByNode = useRef(new Map<string, { assetId: string; url: string }>());
   const draftRef = useRef(false);
   websiteDialogRef.current = websiteDialog !== null;
+  voiceDialogRef.current = voiceOpen;
   draftRef.current = draft !== null;
   toWorldRef.current = screenToFlowPosition;
   flowRef.current = flow;
@@ -425,7 +439,11 @@ function BoardSurface({ session }: { session: SessionProps }) {
       registry.remember(asset);
     }
     setUrlEpoch((value) => value + 1);
-    return () => registry.revokeAll();
+    return () => {
+      registry.revokeAll();
+      audioUrls.current.revokeAll();
+      stopVoice();
+    };
   }, [session.assets]);
 
   function replaceBoard(next: Board) {
@@ -484,6 +502,10 @@ function BoardSurface({ session }: { session: SessionProps }) {
       if (keep.has(id)) continue;
       libraryRef.current.delete(id);
       registryRef.current?.revoke(id);
+      audioUrls.current.forget(id);
+      for (const [nodeId, held] of voiceUrlByNode.current) {
+        if (held.assetId === id) voiceUrlByNode.current.delete(nodeId);
+      }
       queue.removeAssets([id]);
     }
   }
@@ -498,6 +520,27 @@ function BoardSurface({ session }: { session: SessionProps }) {
     if (mode === 'save') queue.saveNow();
     else if (mode === 'schedule') queue.schedule(500);
     else queue.markUnsaved();
+  }
+
+  function saveVoice(recording: SavedVoice): string | null {
+    if (blockedRef.current) return 'This board is read-only.';
+    const existing = [...referencedAssetIds(boardRef.current)].reduce((sum, id) => sum + (libraryRef.current.get(id)?.byteSize ?? 0), 0);
+    const problem = voiceSaveProblem(existing, recording.blob.size);
+    if (problem) return problem;
+    const asset = createAssetRecord(recording.blob, recording.mimeType);
+    libraryRef.current.set(asset.id, asset);
+    const before = boardRef.current;
+    const node = createVoiceNode({
+      center: viewportCenter(),
+      assetId: asset.id,
+      title: recording.title,
+      durationMs: recording.durationMs,
+    });
+    publish(addNodes(before, [node]), before, 'save');
+    replaceSelection([node.id]);
+    setVoiceOpen(false);
+    setUrlEpoch((value) => value + 1);
+    return null;
   }
 
   function viewportCenter(): Point {
@@ -887,7 +930,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
           viewsOpen: viewsOpenRef.current,
           editingField,
           editing: editingRef.current !== null,
-          inDialog: confirmingRef.current || websiteDialogRef.current || edgeEditorRef.current || Boolean(element?.closest('[role="dialog"], [role="alertdialog"], [role="menu"]')),
+          inDialog: confirmingRef.current || websiteDialogRef.current || voiceDialogRef.current || edgeEditorRef.current || Boolean(element?.closest('[role="dialog"], [role="alertdialog"], [role="menu"]')),
           inkGesture: inkGestureRef.current,
           framing: frameRef.current !== null || draftRef.current,
           tool: toolRef.current,
@@ -1351,6 +1394,43 @@ function BoardSurface({ session }: { session: SessionProps }) {
         websiteReturn.current = active instanceof HTMLElement ? active : null;
         setWebsiteDialog({ mode: 'edit', id, url: node.url, title: node.title });
       },
+      renameVoice(id, title) {
+        if (blockedRef.current) return;
+        const before = boardRef.current;
+        const next = renameVoice(before, id, title);
+        if (next === before) return;
+        publish(next, before, 'schedule');
+      },
+      downloadVoice(id) {
+        const node = boardRef.current.nodes.find((entry) => entry.id === id);
+        if (!node || node.kind !== 'voice') return;
+        const asset = libraryRef.current.get(node.assetId);
+        if (!asset) {
+          setNotice({ text: 'That recording is missing from this browser, so it cannot be downloaded.', source: 'ingest' });
+          return;
+        }
+        downloadBlob(asset.blob, audioFilename(node.title, asset.mimeType));
+      },
+      async playVoice(id) {
+        const node = boardRef.current.nodes.find((entry) => entry.id === id);
+        if (!node || node.kind !== 'voice') return;
+        const asset = libraryRef.current.get(node.assetId);
+        if (!asset) return;
+        const held = voiceUrlByNode.current.get(id);
+        const url = held && held.assetId === asset.id ? held.url : audioUrls.current.acquire(asset);
+        if (!held || held.assetId !== asset.id) {
+          if (held) audioUrls.current.release(held.assetId);
+          voiceUrlByNode.current.set(id, { assetId: asset.id, url });
+        }
+        await startVoicePlayback(id, url);
+      },
+      releaseVoice(id) {
+        const held = voiceUrlByNode.current.get(id);
+        if (!held) return;
+        voiceUrlByNode.current.delete(id);
+        audioUrls.current.release(held.assetId);
+        stopVoice(id);
+      },
       downloadFile(id) {
         const node = boardRef.current.nodes.find((entry) => entry.id === id);
         if (!node || node.kind !== 'file') return;
@@ -1399,6 +1479,10 @@ function BoardSurface({ session }: { session: SessionProps }) {
   useEffect(() => {
     if (chromeHidden) setViewsOpen(false);
   }, [chromeHidden]);
+
+  useEffect(() => {
+    if (readOnly) setVoiceOpen(false);
+  }, [readOnly]);
 
   useEffect(() => {
     if (!websiteDialog) return;
@@ -1765,7 +1849,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
       kind: 'export',
       thenClear,
       unsaved: captured.unsaved,
-      summary: `${summary.embeddedImages} embedded images, ${summary.fileAttachments} file attachments, ${summary.externalImages} external references, about ${summary.totalBytes} bytes.`,
+      summary: `${summary.embeddedImages} embedded images, ${summary.fileAttachments} file attachments, ${summary.voiceNotes} voice notes, ${summary.externalImages} external references, about ${summary.totalBytes} bytes.`,
     });
     exportHold.current = { ...captured, key: boardSnapshotKey(captured.board) };
   }
@@ -1836,6 +1920,9 @@ function BoardSurface({ session }: { session: SessionProps }) {
     gestureRef.current = null;
     libraryRef.current = new Map(assets.map((asset) => [asset.id, asset]));
     registryRef.current?.revokeAll();
+    audioUrls.current.revokeAll();
+    voiceUrlByNode.current.clear();
+    stopVoice();
     for (const asset of assets) registryRef.current?.remember(asset);
     queue.adopt(nextBoard);
     blockedRef.current = false;
@@ -1862,7 +1949,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
         kind: 'import',
         board: result.board,
         assets: result.assets,
-        summary: `${result.summary.embedded} embedded images, ${result.summary.files} file attachments, and ${result.summary.external} external references will replace the current board.`,
+        summary: `${result.summary.embedded} embedded images, ${result.summary.files} file attachments, ${result.summary.voices} voice notes, and ${result.summary.external} external references will replace the current board.`,
       });
     } catch (error) {
       setNotice({ text: errorMessage(error), source: 'ingest' });
@@ -2108,6 +2195,10 @@ function BoardSurface({ session }: { session: SessionProps }) {
             if (blockedRef.current) return;
             const origin = pointerRef.current ?? viewportCenter();
             void runIngest(origin, () => ingestFileList(files, ingestOptions()));
+          }}
+          onRecordVoice={() => {
+            if (blockedRef.current || voiceOpen) return;
+            setVoiceOpen(true);
           }}
           onAddWebsite={() => {
             if (!websiteEditsAllowed(blockedRef.current)) return;
@@ -2480,6 +2571,12 @@ function BoardSurface({ session }: { session: SessionProps }) {
         )}
         {chromeHidden ? null : <Coordinates ref={coordinatesRef} selection={selectionLabel} />}
         <PwaUpdateNotice prepareUpdate={preparePwaUpdate} />
+        {voiceOpen ? (
+          <VoiceRecorderDialog
+            onCancel={() => setVoiceOpen(false)}
+            onSave={(recording) => saveVoice(recording)}
+          />
+        ) : null}
         {websiteDialog ? (
           <WebsiteDialog
             key={`${websiteDialog.mode}:${websiteDialog.id ?? 'new'}`}
@@ -2561,6 +2658,9 @@ function asHandle(value: string | null | undefined): HandleSide {
 }
 
 function missingAssetMessage(board: Board, missing: readonly string[]): string {
+  if (board.nodes.some((node) => node.kind === 'voice' && missing.includes(node.assetId))) {
+    return 'A voice note recording is missing, so the archive was not created.';
+  }
   const file = board.nodes.some((node) => node.kind === 'file' && missing.includes(node.assetId));
   return file
     ? 'An attached file is missing, so the archive was not created.'

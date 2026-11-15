@@ -129,6 +129,19 @@ function dateHits(nodes: readonly BoardNode[], start: number, end: number, now: 
       });
       continue;
     }
+    if (node.kind === 'voice') {
+      hits.push({
+        id: node.id,
+        kind: 'voice',
+        title: node.title,
+        snippet: formatted.label,
+        parentLabel,
+        score: time,
+        section: 'date',
+        time,
+      });
+      continue;
+    }
     if (node.kind === 'image') {
       hits.push({
         id: node.id,

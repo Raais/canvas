@@ -32,4 +32,41 @@ export function createObjectUrlRegistry() {
   };
 }
 
+export function createAudioUrlKeeper() {
+  const urls = new Map<string, { url: string; users: number }>();
+  return {
+    acquire(asset: { id: string; blob: Blob }): string {
+      const existing = urls.get(asset.id);
+      if (existing) {
+        existing.users += 1;
+        return existing.url;
+      }
+      const url = URL.createObjectURL(asset.blob);
+      urls.set(asset.id, { url, users: 1 });
+      return url;
+    },
+    forget(id: string): void {
+      const existing = urls.get(id);
+      if (!existing) return;
+      URL.revokeObjectURL(existing.url);
+      urls.delete(id);
+    },
+    release(id: string): void {
+      const existing = urls.get(id);
+      if (!existing) return;
+      existing.users -= 1;
+      if (existing.users > 0) return;
+      URL.revokeObjectURL(existing.url);
+      urls.delete(id);
+    },
+    revokeAll(): void {
+      for (const entry of urls.values()) URL.revokeObjectURL(entry.url);
+      urls.clear();
+    },
+    size(): number {
+      return urls.size;
+    },
+  };
+}
+
 export type ObjectUrlRegistry = ReturnType<typeof createObjectUrlRegistry>;

@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 15 as const;
+export const SCHEMA_VERSION = 16 as const;
 export const MAX_SAVED_VIEWS = 32;
 export const MAX_SAVED_VIEW_NAME = 60;
 export const MAX_EDGE_LABEL = 80;
@@ -17,6 +17,12 @@ export const WEBSITE_MIN_WIDTH = 185;
 export const WEBSITE_MIN_HEIGHT = 100;
 export const WEBSITE_URL_LIMIT = 2048;
 export const WEBSITE_TITLE_LIMIT = 120;
+export const VOICE_NOTE_WIDTH = 260;
+export const VOICE_NOTE_HEIGHT = 148;
+export const VOICE_MIN_WIDTH = 220;
+export const VOICE_MIN_HEIGHT = 120;
+export const VOICE_TITLE_LIMIT = 120;
+export const VOICE_MAX_MS = 15 * 60 * 1000;
 export const TEXT_MIN_WIDTH = 160;
 export const TEXT_MIN_HEIGHT = 72;
 export const TEXT_RESIZE_MIN_HEIGHT = 96;
@@ -167,6 +173,20 @@ export type DrawingNode = {
   lastEditedAt: string;
 };
 
+export type VoiceNode = {
+  id: string;
+  kind: 'voice';
+  parentId?: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  assetId: string;
+  title: string;
+  durationMs: number;
+  lastEditedAt: string;
+};
+
 export type WebsiteNode = {
   id: string;
   kind: 'website';
@@ -192,7 +212,7 @@ export type GroupNode = {
   backgroundTone?: BackgroundTone;
 };
 
-export type ContentNode = TextNode | ImageNode | FileNode | WebsiteNode | DrawingNode;
+export type ContentNode = TextNode | ImageNode | FileNode | WebsiteNode | DrawingNode | VoiceNode;
 
 export type BoardNode = ContentNode | GroupNode;
 

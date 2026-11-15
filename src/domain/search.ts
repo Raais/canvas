@@ -6,7 +6,7 @@ export const SEARCH_LIMIT = 25;
 
 export type SearchHit = {
   id: string;
-  kind: 'text' | 'group' | 'file' | 'website';
+  kind: 'text' | 'group' | 'file' | 'website' | 'voice';
   title: string;
   snippet: string;
   parentLabel: string | null;
@@ -15,7 +15,7 @@ export type SearchHit = {
 
 export type SearchResult = {
   id: string;
-  kind: 'text' | 'group' | 'image' | 'file' | 'website';
+  kind: 'text' | 'group' | 'image' | 'file' | 'website' | 'voice';
   title: string;
   snippet: string;
   parentLabel: string | null;
@@ -34,7 +34,7 @@ type RankedHit = SearchHit & { order: number };
 
 type IndexedNode = {
   id: string;
-  kind: 'text' | 'group' | 'file' | 'website';
+  kind: 'text' | 'group' | 'file' | 'website' | 'voice';
   title: string;
   foldedTitle: string;
   body: string;
@@ -54,6 +54,11 @@ export function buildSearchIndex(nodes: readonly BoardNode[]): IndexedNode[] {
     if (node.kind === 'file') {
       const parentLabel = node.parentId ? labels.get(node.parentId) ?? null : null;
       indexed.push({ id: node.id, kind: 'file', title: node.filename, foldedTitle: fold(node.filename), body: '', foldedBody: '', parentLabel, order });
+      return;
+    }
+    if (node.kind === 'voice') {
+      const parentLabel = node.parentId ? labels.get(node.parentId) ?? null : null;
+      indexed.push({ id: node.id, kind: 'voice', title: node.title, foldedTitle: fold(node.title), body: '', foldedBody: '', parentLabel, order });
       return;
     }
     if (node.kind === 'website') {
@@ -90,6 +95,7 @@ export function contentSignature(nodes: readonly BoardNode[]): string {
     if (node.kind === 'website') return `w\t${node.id}\t${node.parentId ?? ''}\t${node.title}\t${node.url}\t${node.lastEditedAt}`;
     if (node.kind === 'group') return `g\t${node.id}\t${node.label}`;
     if (node.kind === 'drawing') return `d\t${node.id}`;
+    if (node.kind === 'voice') return `v\t${node.id}\t${node.parentId ?? ''}\t${node.title}\t${node.lastEditedAt}`;
     return `i\t${node.id}\t${node.parentId ?? ''}\t${node.lastEditedAt ?? ''}\t${node.source.type}`;
   }).join('\n');
 }

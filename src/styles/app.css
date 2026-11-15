@@ -472,7 +472,7 @@ button:focus-visible, .title-input:focus-visible, select:focus-visible {
 .drop-overlay { position: absolute; z-index: 15; inset: 8px; }
 .frame-draft { position: absolute; background: var(--group); }
 
-.text-note, .image-note, .file-note, .website-note, .group-node { width: 100%; height: 100%; }
+.text-note, .image-note, .file-note, .website-note, .voice-note, .group-node { width: 100%; height: 100%; }
 
 .text-note {
   position: relative;
@@ -522,6 +522,57 @@ button:focus-visible, .title-input:focus-visible, select:focus-visible {
 .file-name:disabled { color: var(--muted); cursor: default; }
 .file-meta { margin: 0; color: var(--muted); font-size: 12px; }
 .file-note.is-missing .file-meta { color: var(--danger); }
+.voice-note {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  box-sizing: border-box;
+  padding: 12px 12px 18px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  overflow: visible;
+}
+.voice-note.is-playing { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.voice-note-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.voice-note-icon { flex: none; color: var(--muted); }
+.voice-title {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 560;
+  min-width: 0;
+  flex: 1;
+  padding: 0;
+}
+.voice-title:disabled { color: var(--muted); }
+.voice-download, .voice-transport button {
+  appearance: none;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+}
+.voice-download:disabled, .voice-transport button:disabled { color: var(--muted); }
+.voice-transport { display: flex; align-items: center; gap: 8px; }
+.voice-transport input[type='range'] { flex: 1; min-width: 0; accent-color: var(--accent); }
+.voice-time { flex: none; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.voice-note.is-missing .voice-time { color: var(--danger); }
+.voice-privacy, .voice-live, .voice-error { margin: 0; font-size: 13px; }
+.voice-privacy, .voice-live { color: var(--muted); }
+.voice-error { color: var(--danger); }
+.voice-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.voice-preview { width: 100%; }
 .file-download {
   appearance: none;
   flex: none;
@@ -665,7 +716,7 @@ button:focus-visible, .title-input:focus-visible, select:focus-visible {
 .password-dialog button[type='submit']:disabled:hover { background: var(--pressed); }
 .password-error { margin: 0; color: var(--danger); font-size: 13px; }
 
-.text-note.is-selected, .text-note.is-editing, .image-note.is-selected, .file-note.is-selected, .website-note.is-selected, .group-node.is-selected {
+.text-note.is-selected, .text-note.is-editing, .image-note.is-selected, .file-note.is-selected, .website-note.is-selected, .voice-note.is-selected, .group-node.is-selected {
   border-color: var(--accent);
   outline: 1px solid var(--accent);
 }
@@ -1170,18 +1221,22 @@ button:focus-visible, .title-input:focus-visible, select:focus-visible {
 .image-note:hover > .node-date,
 .file-note:hover > .node-date,
 .website-note:hover > .node-date,
+.voice-note:hover > .node-date,
 .text-note.is-selected > .node-date,
 .image-note.is-selected > .node-date,
 .file-note.is-selected > .node-date,
 .website-note.is-selected > .node-date,
+.voice-note.is-selected > .node-date,
 .react-flow__node:focus-within > .text-note > .node-date,
 .react-flow__node:focus-within > .image-note > .node-date,
 .react-flow__node:focus-within > .file-note > .node-date,
 .react-flow__node:focus-within > .website-note > .node-date,
+.react-flow__node:focus-within > .voice-note > .node-date,
 .react-flow__node.selected > .text-note > .node-date,
 .react-flow__node.selected > .image-note > .node-date,
 .react-flow__node.selected > .file-note > .node-date,
-.react-flow__node.selected > .website-note > .node-date {
+.react-flow__node.selected > .website-note > .node-date,
+.react-flow__node.selected > .voice-note > .node-date {
   opacity: 1;
 }
 @media (prefers-reduced-motion: reduce) {

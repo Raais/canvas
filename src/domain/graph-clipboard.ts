@@ -94,6 +94,8 @@ export function pasteGraph(
   if (!decoded || decoded.nodes.length === 0) return { error: 'The clipboard does not contain a canvas selection.' };
   const missingFile = decoded.nodes.some((node) => node.kind === 'file' && !availableAssets.has(node.assetId));
   if (missingFile) return { error: 'That copy refers to a file that is not on this board.' };
+  const missingVoice = decoded.nodes.some((node) => node.kind === 'voice' && !availableAssets.has(node.assetId));
+  if (missingVoice) return { error: 'That copy refers to a recording that is not on this board.' };
   const missingImage = decoded.nodes.some((node) => node.kind === 'image' && node.source.type === 'embedded' && !availableAssets.has(node.source.assetId));
   if (missingImage) return { error: 'That copy refers to an image that is not on this board.' };
   const limit = excessDrawings(countDrawings(board.nodes), countDrawings(decoded.nodes));

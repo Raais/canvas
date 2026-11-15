@@ -1,6 +1,7 @@
 import { parseBoard, referencedAssetIds } from '../domain/board';
 import type { AssetRecord, Board } from '../domain/types';
 import { canonicalRasterMime } from '../ingest/clipboard';
+import { canonicalAudioMime } from '../domain/voice';
 import {
   ARCHIVE_FORMAT,
   ARCHIVE_LIMITS,
@@ -19,13 +20,15 @@ export type ArchivePayload = {
 export function summarizeArchive(board: Board, assetBytes: number): ArchiveSummary {
   let embedded = 0;
   let files = 0;
+  let voices = 0;
   let external = 0;
   for (const node of board.nodes) {
     if (node.kind === 'file') files += 1;
+    if (node.kind === 'voice') voices += 1;
     if (node.kind === 'image' && node.source.type === 'embedded') embedded += 1;
     if (node.kind === 'image' && node.source.type === 'external') external += 1;
   }
-  return { embedded, files, external, payloadBytes: assetBytes };
+  return { embedded, files, voices, external, payloadBytes: assetBytes };
 }
 
 export function validateArchiveEntries(
@@ -102,6 +105,12 @@ export function validateArchiveEntries(
     if (node.kind === 'file') {
       const asset = assets.find((entry) => entry.id === node.assetId);
       if (!asset || !asset.path.endsWith('.bin')) return { error: 'An attached file does not match its archive entry.' };
+    }
+    if (node.kind === 'voice') {
+      const asset = assets.find((entry) => entry.id === node.assetId);
+      if (!asset || !asset.path.endsWith('.bin') || !canonicalAudioMime(asset.mimeType)) {
+        return { error: 'A voice note does not match its recording.' };
+      }
     }
     if (node.kind === 'image' && node.source.type === 'embedded') {
       const assetId = node.source.assetId;

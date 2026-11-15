@@ -123,7 +123,7 @@ describe('image optimization preference', () => {
     writeOptimizeImages(remembered, true);
     expect(JSON.stringify(createEmptyBoard(now)).includes(OPTIMIZE_IMAGES_KEY)).toBe(false);
     expect(readOptimizeImages(remembered)).toBe(true);
-    expect(SCHEMA_VERSION).toBe(15);
+    expect(SCHEMA_VERSION).toBe(16);
     expect(ARCHIVE_VERSION).toBe(2);
     expect(GRAPH_CLIPBOARD_VERSION).toBe(1);
   });

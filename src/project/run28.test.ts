@@ -281,7 +281,7 @@ describe('x-ray search', () => {
     expect(decideEscape({ ...base, framing: true, tool: 'frame' })).toBe('release-tool');
     expect(decideEscape(base)).toBe('exit-xray');
     expect(decideEscape({ ...base, xrayLens: false })).toBe('idle');
-    expect(SCHEMA_VERSION).toBe(15);
+    expect(SCHEMA_VERSION).toBe(16);
     expect(ARCHIVE_VERSION).toBe(2);
     expect(GRAPH_CLIPBOARD_VERSION).toBe(1);
     expect(xrayLensActive(true, 'atlas', 'Search is loading.', false)).toBe(false);

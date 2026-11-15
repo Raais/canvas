@@ -6,6 +6,7 @@ import {
   FilePlus2,
   Globe,
   Image as ImageIcon,
+  Mic,
   Moon,
   MousePointer2,
   Pencil,
@@ -52,6 +53,7 @@ type ToolbarProps = {
   onAddImages: (files: FileList) => void;
   onAddFiles: (files: FileList) => void;
   onAddWebsite: () => void;
+  onRecordVoice: () => void;
   readOnly?: boolean;
   onViewport: (viewport: { x: number; y: number; zoom: number }) => void;
   onTool: (tool: CanvasTool) => void;
@@ -84,6 +86,7 @@ export function Toolbar({
   onAddImages,
   onAddFiles,
   onAddWebsite,
+  onRecordVoice,
   readOnly = false,
   onViewport,
   onTool,
@@ -176,6 +179,9 @@ export function Toolbar({
           </button>
           <button type="button" className="icon-button" aria-pressed={tool === 'eraser'} aria-label="Eraser" title="Eraser" disabled={readOnly} onClick={() => onTool('eraser')}>
             <Eraser size={17} strokeWidth={1.75} />
+          </button>
+          <button type="button" className="icon-button" aria-label="Record voice note" title="Record voice note" disabled={readOnly} onClick={onRecordVoice}>
+            <Mic size={17} strokeWidth={1.75} />
           </button>
           {tool === 'pen' ? (
             <div className="pen-palette" role="group" aria-label="Pen settings">

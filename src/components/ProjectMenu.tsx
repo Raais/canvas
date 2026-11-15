@@ -171,7 +171,7 @@ export function ProjectMenu({
               <dt>Contents</dt>
               <dd>
                 {usage
-                  ? `${usage.notes} notes, ${usage.fileAttachments} files, ${usage.groups} groups, ${usage.links} links, ${usage.embeddedImages} embedded images, ${usage.externalImages} external`
+                  ? `${usage.notes} notes, ${usage.fileAttachments} files, ${usage.voiceNotes} voice notes, ${usage.groups} groups, ${usage.links} links, ${usage.embeddedImages} embedded images, ${usage.externalImages} external`
                   : '…'}
               </dd>
             </div>

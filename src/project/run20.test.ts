@@ -81,7 +81,7 @@ describe('node dates and natural-language search', () => {
     const copy = duplicated.nodes.find((node) => node.kind === 'text' && node.id !== note.id);
     expect(copy?.kind === 'text' ? copy.lastEditedAt : '').toBe(later);
     expect(editedAt(duplicated, note.id)).toBe(now);
-    expect(SCHEMA_VERSION).toBe(15);
+    expect(SCHEMA_VERSION).toBe(16);
     expect(ARCHIVE_VERSION).toBe(2);
     expect(GRAPH_CLIPBOARD_VERSION).toBe(1);
   });
@@ -92,7 +92,7 @@ describe('node dates and natural-language search', () => {
     const legacy = parseBoard({ ...createEmptyBoard(now), schemaVersion: 8, nodes: [undated, { id: 'pic', kind: 'image', x: 0, y: 0, width: 40, height: 40, mode: 'aspect', intrinsicWidth: 40, intrinsicHeight: 40, sizedFromImage: true, source: { type: 'external', url: 'https://example.com/a.png' }, rotation: 15 }] });
     const oldNote = legacy?.nodes.find((node) => node.id === 'old');
     const oldImage = legacy?.nodes.find((node) => node.id === 'pic');
-    expect(legacy?.schemaVersion).toBe(15);
+    expect(legacy?.schemaVersion).toBe(16);
     expect(oldNote?.kind === 'text' ? oldNote.lastEditedAt : 'set').toBe(undefined);
     expect(oldImage?.kind === 'image' ? oldImage.lastEditedAt : 'set').toBe(undefined);
     expect(oldImage?.kind === 'image' ? oldImage.rotation : 0).toBe(15);
@@ -117,7 +117,7 @@ describe('node dates and natural-language search', () => {
     const archive = await readArchive(await buildArchive(addNodes(createEmptyBoard(now), [withInsertedTimestamp(external, now)], now), [], now));
     expect('error' in archive ? '' : archive.board.nodes[0]?.kind === 'image' && archive.board.nodes[0].lastEditedAt).toBe(now);
     const oldArchive = await readArchive(await buildArchive({ ...addNodes(createEmptyBoard(now), [external], now), schemaVersion: 8 } as never, [], now));
-    expect('error' in oldArchive ? '' : oldArchive.board.schemaVersion).toBe(15);
+    expect('error' in oldArchive ? '' : oldArchive.board.schemaVersion).toBe(16);
   });
 
   test('formats relative dates without revising the board', () => {

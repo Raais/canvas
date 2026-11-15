@@ -15,9 +15,10 @@ import type { FileFlowNode } from './FileNode';
 import type { GroupFlowNode } from './GroupNode';
 import type { ImageFlowNode } from './ImageNoteNode';
 import type { TextFlowNode } from './TextNoteNode';
+import type { VoiceFlowNode } from './VoiceNoteNode';
 import type { WebsiteFlowNode } from './WebsiteNode';
 
-export type CanvasFlowNode = TextFlowNode | ImageFlowNode | FileFlowNode | WebsiteFlowNode | DrawingFlowNode | GroupFlowNode;
+export type CanvasFlowNode = TextFlowNode | ImageFlowNode | FileFlowNode | WebsiteFlowNode | DrawingFlowNode | VoiceFlowNode | GroupFlowNode;
 
 export type NodeProjectionInput = {
   selected: ReadonlySet<string>;
@@ -60,7 +61,7 @@ export function createNodeProjection() {
         seen.add(node.id);
         const selected = input.selected.has(node.id);
         const editing = input.editingId === node.id;
-        const readOnly = node.kind === 'text' || node.kind === 'website' ? input.readOnly : false;
+        const readOnly = node.kind === 'text' || node.kind === 'website' || node.kind === 'voice' ? input.readOnly : false;
         const session = sessionStamp(node, input.unlocked);
         const asset = assetStamp(node, input.registry, input.library);
         const extent = node.kind === 'group' ? (extents.get(node.id) ?? '') : '';
@@ -177,6 +178,10 @@ function assetStamp(
     const asset = library.get(node.assetId);
     return asset ? `file:${asset.byteSize}` : 'file:missing';
   }
+  if (node.kind === 'voice') {
+    const asset = library.get(node.assetId);
+    return asset ? `voice:${asset.byteSize}:${asset.mimeType}` : 'voice:missing';
+  }
   if (node.kind === 'image' && node.source.type === 'embedded') {
     const asset = library.get(node.source.assetId);
     return `image:${registry?.get(node.source.assetId) ?? ''}:${asset?.byteSize ?? ''}`;
@@ -251,6 +256,19 @@ function toFlowNode(
         strokeWidth: node.strokeWidth,
         points: node.points,
         dot: node.points.length <= 2,
+      },
+    };
+  }
+  if (node.kind === 'voice') {
+    return {
+      ...base,
+      type: 'voice',
+      data: {
+        title: node.title,
+        durationMs: node.durationMs,
+        missing: !input.library.has(node.assetId),
+        readOnly: input.readOnly,
+        lastEditedAt: node.lastEditedAt,
       },
     };
   }

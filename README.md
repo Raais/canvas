@@ -2,7 +2,7 @@
 
 **Implemented by Cursor Grok 4.7.**
 
-canvas is a local-first spatial notebook and moodboard. Arrange text, Markdown, code, images, file attachments, links, drawings, and groups on an infinite canvas. The board stays in this browser. There is no account, backend, or upload server.
+canvas is a local-first spatial notebook and moodboard. Arrange text, Markdown, code, images, file attachments, voice notes, links, drawings, and groups on an infinite canvas. The board stays in this browser. There is no account, backend, or upload server.
 
 A new board starts dark. Project → Canvas background can switch it to light, and can use dots, a grid, a cross, a blank canvas, Dither Atlas, or topographic contours. An existing board keeps the background it already saved.
 
@@ -23,6 +23,7 @@ A new board starts dark. Project → Canvas background can switch it to light, a
 - Press G with one node selected to bring that node into view. Press U to shrink that node to its smallest allowed size. Cmd+G or Ctrl+G still groups the selection, and Shift with that shortcut ungroups it.
 - Press P for the pen and E for the eraser. A pen stroke becomes one drawing. The eraser removes each stroke it touches, and one sweep is one undo.
 - Add a website from the toolbar, or paste or drop a single http or https address. The card stores the address and a title. It does not load the page.
+- Record a voice note from the toolbar. The recording stays in this browser as a blob next to the board. The canvas does not transcribe it or upload it.
 - Export the open board as a `.canvas.zip` archive, start a blank board, or import an archive in place of the current one.
 - See an approximate size for canvas data, plus the browser's estimate for this whole origin.
 
@@ -34,7 +35,7 @@ The board itself is not stored in `localStorage`. A board's appearance is part o
 
 The browser can still delete site data. An exported archive is the copy to keep. canvas does not upload the board anywhere. External image links are recorded as URLs only; their bytes are not included. A website card stores its address in the board and in an exported ZIP. That address is not encrypted. A query string can contain a private token, so do not bookmark a secret URL you would not want in a backup.
 
-Boards are document schema 15. A new ZIP archive is format 2, and older format 1 archives still import. A copied selection is still clipboard format 1. Schema 13 and 14 boards open and are saved as schema 15. An older copy of canvas will not open a schema 15 board, so export a backup before upgrading. Image rotation is stored on the image note in degrees and is omitted at 0°. Text, image, and file notes may store `lastEditedAt`. Pulling force is a project setting: it is omitted while on, and stored as `physicsEnabled: false` when off. A password-protected note stores ciphertext instead of its text. Labels, link styles, saved views, and a Topographic Contours seed travel with the board JSON. Older boards migrate forward without changing their saved background or inventing dates. There is no remote search service.
+Boards are document schema 16. A new ZIP archive is format 2, and older format 1 archives still import. A copied selection is still clipboard format 1. Schema 13, 14, and 15 boards open and are saved as schema 16. An older copy of canvas will not open a schema 16 board, so export a backup before upgrading. A voice note stores its title, duration, and a reference to an audio blob in the assets store. The board JSON does not contain the audio bytes. Image rotation is stored on the image note in degrees and is omitted at 0°. Text, image, and file notes may store `lastEditedAt`. Pulling force is a project setting: it is omitted while on, and stored as `physicsEnabled: false` when off. A password-protected note stores ciphertext instead of its text. Labels, link styles, saved views, and a Topographic Contours seed travel with the board JSON. Older boards migrate forward without changing their saved background or inventing dates. There is no remote search service.
 
 One tab owns writing, using a browser lock named `raais-canvas-active-board-v1` when the browser provides it. Other tabs can pan, zoom, search, recall saved views, and inspect, but they do not save. If a tab has open edits when it loses the board, it keeps them in memory and offers **Download recovery ZIP**. Reload asks before discarding those edits. IndexedDB still refuses a stale revision. Embedded images and file attachments must be 64 MiB or smaller, and a backup must stay within 256 MiB including the manifest. The project menu warns when a board is near or past that limit. Copying a note out of a group pastes it in world coordinates. Escape finishes a note edit and cancels a group rename. Delete contents asks before removing a group and its children. Checklists toggle for unordered, ordered, nested, and quoted tasks.
 
