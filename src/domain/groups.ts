@@ -286,6 +286,7 @@ function referenced(board: Board): string[] {
   const ids: string[] = [];
   for (const node of board.nodes) {
     if (node.kind === 'image' && node.source.type === 'embedded') ids.push(node.source.assetId);
+    if (node.kind === 'file') ids.push(node.assetId);
   }
   return ids;
 }

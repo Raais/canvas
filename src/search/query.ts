@@ -84,6 +84,19 @@ function dateHits(nodes: readonly BoardNode[], start: number, end: number, now: 
     if (!Number.isFinite(time) || time < start || time >= end) continue;
     const parentLabel = node.parentId ? labels.get(node.parentId) ?? null : null;
     const formatted = formatNodeDate(node.lastEditedAt, now);
+    if (node.kind === 'file') {
+      hits.push({
+        id: node.id,
+        kind: 'file',
+        title: node.filename,
+        snippet: formatted.label,
+        parentLabel,
+        score: time,
+        section: 'date',
+        time,
+      });
+      continue;
+    }
     if (node.kind === 'image') {
       hits.push({
         id: node.id,

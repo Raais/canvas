@@ -1,4 +1,4 @@
-import { Frame, Image, StickyNote } from 'lucide-react';
+import { File, Frame, Image, StickyNote } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { SearchResult } from '../domain/search';
 
@@ -77,7 +77,7 @@ export function SearchPalette({
       <div ref={listRef} id="search-results" role="listbox" aria-label="Search results">
         {notice ? <p className="search-empty">{notice}</p> : null}
         {query.trim() && !notice && results.length === 0 ? <p className="search-empty">No matches.</p> : null}
-        {!query.trim() ? <p className="search-empty">Search notes, groups, and dates.</p> : null}
+        {!query.trim() ? <p className="search-empty">Search notes, files, groups, and dates.</p> : null}
         {results.map((result, index) => {
           const showDate = result.section === 'date' && results[index - 1]?.section !== 'date';
           const showContent = result.section === 'content' && results.some((entry) => entry.section === 'date') && results[index - 1]?.section !== 'content';
@@ -93,7 +93,7 @@ export function SearchPalette({
                 onMouseEnter={() => setActive(index)}
                 onClick={() => onJump(result.id)}
               >
-                {result.kind === 'group' ? <Frame size={15} strokeWidth={1.75} /> : result.kind === 'image' ? <Image size={15} strokeWidth={1.75} /> : <StickyNote size={15} strokeWidth={1.75} />}
+                {result.kind === 'group' ? <Frame size={15} strokeWidth={1.75} /> : result.kind === 'image' ? <Image size={15} strokeWidth={1.75} /> : result.kind === 'file' ? <File size={15} strokeWidth={1.75} /> : <StickyNote size={15} strokeWidth={1.75} />}
                 <span>
                   <strong>{result.title}</strong>
                   {result.parentLabel ? <em>{result.parentLabel}</em> : null}

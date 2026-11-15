@@ -6,7 +6,7 @@ export const SEARCH_LIMIT = 25;
 
 export type SearchHit = {
   id: string;
-  kind: 'text' | 'group';
+  kind: 'text' | 'group' | 'file';
   title: string;
   snippet: string;
   parentLabel: string | null;
@@ -15,7 +15,7 @@ export type SearchHit = {
 
 export type SearchResult = {
   id: string;
-  kind: 'text' | 'group' | 'image';
+  kind: 'text' | 'group' | 'image' | 'file';
   title: string;
   snippet: string;
   parentLabel: string | null;
@@ -33,7 +33,7 @@ type RankedHit = SearchHit & { order: number };
 
 type IndexedNode = {
   id: string;
-  kind: 'text' | 'group';
+  kind: 'text' | 'group' | 'file';
   title: string;
   foldedTitle: string;
   body: string;
@@ -50,6 +50,11 @@ export function buildSearchIndex(nodes: readonly BoardNode[]): IndexedNode[] {
   const indexed: IndexedNode[] = [];
   nodes.forEach((node, order) => {
     if (node.kind === 'image' || isProtectedTextNode(node)) return;
+    if (node.kind === 'file') {
+      const parentLabel = node.parentId ? labels.get(node.parentId) ?? null : null;
+      indexed.push({ id: node.id, kind: 'file', title: node.filename, foldedTitle: fold(node.filename), body: '', foldedBody: '', parentLabel, order });
+      return;
+    }
     if (node.kind === 'group') {
       const title = labels.get(node.id) ?? 'Untitled group';
       indexed.push({ id: node.id, kind: 'group', title, foldedTitle: fold(title), body: '', foldedBody: '', parentLabel: null, order });
@@ -73,7 +78,8 @@ export function buildSearchIndex(nodes: readonly BoardNode[]): IndexedNode[] {
 
 export function contentSignature(nodes: readonly BoardNode[]): string {
   return nodes.map((node) => {
-    if (node.kind === 'text') return `t\t${node.id}\t${node.parentId ?? ''}\t${node.protection ? '' : node.text}\t${node.protection ? 'protected' : ''}\t${node.lastEditedAt ?? ''}`;
+    if (node.kind === 'text') return `t\t${node.id}\t${node.parentId ?? ''}\t${node.protection ? '' : node.text}\t${node.protection ? 'protected' : ''}\t${node.sourceFilename ?? ''}\t${node.lastEditedAt ?? ''}`;
+    if (node.kind === 'file') return `f\t${node.id}\t${node.parentId ?? ''}\t${node.filename}\t${node.lastEditedAt ?? ''}`;
     if (node.kind === 'group') return `g\t${node.id}\t${node.label}`;
     return `i\t${node.id}\t${node.parentId ?? ''}\t${node.lastEditedAt ?? ''}\t${node.source.type}`;
   }).join('\n');

@@ -184,13 +184,13 @@ describe('protected notes', () => {
     expect(JSON.stringify(archive.board).includes(secret)).toBe(false);
     const imported = archive.board.nodes.find((node) => node.id === 'note');
     expect(imported && isProtectedTextNode(imported) ? (await openProtected(imported.protection, password))?.text : '').toBe(secret);
-    expect(ARCHIVE_VERSION).toBe(1);
+    expect(ARCHIVE_VERSION).toBe(2);
     expect(GRAPH_CLIPBOARD_VERSION).toBe(1);
     const stale = addNodes(createEmptyBoard(now), [note()], now);
     expect(preferProtectedBoard(stale, board)).toBe(board);
     expect(JSON.stringify(preferProtectedBoard(stale, board)).includes(secret)).toBe(false);
     const migrated = parseBoard({ ...createEmptyBoard(now), schemaVersion: 10, physicsEnabled: false });
-    expect(migrated?.schemaVersion).toBe(11);
+    expect(migrated?.schemaVersion).toBe(12);
     expect(migrated?.physicsEnabled).toBe(false);
     expect(migrated?.nodes.every((node) => node.kind !== 'text' || !node.protection)).toBe(true);
     const contours = parseBoard({ ...createEmptyBoard(now), schemaVersion: 7, backgroundPattern: 'topographic-contours', topographicContours: { seed: 4, rendererVersion: 1 } });

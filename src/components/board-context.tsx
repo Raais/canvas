@@ -28,6 +28,7 @@ export type BoardActions = {
   setGroupTone: (id: string, tone: string) => void;
   commitEdgeLabel: (id: string, label: string) => void;
   setRelationshipStyle: (id: string, style: EdgeStyle) => void;
+  downloadFile: (id: string) => void;
   deleteRelationship: (id: string) => void;
   setEdgeEditor: (open: boolean) => void;
 };

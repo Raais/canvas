@@ -123,8 +123,8 @@ describe('image optimization preference', () => {
     writeOptimizeImages(remembered, true);
     expect(JSON.stringify(createEmptyBoard(now)).includes(OPTIMIZE_IMAGES_KEY)).toBe(false);
     expect(readOptimizeImages(remembered)).toBe(true);
-    expect(SCHEMA_VERSION).toBe(11);
-    expect(ARCHIVE_VERSION).toBe(1);
+    expect(SCHEMA_VERSION).toBe(12);
+    expect(ARCHIVE_VERSION).toBe(2);
     expect(GRAPH_CLIPBOARD_VERSION).toBe(1);
   });
 });
@@ -324,8 +324,8 @@ describe('optimized ingestion', () => {
     expect(failed.summary).toBe('One image could not be optimized and was kept unchanged.');
     if (failed.items[0]?.type === 'image') expect(failed.items[0].mimeType).toBe('image/png');
     const text = await ingestFileList([new File(['hello'], 'notes.txt', { type: 'text/plain' })]);
-    expect(text.items).toHaveLength(0);
-    expect(text.warnings[0]).toContain('unsupported');
+    expect(text.items[0]?.type).toBe('text');
+    expect(text.items[0]?.type === 'text' ? text.items[0].presentation : '').toBe('text');
     const guard = createBatchGuard();
     const token = guard.capture();
     guard.invalidate();

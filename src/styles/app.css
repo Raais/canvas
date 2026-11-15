@@ -376,7 +376,7 @@ button:focus-visible, .title-input:focus-visible, select:focus-visible {
 .drop-overlay { position: absolute; z-index: 15; inset: 8px; }
 .frame-draft { position: absolute; background: var(--group); }
 
-.text-note, .image-note, .group-node { width: 100%; height: 100%; }
+.text-note, .image-note, .file-note, .group-node { width: 100%; height: 100%; }
 
 .text-note {
   position: relative;
@@ -391,6 +391,68 @@ button:focus-visible, .title-input:focus-visible, select:focus-visible {
   height: 100%;
   overflow: hidden;
   border-radius: inherit;
+}
+.file-note {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  padding: 12px 12px 18px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  overflow: visible;
+}
+.file-note-icon { flex: none; color: var(--muted); }
+.file-note-copy { min-width: 0; flex: 1; display: grid; gap: 2px; }
+.file-name {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 560;
+  text-align: left;
+  padding: 0;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-name:hover { color: var(--accent-ink); }
+.file-name:disabled { color: var(--muted); cursor: default; }
+.file-meta { margin: 0; color: var(--muted); font-size: 12px; }
+.file-note.is-missing .file-meta { color: var(--danger); }
+.file-download {
+  appearance: none;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+}
+.file-download:hover { background: var(--pressed); color: var(--accent-ink); }
+.file-download:disabled,
+.file-download:disabled:hover { background: var(--surface-2); color: var(--muted); opacity: 0.45; cursor: default; }
+.source-filename {
+  margin: 0;
+  padding: 8px 12px 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
 }
 .protected-placeholder {
   height: 100%;
@@ -458,7 +520,7 @@ button:focus-visible, .title-input:focus-visible, select:focus-visible {
 .password-dialog button[type='submit']:disabled:hover { background: var(--pressed); }
 .password-error { margin: 0; color: var(--danger); font-size: 13px; }
 
-.text-note.is-selected, .text-note.is-editing, .image-note.is-selected, .group-node.is-selected {
+.text-note.is-selected, .text-note.is-editing, .image-note.is-selected, .file-note.is-selected, .group-node.is-selected {
   border-color: var(--accent);
   outline: 1px solid var(--accent);
 }
@@ -886,12 +948,16 @@ button:focus-visible, .title-input:focus-visible, select:focus-visible {
 }
 .text-note:hover > .node-date,
 .image-note:hover > .node-date,
+.file-note:hover > .node-date,
 .text-note.is-selected > .node-date,
 .image-note.is-selected > .node-date,
+.file-note.is-selected > .node-date,
 .react-flow__node:focus-within > .text-note > .node-date,
 .react-flow__node:focus-within > .image-note > .node-date,
+.react-flow__node:focus-within > .file-note > .node-date,
 .react-flow__node.selected > .text-note > .node-date,
-.react-flow__node.selected > .image-note > .node-date {
+.react-flow__node.selected > .image-note > .node-date,
+.react-flow__node.selected > .file-note > .node-date {
   opacity: 1;
 }
 @media (prefers-reduced-motion: reduce) {

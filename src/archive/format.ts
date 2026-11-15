@@ -1,7 +1,7 @@
 import type { Board } from '../domain/types';
 
 export const ARCHIVE_FORMAT = 'canvas-board';
-export const ARCHIVE_VERSION = 1;
+export const ARCHIVE_VERSION = 2;
 
 /** Limits for a single-board browser archive. Images stay compressed; these caps stop accidental or hostile expansion. */
 export const ARCHIVE_LIMITS = {
@@ -35,6 +35,7 @@ export type ArchiveManifest = {
 
 export type ArchiveSummary = {
   embedded: number;
+  files: number;
   external: number;
   payloadBytes: number;
 };

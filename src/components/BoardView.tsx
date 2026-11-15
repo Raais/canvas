@@ -19,6 +19,7 @@ import {
   commitInteraction,
   createEmptyBoard,
   createEmbeddedImageNode,
+  createFileNode,
   createExternalImageNode,
   createTextNode,
   noteImageIntrinsic,
@@ -82,7 +83,6 @@ import {
   type Board,
   type BoardNode,
   type HandleSide,
-  type ImageNode,
   type Point,
   type Rect,
 } from '../domain/types';
@@ -125,13 +125,16 @@ import { ProjectMenu } from './ProjectMenu';
 const DitherAtlasLayer = lazy(() => import('../backgrounds/DitherAtlasLayer'));
 const TopographicContoursLayer = lazy(() => import('../backgrounds/TopographicContoursLayer'));
 import { Toolbar } from './Toolbar';
+import { FileNode, type FileFlowNode } from './FileNode';
+import { downloadBlob } from '../project/download';
 
-type CanvasFlowNode = TextFlowNode | ImageFlowNode | GroupFlowNode;
+type CanvasFlowNode = TextFlowNode | ImageFlowNode | FileFlowNode | GroupFlowNode;
 type Tool = 'select' | 'frame';
 
 const nodeTypes = {
   text: TextNoteNode,
   image: ImageNoteNode,
+  file: FileNode,
   group: GroupNode,
 };
 
@@ -425,11 +428,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
   }
 
   function liveAssetIds(value: Board): Set<string> {
-    const ids = new Set<string>();
-    for (const node of value.nodes) {
-      if (node.kind === 'image' && node.source.type === 'embedded') ids.add(node.source.assetId);
-    }
-    return ids;
+    return referencedAssetIds(value);
   }
 
   function reconcile(previous: Board, next: Board) {
@@ -530,8 +529,12 @@ function BoardSurface({ session }: { session: SessionProps }) {
     const registry = registryRef.current;
     if (!registry) return;
     const referenced = referencedAssetIds(boardRef.current);
-    let imageKey = 0;
-    const incoming = items.flatMap((item) => item.type === 'image' ? [{ key: String(imageKey++), name: 'image', bytes: item.blob.size }] : []);
+    const incoming = items.flatMap((item, index) => {
+      if (item.type === 'image') return [{ key: String(index), name: 'image', bytes: item.blob.size }];
+      if (item.type === 'file') return [{ key: String(index), name: item.filename, bytes: item.blob.size }];
+      if (item.type === 'text') return [{ key: String(index), name: item.sourceFilename ?? 'note', bytes: new TextEncoder().encode(item.text).length }];
+      return [];
+    });
     const decision = partitionIncoming({
       board: boardRef.current,
       existingBytes: [...referenced].reduce((sum, id) => sum + (libraryRef.current.get(id)?.byteSize ?? 0), 0),
@@ -540,19 +543,26 @@ function BoardSurface({ session }: { session: SessionProps }) {
     });
     if (decision.warnings.length > 0) showWarnings(decision.warnings);
     const allowed = new Set(decision.accepted);
-    let seenImage = 0;
-    const acceptedItems = items.filter((item) => {
-      if (item.type !== 'image') return true;
-      const key = String(seenImage++);
-      return allowed.has(key);
-    });
+    const acceptedItems = items.filter((item, index) => item.type === 'external-image' || allowed.has(String(index)));
     if (acceptedItems.length === 0) return;
     const positions = staggeredPositions(origin, acceptedItems.length);
     const nodes: BoardNode[] = [];
     acceptedItems.forEach((item, index) => {
       const center = positions[index] ?? origin;
       if (item.type === 'text') {
-        nodes.push(createTextNode(center, item.text));
+        nodes.push(createTextNode(center, item.text, new Date().toISOString(), {
+          ...(item.presentation ? { presentation: item.presentation } : {}),
+          ...(item.codeLanguage ? { codeLanguage: item.codeLanguage } : {}),
+          ...(item.language ? { language: item.language } : {}),
+          ...(item.sourceFilename ? { sourceFilename: item.sourceFilename } : {}),
+        }));
+        return;
+      }
+      if (item.type === 'file') {
+        const asset = createAssetRecord(item.blob, item.mimeType);
+        libraryRef.current.set(asset.id, asset);
+        registry.remember(asset);
+        nodes.push(createFileNode({ center, assetId: asset.id, filename: item.filename }));
         return;
       }
       if (item.type === 'external-image') {
@@ -1224,6 +1234,16 @@ function BoardSurface({ session }: { session: SessionProps }) {
         if (!next || next === before) return;
         publish(next, before, 'save');
       },
+      downloadFile(id) {
+        const node = boardRef.current.nodes.find((entry) => entry.id === id);
+        if (!node || node.kind !== 'file') return;
+        const asset = libraryRef.current.get(node.assetId);
+        if (!asset) {
+          setNotice({ text: `${node.filename} is missing from this browser, so it cannot be downloaded.`, source: 'ingest' });
+          return;
+        }
+        downloadBlob(asset.blob, node.filename);
+      },
       deleteRelationship(id) {
         if (blockedRef.current) return;
         const before = boardRef.current;
@@ -1553,7 +1573,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
     }
     const captured = captureExport();
     if (captured.missing.length > 0) {
-      setNotice({ text: 'An embedded image is missing, so the archive was not created.', source: 'ingest' });
+      setNotice({ text: missingAssetMessage(captured.board, captured.missing), source: 'ingest' });
       return;
     }
     const summary = logicalUsage(captured.board, captured.assets);
@@ -1561,7 +1581,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
       kind: 'export',
       thenClear,
       unsaved: captured.unsaved,
-      summary: `${summary.embeddedAssets} embedded images, ${summary.externalImages} external references, about ${summary.totalBytes} bytes of board and image data.`,
+      summary: `${summary.embeddedImages} embedded images, ${summary.fileAttachments} file attachments, ${summary.externalImages} external references, about ${summary.totalBytes} bytes.`,
     });
     exportHold.current = { ...captured, key: boardSnapshotKey(captured.board) };
   }
@@ -1573,7 +1593,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
     for (const asset of recovered?.assets ?? []) library.set(asset.id, asset);
     const snapshot = snapshotAssets(board, library);
     if (snapshot.missing.length > 0) {
-      setNotice({ text: 'An embedded image is missing, so the recovery archive was not created.', source: 'save' });
+      setNotice({ text: missingAssetMessage(board, snapshot.missing), source: 'save' });
       return;
     }
     try {
@@ -1660,7 +1680,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
         kind: 'import',
         board: result.board,
         assets: result.assets,
-        summary: `${result.summary.embedded} embedded images and ${result.summary.external} external references will replace the current board.`,
+        summary: `${result.summary.embedded} embedded images, ${result.summary.files} file attachments, and ${result.summary.external} external references will replace the current board.`,
       });
     } catch (error) {
       setNotice({ text: errorMessage(error), source: 'ingest' });
@@ -1873,7 +1893,13 @@ function BoardSurface({ session }: { session: SessionProps }) {
             replaceBoard(next);
             queue.schedule(300);
           }}
+          readOnly={readOnly}
           onAddImages={(files) => {
+            if (blockedRef.current) return;
+            const origin = pointerRef.current ?? viewportCenter();
+            void runIngest(origin, () => ingestFileList(files, ingestOptions()));
+          }}
+          onAddFiles={(files) => {
             if (blockedRef.current) return;
             const origin = pointerRef.current ?? viewportCenter();
             void runIngest(origin, () => ingestFileList(files, ingestOptions()));
@@ -2291,10 +2317,24 @@ function toFlowNode(
         protected: isProtectedTextNode(node),
         unlocked: isProtectedTextNode(node) && unlocked.has(node.id),
         readOnly,
+        sourceFilename: node.sourceFilename,
       },
     };
   }
-  const image = node as ImageNode;
+  if (node.kind === 'file') {
+    const asset = library.get(node.assetId);
+    return {
+      ...base,
+      type: 'file',
+      data: {
+        filename: node.filename,
+        byteSize: asset?.byteSize,
+        missing: !asset,
+        lastEditedAt: node.lastEditedAt,
+      },
+    };
+  }
+  const image = node;
   const src = image.source.type === 'external' ? image.source.url : (registry?.get(image.source.assetId) ?? null);
   return {
     ...base,
@@ -2324,6 +2364,13 @@ function selectionReadout(board: Board, ids: readonly string[]): string | null {
 function asHandle(value: string | null | undefined): HandleSide {
   if (value === 'top' || value === 'right' || value === 'bottom' || value === 'left') return value;
   return 'right';
+}
+
+function missingAssetMessage(board: Board, missing: readonly string[]): string {
+  const file = board.nodes.some((node) => node.kind === 'file' && missing.includes(node.assetId));
+  return file
+    ? 'An attached file is missing, so the archive was not created.'
+    : 'An embedded image is missing, so the archive was not created.';
 }
 
 function hasFiles(data: DataTransfer | null): boolean {

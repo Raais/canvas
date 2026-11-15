@@ -2,6 +2,7 @@ import { useReactFlow } from '@xyflow/react';
 import {
   Bookmark,
   Frame,
+  FilePlus2,
   Image as ImageIcon,
   Moon,
   MousePointer2,
@@ -39,6 +40,8 @@ type ToolbarProps = {
   onTitle: (title: string) => void;
   onNewNote: () => void;
   onAddImages: (files: FileList) => void;
+  onAddFiles: (files: FileList) => void;
+  readOnly?: boolean;
   onViewport: (viewport: { x: number; y: number; zoom: number }) => void;
   onTool: (tool: 'select' | 'frame') => void;
   onGroup: () => void;
@@ -64,6 +67,8 @@ export function Toolbar({
   onTitle,
   onNewNote,
   onAddImages,
+  onAddFiles,
+  readOnly = false,
   onViewport,
   onTool,
   onGroup,
@@ -77,6 +82,7 @@ export function Toolbar({
   trailing,
 }: ToolbarProps) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const attachmentRef = useRef<HTMLInputElement>(null);
   const { zoomIn, zoomOut, fitView, getViewport } = useReactFlow();
 
   function settle(action: () => Promise<boolean>) {
@@ -120,6 +126,20 @@ export function Toolbar({
             onChange={(event) => {
               const files = event.target.files;
               if (files && files.length > 0) onAddImages(files);
+              event.target.value = '';
+            }}
+          />
+          <button type="button" className="icon-button" aria-label="Add file" title="Add file" disabled={readOnly} onClick={() => attachmentRef.current?.click()}>
+            <FilePlus2 size={17} strokeWidth={1.75} />
+          </button>
+          <input
+            ref={attachmentRef}
+            className="file-input"
+            type="file"
+            multiple
+            onChange={(event) => {
+              const files = event.target.files;
+              if (files && files.length > 0) onAddFiles(files);
               event.target.value = '';
             }}
           />

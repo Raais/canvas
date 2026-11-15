@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 11 as const;
+export const SCHEMA_VERSION = 12 as const;
 export const MAX_SAVED_VIEWS = 32;
 export const MAX_SAVED_VIEW_NAME = 60;
 export const MAX_EDGE_LABEL = 80;
@@ -7,6 +7,10 @@ export const MAX_ZOOM = 6;
 
 export const TEXT_NOTE_WIDTH = 240;
 export const TEXT_NOTE_HEIGHT = 140;
+export const FILE_NOTE_WIDTH = 240;
+export const FILE_NOTE_HEIGHT = 116;
+export const FILE_MIN_WIDTH = 180;
+export const FILE_MIN_HEIGHT = 88;
 export const TEXT_MIN_WIDTH = 160;
 export const TEXT_MIN_HEIGHT = 72;
 export const IMAGE_MIN_SIZE = 48;
@@ -80,6 +84,8 @@ export type TextNode = {
   protection?: ProtectedTextPayload;
   /** ISO timestamp of the last genuine text change. Omitted on legacy notes. */
   lastEditedAt?: string;
+  /** Original filename when this note was imported from a text file. */
+  sourceFilename?: string;
 };
 
 export type EmbeddedImageSource = {
@@ -114,6 +120,20 @@ export type ImageNode = {
   lastEditedAt?: string;
 };
 
+export type FileNode = {
+  id: string;
+  kind: 'file';
+  parentId?: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  assetId: string;
+  filename: string;
+  /** ISO timestamp from when this file node was added. */
+  lastEditedAt?: string;
+};
+
 export type GroupNode = {
   id: string;
   kind: 'group';
@@ -125,7 +145,7 @@ export type GroupNode = {
   backgroundTone?: BackgroundTone;
 };
 
-export type ContentNode = TextNode | ImageNode;
+export type ContentNode = TextNode | ImageNode | FileNode;
 
 export type BoardNode = ContentNode | GroupNode;
 

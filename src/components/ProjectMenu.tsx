@@ -171,7 +171,7 @@ export function ProjectMenu({
               <dt>Contents</dt>
               <dd>
                 {usage
-                  ? `${usage.notes} notes, ${usage.groups} groups, ${usage.links} links, ${usage.embeddedAssets} embedded, ${usage.externalImages} external`
+                  ? `${usage.notes} notes, ${usage.fileAttachments} files, ${usage.groups} groups, ${usage.links} links, ${usage.embeddedImages} embedded images, ${usage.externalImages} external`
                   : '…'}
               </dd>
             </div>
@@ -187,7 +187,7 @@ export function ProjectMenu({
             </div>
           </dl>
           <p className="project-note">
-            Browser data can still be removed. An exported archive is the copy to keep. Embedded images must be 64 MiB or smaller, and the whole archive must stay within 256 MiB.
+            Browser data can still be removed. An exported archive is the copy to keep. Embedded images and file attachments must be 64 MiB or smaller, and the whole archive must stay within 256 MiB. File attachments are stored unencrypted in this browser and included in project exports. Do not attach secrets you would not want exposed to someone holding the archive.
             {usage && archivePressure(usage.totalBytes, usage.embeddedAssets) === 'near' ? ' This board is near the backup limit. Remove or replace a large image before it can no longer be exported.' : ''}
             {usage && archivePressure(usage.totalBytes, usage.embeddedAssets) === 'over' ? ' This board is too large for a complete backup. Remove or replace large embedded images, then export again.' : ''}
           </p>

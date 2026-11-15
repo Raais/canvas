@@ -22,11 +22,14 @@ export async function buildArchive(board: Board, assets: readonly AssetRecord[],
   let payload = 0;
   for (const id of referenced) {
     const asset = assets.find((entry) => entry.id === id);
-    if (!asset) throw new Error('An embedded image is missing, so the archive was not created.');
-    const extension = assetExtension(asset.mimeType);
+    if (!asset) throw new Error('An embedded file is missing, so the archive was not created.');
+    const usedByFile = board.nodes.some((node) => node.kind === 'file' && node.assetId === id);
+    const usedByImage = board.nodes.some((node) => node.kind === 'image' && node.source.type === 'embedded' && node.source.assetId === id);
+    if (usedByFile && usedByImage) throw new Error('An attachment is stored in an inconsistent way.');
+    const extension = usedByFile ? 'bin' : assetExtension(asset.mimeType);
     if (!extension) throw new Error('An embedded image uses an unsupported type.');
     const bytes = new Uint8Array(await asset.blob.arrayBuffer());
-    if (bytes.byteLength > ARCHIVE_LIMITS.maxFileBytes) throw new Error('An image is too large to export.');
+    if (bytes.byteLength > ARCHIVE_LIMITS.maxFileBytes) throw new Error(usedByFile ? 'A file is too large to export.' : 'An image is too large to export.');
     payload += bytes.byteLength;
     const path = `assets/${id}.${extension}`;
     files[path] = bytes;
@@ -63,7 +66,7 @@ export async function readArchive(bytes: ZipBytes): Promise<{ error: string } | 
           throw new Error('The archive uses an unsupported compression method.');
         }
         if (seen.has(file.name)) throw new Error('The archive contains duplicate files.');
-        if (file.name !== 'manifest.json' && !/^assets\/[A-Za-z0-9._-]+\.(png|jpg|webp|gif|avif)$/.test(file.name)) {
+        if (file.name !== 'manifest.json' && !/^assets\/[A-Za-z0-9._-]+\.(png|jpg|webp|gif|avif|bin)$/.test(file.name)) {
           throw new Error('The archive contains an unexpected file.');
         }
         if (file.originalSize > ARCHIVE_LIMITS.maxFileBytes || total + file.originalSize > ARCHIVE_LIMITS.maxTotalBytes) {
@@ -85,7 +88,7 @@ export async function readArchive(bytes: ZipBytes): Promise<{ error: string } | 
   if (mismatch) return { error: mismatch };
   const assets: AssetRecord[] = validated.manifest.assets.map((asset) => {
     const bytes = validated.files.get(asset.path);
-    if (!bytes) throw new Error('The archive is missing an embedded image.');
+    if (!bytes) throw new Error('The archive is missing an embedded file.');
     const copy = new Uint8Array(bytes.byteLength);
     copy.set(bytes);
     return {

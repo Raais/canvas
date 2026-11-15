@@ -40,7 +40,7 @@ function document(schemaVersion: number, extra: Record<string, unknown> = {}) {
 describe('schema v7', () => {
   test('new boards stay on atlas v3 until contours are chosen', () => {
     const board = createEmptyBoard(now);
-    expect(board.schemaVersion).toBe(11);
+    expect(board.schemaVersion).toBe(12);
     expect(board.backgroundPattern).toBe('dither-atlas');
     expect(board.ditherAtlas).toEqual({ seed: seedFromProjectName('Untitled board'), rendererVersion: 3 });
     expect(board.topographicContours).toBe(undefined);
@@ -68,7 +68,7 @@ describe('schema v7', () => {
         ? { schemaVersion, id: 'board', title: 'Kept', createdAt: now, updatedAt: now, revision: 2, viewport: { x: 3, y: 4, zoom: 1.25 }, nodes: [note('a')], edges: [] }
         : document(schemaVersion);
       const parsed = parseBoard(raw);
-      expect(parsed?.schemaVersion).toBe(11);
+      expect(parsed?.schemaVersion).toBe(12);
       expect(parsed?.title).toBe('Kept');
       expect(parsed?.backgroundPattern).toBe(schemaVersion === 1 ? 'dots' : 'dots');
       expect(parsed?.topographicContours).toBe(undefined);
@@ -88,12 +88,13 @@ describe('schema v7', () => {
     void savedViews;
     expect(parseBoard(missingViews)).toBeNull();
     expect(parseBoard(document(6, { savedViews: [{ id: 'v', name: '   ', viewport: { x: 0, y: 0, zoom: 1 } }] }))).toBeNull();
-    expect(parseBoard(document(8))?.schemaVersion).toBe(11);
-    expect(parseBoard(document(9))?.schemaVersion).toBe(11);
-    expect(parseBoard(document(10))?.schemaVersion).toBe(11);
-    expect(parseBoard(document(11))?.schemaVersion).toBe(11);
-    expect(parseBoard(document(12))).toBeNull();
-    expect(parseBoard({ schemaVersion: 12, id: 'x', nodes: [], edges: [] })).toBeNull();
+    expect(parseBoard(document(8))?.schemaVersion).toBe(12);
+    expect(parseBoard(document(9))?.schemaVersion).toBe(12);
+    expect(parseBoard(document(10))?.schemaVersion).toBe(12);
+    expect(parseBoard(document(11))?.schemaVersion).toBe(12);
+    expect(parseBoard(document(12))?.schemaVersion).toBe(12);
+    expect(parseBoard(document(13))).toBeNull();
+    expect(parseBoard({ schemaVersion: 13, id: 'x', nodes: [], edges: [] })).toBeNull();
   });
 });
 
@@ -218,7 +219,7 @@ describe('contours persistence', () => {
     expect(reloaded?.topographicContours).toEqual(selected.topographicContours);
     const archive = await readArchive(await buildArchive(selected, [], now));
     if ('error' in archive) throw new Error(archive.error);
-    expect(ARCHIVE_VERSION).toBe(1);
+    expect(ARCHIVE_VERSION).toBe(2);
     expect(GRAPH_CLIPBOARD_VERSION).toBe(1);
     expect(archive.board.backgroundPattern).toBe('topographic-contours');
     expect(archive.board.topographicContours).toEqual(selected.topographicContours);

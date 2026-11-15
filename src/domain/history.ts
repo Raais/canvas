@@ -1,3 +1,4 @@
+import { nodeAssetId } from './board';
 import type { Board } from './types';
 
 const HISTORY_LIMIT = 100;
@@ -39,7 +40,8 @@ export function retainedAssetIds(current: Board, history: History): Set<string> 
   const ids = new Set<string>();
   for (const board of [current, ...history.past, ...history.future]) {
     for (const node of board.nodes) {
-      if (node.kind === 'image' && node.source.type === 'embedded') ids.add(node.source.assetId);
+      const assetId = nodeAssetId(node);
+      if (assetId) ids.add(assetId);
     }
   }
   return ids;

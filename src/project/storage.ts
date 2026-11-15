@@ -6,6 +6,8 @@ export type LogicalUsage = {
   documentBytes: number;
   totalBytes: number;
   embeddedAssets: number;
+  embeddedImages: number;
+  fileAttachments: number;
   externalImages: number;
   notes: number;
   groups: number;
@@ -17,11 +19,15 @@ export function logicalUsage(board: Board, assets: readonly { id: string; byteSi
   let assetBytes = 0;
   for (const id of referencedAssetIds(board)) assetBytes += sizes.get(id) ?? 0;
   let externalImages = 0;
+  let embeddedImages = 0;
+  let fileAttachments = 0;
   let notes = 0;
   let groups = 0;
   for (const node of board.nodes) {
     if (node.kind === 'group') groups += 1;
     else notes += 1;
+    if (node.kind === 'file') fileAttachments += 1;
+    if (node.kind === 'image' && node.source.type === 'embedded') embeddedImages += 1;
     if (node.kind === 'image' && node.source.type === 'external') externalImages += 1;
   }
   const documentBytes = new TextEncoder().encode(JSON.stringify(board)).length;
@@ -30,6 +36,8 @@ export function logicalUsage(board: Board, assets: readonly { id: string; byteSi
     documentBytes,
     totalBytes: assetBytes + documentBytes,
     embeddedAssets: referencedAssetIds(board).size,
+    embeddedImages,
+    fileAttachments,
     externalImages,
     notes,
     groups,

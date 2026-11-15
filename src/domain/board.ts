@@ -4,8 +4,13 @@ import { parseStoredTimestamp } from './node-date';
 import { isProtectedTextNode, parseProtectedPayload } from './text-protection';
 import { contentExtent } from './geometry';
 import { classifyPlainText } from './code';
+import { sanitizeFilename } from './files';
 import {
   ASPECT_MIN_SIZE,
+  FILE_MIN_HEIGHT,
+  FILE_MIN_WIDTH,
+  FILE_NOTE_HEIGHT,
+  FILE_NOTE_WIDTH,
   FALLBACK_IMAGE_HEIGHT,
   FALLBACK_IMAGE_WIDTH,
   GROUP_MIN_HEIGHT,
@@ -41,6 +46,7 @@ import {
   type SavedView,
   type BackgroundTone,
   type CodeLanguage,
+  type FileNode,
   type CornerStyle,
   type TextTone,
 } from './types';
@@ -65,9 +71,17 @@ export function createEmptyBoard(now = new Date().toISOString()): Board {
   };
 }
 
-export function createTextNode(center: Point, text = '', now = new Date().toISOString()): TextNode {
-    const guess = text.trim() ? classifyPlainText(text) : null;
-    return {
+export function createTextNode(
+  center: Point,
+  text = '',
+  now = new Date().toISOString(),
+  options?: { presentation?: 'text' | 'markdown' | 'code'; codeLanguage?: CodeLanguage; language?: string; sourceFilename?: string },
+): TextNode {
+  const forced = options?.presentation;
+  const guess = !forced && text.trim() ? classifyPlainText(text) : null;
+  const presentation = forced ?? guess?.presentation;
+  const language = options?.language ?? guess?.language;
+  return {
     id: crypto.randomUUID(),
     kind: 'text',
     x: Math.round(center.x - TEXT_NOTE_WIDTH / 2),
@@ -76,7 +90,24 @@ export function createTextNode(center: Point, text = '', now = new Date().toISOS
     height: TEXT_NOTE_HEIGHT,
     text,
     lastEditedAt: now,
-    ...(guess?.presentation === 'code' ? { presentation: 'code' as const, ...(guess.language ? { language: guess.language } : {}) } : {}),
+    ...(presentation && presentation !== 'text' ? { presentation } : {}),
+    ...(presentation === 'code' && language ? { language } : {}),
+    ...(presentation === 'code' && options?.codeLanguage ? { codeLanguage: options.codeLanguage } : {}),
+    ...(options?.sourceFilename ? { sourceFilename: options.sourceFilename } : {}),
+  };
+}
+
+export function createFileNode(input: { center: Point; assetId: string; filename: string; now?: string }): FileNode {
+  return {
+    id: crypto.randomUUID(),
+    kind: 'file',
+    x: Math.round(input.center.x - FILE_NOTE_WIDTH / 2),
+    y: Math.round(input.center.y - FILE_NOTE_HEIGHT / 2),
+    width: FILE_NOTE_WIDTH,
+    height: FILE_NOTE_HEIGHT,
+    assetId: input.assetId,
+    filename: input.filename,
+    lastEditedAt: input.now ?? new Date().toISOString(),
   };
 }
 
@@ -157,10 +188,17 @@ export function staggeredPositions(origin: Point, count: number): Point[] {
   }));
 }
 
+export function nodeAssetId(node: BoardNode): string | null {
+  if (node.kind === 'file') return node.assetId;
+  if (node.kind === 'image' && node.source.type === 'embedded') return node.source.assetId;
+  return null;
+}
+
 export function referencedAssetIds(board: Board): Set<string> {
   const ids = new Set<string>();
   for (const node of board.nodes) {
-    if (node.kind === 'image' && node.source.type === 'embedded') ids.add(node.source.assetId);
+    const assetId = nodeAssetId(node);
+    if (assetId) ids.add(assetId);
   }
   return ids;
 }
@@ -354,7 +392,7 @@ export function migrateStoredAppearance(
   storedAppearance: Appearance | null,
   legacy: Appearance,
 ): Board {
-  if (storedAppearance && (storedSchema === 5 || storedSchema === 6 || storedSchema === 7 || storedSchema === 8 || storedSchema === 9 || storedSchema === 10 || storedSchema === SCHEMA_VERSION)) return board;
+  if (storedAppearance && (storedSchema === 5 || storedSchema === 6 || storedSchema === 7 || storedSchema === 8 || storedSchema === 9 || storedSchema === 10 || storedSchema === 11 || storedSchema === SCHEMA_VERSION)) return board;
   return { ...board, appearance: storedAppearance ?? legacy };
 }
 
@@ -493,8 +531,8 @@ export function parseBoard(value: unknown): Board | null {
   if (!isRecord(value)) return null;
   if (value.schemaVersion === 1) return migrateVersion1(value);
   const version = value.schemaVersion;
-  if (version !== 2 && version !== 3 && version !== 4 && version !== 5 && version !== 6 && version !== 7 && version !== 8 && version !== 9 && version !== 10 && version !== SCHEMA_VERSION) return null;
-  const relationshipStrict = version === 6 || version === 7 || version === 8 || version === 9 || version === 10 || version === SCHEMA_VERSION;
+  if (version !== 2 && version !== 3 && version !== 4 && version !== 5 && version !== 6 && version !== 7 && version !== 8 && version !== 9 && version !== 10 && version !== 11 && version !== SCHEMA_VERSION) return null;
+  const relationshipStrict = version === 6 || version === 7 || version === 8 || version === 9 || version === 10 || version === 11 || version === SCHEMA_VERSION;
   if (!isNonEmptyString(value.id) || typeof value.title !== 'string') return null;
   if (typeof value.createdAt !== 'string' || typeof value.updatedAt !== 'string') return null;
   if (!isFiniteNumber(value.revision)) return null;
@@ -559,15 +597,15 @@ export function isSafeHttpUrl(value: string): boolean {
 }
 
 function strictDocument(schemaVersion: unknown): boolean {
-  return schemaVersion === 5 || schemaVersion === 6 || schemaVersion === 7 || schemaVersion === 8 || schemaVersion === 9 || schemaVersion === 10 || schemaVersion === SCHEMA_VERSION;
+  return schemaVersion === 5 || schemaVersion === 6 || schemaVersion === 7 || schemaVersion === 8 || schemaVersion === 9 || schemaVersion === 10 || schemaVersion === 11 || schemaVersion === SCHEMA_VERSION;
 }
 
 function supportsContours(schemaVersion: unknown): boolean {
-  return schemaVersion === 7 || schemaVersion === 8 || schemaVersion === 9 || schemaVersion === 10 || schemaVersion === SCHEMA_VERSION;
+  return schemaVersion === 7 || schemaVersion === 8 || schemaVersion === 9 || schemaVersion === 10 || schemaVersion === 11 || schemaVersion === SCHEMA_VERSION;
 }
 
 function supportsPhysics(schemaVersion: unknown): boolean {
-  return schemaVersion === 10 || schemaVersion === SCHEMA_VERSION;
+  return schemaVersion === 10 || schemaVersion === 11 || schemaVersion === SCHEMA_VERSION;
 }
 
 function parsePhysics(schemaVersion: unknown, value: Record<string, unknown>): false | undefined | null {
@@ -645,6 +683,7 @@ function touch(
 
 function minWidth(node: BoardNode): number {
   if (node.kind === 'text') return TEXT_MIN_WIDTH;
+  if (node.kind === 'file') return FILE_MIN_WIDTH;
   if (node.kind === 'group') return GROUP_MIN_WIDTH;
   if (node.mode === 'aspect') return ASPECT_MIN_SIZE;
   return IMAGE_MIN_SIZE;
@@ -652,6 +691,7 @@ function minWidth(node: BoardNode): number {
 
 function minHeight(node: BoardNode): number {
   if (node.kind === 'text') return TEXT_MIN_HEIGHT;
+  if (node.kind === 'file') return FILE_MIN_HEIGHT;
   if (node.kind === 'group') return GROUP_MIN_HEIGHT;
   if (node.mode === 'aspect') return ASPECT_MIN_SIZE;
   return IMAGE_MIN_SIZE;
@@ -691,6 +731,8 @@ function parseNode(value: unknown): BoardNode | null {
     if (codeLanguage === null || backgroundTone === null || textTone === null) return null;
     const stamped = timestampFields(value.lastEditedAt);
     if (stamped === null) return null;
+    const sourceFilename = parseFilename(value.sourceFilename);
+    if (sourceFilename === null) return null;
     const protection = parseProtectedPayload(value.protection);
     if (protection === null) return null;
     if (protection && value.text !== '') return null;
@@ -709,6 +751,26 @@ function parseNode(value: unknown): BoardNode | null {
       ...(backgroundTone ? { backgroundTone } : {}),
       ...(textTone ? { textTone } : {}),
       ...(protection ? { protection } : {}),
+      ...(sourceFilename ? { sourceFilename } : {}),
+      ...stamped,
+    };
+  }
+  if (value.kind === 'file') {
+    if (typeof value.assetId !== 'string' || !isNonEmptyString(value.assetId) || value.assetId.length > 80) return null;
+    const filename = parseFilename(value.filename);
+    if (!filename) return null;
+    const stamped = timestampFields(value.lastEditedAt);
+    if (stamped === null) return null;
+    return {
+      id: value.id,
+      kind: 'file',
+      ...(parentId ? { parentId } : {}),
+      x: value.x,
+      y: value.y,
+      width: value.width,
+      height: value.height,
+      assetId: value.assetId,
+      filename,
       ...stamped,
     };
   }
@@ -748,6 +810,14 @@ function parseNode(value: unknown): BoardNode | null {
     };
   }
   return null;
+}
+
+function parseFilename(value: unknown): string | undefined | null {
+  if (value == null) return undefined;
+  if (typeof value !== 'string') return null;
+  const filename = sanitizeFilename(value);
+  if (!filename || filename !== value) return null;
+  return filename;
 }
 
 function timestampFields(value: unknown): { lastEditedAt: string } | null | Record<string, never> {

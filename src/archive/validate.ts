@@ -17,15 +17,15 @@ export type ArchivePayload = {
 };
 
 export function summarizeArchive(board: Board, assetBytes: number): ArchiveSummary {
+  let embedded = 0;
+  let files = 0;
   let external = 0;
   for (const node of board.nodes) {
+    if (node.kind === 'file') files += 1;
+    if (node.kind === 'image' && node.source.type === 'embedded') embedded += 1;
     if (node.kind === 'image' && node.source.type === 'external') external += 1;
   }
-  return {
-    embedded: referencedAssetIds(board).size,
-    external,
-    payloadBytes: assetBytes,
-  };
+  return { embedded, files, external, payloadBytes: assetBytes };
 }
 
 export function validateArchiveEntries(
@@ -54,7 +54,7 @@ export function validateArchiveEntries(
   }
   if (!isRecord(parsed)) return { error: 'The archive manifest is missing.' };
   if (parsed.format !== ARCHIVE_FORMAT) return { error: 'This file is not a canvas board archive.' };
-  if (parsed.archiveVersion !== ARCHIVE_VERSION) return { error: 'This archive version is not supported.' };
+  if (parsed.archiveVersion !== 1 && parsed.archiveVersion !== ARCHIVE_VERSION) return { error: 'This archive version is not supported.' };
   if (!Array.isArray(parsed.assets) || !Array.isArray(parsed.externalImages)) {
     return { error: 'The archive manifest is incomplete.' };
   }
@@ -64,22 +64,24 @@ export function validateArchiveEntries(
   const seenAssets = new Set<string>();
   for (const asset of parsed.assets) {
     if (!isRecord(asset) || typeof asset.id !== 'string' || typeof asset.path !== 'string') {
-      return { error: 'The archive lists an invalid image.' };
+      return { error: 'The archive lists an invalid file.' };
     }
-    if (seenAssets.has(asset.id)) return { error: 'The archive lists the same image twice.' };
+    if (seenAssets.has(asset.id)) return { error: 'The archive lists the same file twice.' };
     seenAssets.add(asset.id);
-    const mimeType = typeof asset.mimeType === 'string' ? canonicalRasterMime(asset.mimeType) : null;
-    if (!mimeType || assetExtension(mimeType) === null) return { error: 'The archive contains an unsupported image type.' };
+    const binary = asset.path.endsWith('.bin');
+    const mimeType = binary ? attachmentMimeType(asset.mimeType) : typeof asset.mimeType === 'string' ? canonicalRasterMime(asset.mimeType) : null;
+    if (!mimeType || (!binary && assetExtension(mimeType) === null)) return { error: binary ? 'The archive contains an invalid attachment.' : 'The archive contains an unsupported image type.' };
+    if (!assetPathAllowed(asset.path, binary)) return { error: 'The archive contains an unexpected file.' };
     if (typeof asset.sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(asset.sha256)) {
-      return { error: 'An archived image is missing its checksum.' };
+      return { error: binary ? 'An archived file is missing its checksum.' : 'An archived image is missing its checksum.' };
     }
     if (asset.byteSize !== undefined && (typeof asset.byteSize !== 'number' || asset.byteSize < 0)) {
-      return { error: 'An archived image has an invalid size.' };
+      return { error: binary ? 'An archived file has an invalid size.' : 'An archived image has an invalid size.' };
     }
     const bytes = files.get(asset.path);
-    if (!bytes) return { error: 'The archive is missing an embedded image.' };
+    if (!bytes) return { error: binary ? 'The archive is missing an attached file.' : 'The archive is missing an embedded image.' };
     if (typeof asset.byteSize === 'number' && bytes.byteLength !== asset.byteSize) {
-      return { error: 'An archived image does not match its recorded size.' };
+      return { error: binary ? 'An archived file does not match its recorded size.' : 'An archived image does not match its recorded size.' };
     }
     assets.push({
       id: asset.id,
@@ -91,10 +93,21 @@ export function validateArchiveEntries(
   }
   const required = referencedAssetIds(board);
   for (const id of required) {
-    if (!seenAssets.has(id)) return { error: 'The archive is missing an embedded image.' };
+    if (!seenAssets.has(id)) return { error: 'The archive is missing an embedded file.' };
   }
   for (const id of seenAssets) {
-    if (!required.has(id)) return { error: 'The archive contains an image the board does not use.' };
+    if (!required.has(id)) return { error: 'The archive contains a file the board does not use.' };
+  }
+  for (const node of board.nodes) {
+    if (node.kind === 'file') {
+      const asset = assets.find((entry) => entry.id === node.assetId);
+      if (!asset || !asset.path.endsWith('.bin')) return { error: 'An attached file does not match its archive entry.' };
+    }
+    if (node.kind === 'image' && node.source.type === 'embedded') {
+      const assetId = node.source.assetId;
+      const asset = assets.find((entry) => entry.id === assetId);
+      if (!asset || asset.path.endsWith('.bin')) return { error: 'An embedded image does not match its archive entry.' };
+    }
   }
   return {
     manifest: {
@@ -113,16 +126,16 @@ export function validateArchiveEntries(
 export async function hashesMatch(assets: ArchiveManifest['assets'], files: Map<string, Uint8Array>): Promise<string | null> {
   for (const asset of assets) {
     const bytes = files.get(asset.path);
-    if (!bytes) return 'The archive is missing an embedded image.';
+    if (!bytes) return asset.path.endsWith('.bin') ? 'The archive is missing an attached file.' : 'The archive is missing an embedded image.';
     const hash = await sha256(bytes);
-    if (hash !== asset.sha256) return 'An archived image does not match its checksum.';
+    if (hash !== asset.sha256) return asset.path.endsWith('.bin') ? 'An archived file does not match its checksum.' : 'An archived image does not match its checksum.';
   }
   return null;
 }
 
 export function entryProblem(name: string, size: number, seen: ReadonlySet<string>, total: number): string | null {
   if (seen.has(name)) return 'The archive contains duplicate files.';
-  if (name !== 'manifest.json' && !/^assets\/[A-Za-z0-9._-]+\.(png|jpg|webp|gif|avif)$/.test(name)) {
+  if (name !== 'manifest.json' && !/^assets\/[A-Za-z0-9._-]+\.(png|jpg|webp|gif|avif|bin)$/.test(name)) {
     return 'The archive contains an unexpected file.';
   }
   if (name.includes('..') || name.startsWith('/') || name.includes('\\')) return 'The archive contains an unsafe path.';
@@ -137,6 +150,16 @@ export async function sha256(bytes: Uint8Array): Promise<string> {
   copy.set(bytes);
   const digest = await crypto.subtle.digest('SHA-256', copy.buffer);
   return [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, '0')).join('');
+}
+
+function assetPathAllowed(path: string, binary: boolean): boolean {
+  return binary ? /^assets\/[A-Za-z0-9._-]+\.bin$/.test(path) : /^assets\/[A-Za-z0-9._-]+\.(png|jpg|webp|gif|avif)$/.test(path);
+}
+
+function attachmentMimeType(value: unknown): string | null {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 127) return null;
+  if (!/^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*\/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*$/.test(value)) return null;
+  return value;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

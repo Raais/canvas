@@ -26,9 +26,12 @@ import {
   type PngAnimation,
 } from './image-optimizer-config';
 import type { ImageOptimizer } from './image-optimizer';
+import { attachmentMime, classifyIncomingFile, decodeTextFile, rejectedFileMessage } from '../domain/files';
+import type { CodeLanguage, NotePresentation } from '../domain/types';
 
 export type PreparedItem =
-  | { type: 'text'; text: string }
+  | { type: 'text'; text: string; presentation?: NotePresentation; codeLanguage?: CodeLanguage; language?: string; sourceFilename?: string }
+  | { type: 'file'; blob: Blob; mimeType: string; filename: string }
   | {
       type: 'image';
       blob: Blob;
@@ -84,10 +87,43 @@ export async function ingestClipboard(snapshot: ClipboardSnapshot, kind: 'clipbo
 }
 
 export async function ingestFileList(list: FileList | readonly File[], options: IngestOptions = IDLE_OPTIONS): Promise<IngestBundle> {
-  const collected = await collectFiles(list, options);
-  const actions: IngestAction[] = collected.refs.map((image) => ({ type: 'file-image', fileKey: image.key }));
-  const prepared = await prepareActions(actions, collected.files, options);
-  return { items: prepared.items, warnings: [...collected.warnings, ...prepared.warnings], summary: prepared.summary };
+  const items: PreparedItem[] = [];
+  const warnings: string[] = [];
+  let summary: string | null = null;
+  for (const file of Array.from(list)) {
+    const decision = classifyIncomingFile(file);
+    if (decision.kind === 'reject') {
+      warnings.push(rejectedFileMessage(decision.filename, decision.reason));
+      continue;
+    }
+    if (decision.kind === 'image') {
+      const collected = await collectFiles([file], options);
+      const actions: IngestAction[] = collected.refs.map((image) => ({ type: 'file-image', fileKey: image.key }));
+      const prepared = await prepareActions(actions, collected.files, options);
+      items.push(...prepared.items);
+      warnings.push(...collected.warnings, ...prepared.warnings);
+      summary = prepared.summary ?? summary;
+      continue;
+    }
+    if (decision.kind === 'text') {
+      const decoded = decodeTextFile(new Uint8Array(await file.arrayBuffer()));
+      if (decoded === null) {
+        items.push({ type: 'file', blob: file, mimeType: attachmentMime(''), filename: decision.filename });
+        continue;
+      }
+      items.push({
+        type: 'text',
+        text: decoded,
+        presentation: decision.presentation,
+        ...(decision.codeLanguage ? { codeLanguage: decision.codeLanguage } : {}),
+        ...(decision.language ? { language: decision.language } : {}),
+        sourceFilename: decision.filename,
+      });
+      continue;
+    }
+    items.push({ type: 'file', blob: file, mimeType: decision.mimeType, filename: decision.filename });
+  }
+  return { items, warnings, summary };
 }
 
 export function placementOrigin(pointer: Point | null, fallback: Point): Point {

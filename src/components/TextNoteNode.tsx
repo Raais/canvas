@@ -21,6 +21,7 @@ export type TextNodeData = {
   protected: boolean;
   unlocked: boolean;
   readOnly: boolean;
+  sourceFilename?: string;
 };
 
 const BACKGROUNDS: Array<BackgroundTone | 'default'> = ['default', 'slate', 'sage', 'sand', 'rose'];
@@ -196,6 +197,7 @@ function TextNoteNodeComponent({ id, data, selected }: NodeProps<Node<TextNodeDa
         </Handle>
       ))}
       <div className="text-note-content">
+        {data.sourceFilename && !data.editing ? <p className="source-filename" title={data.sourceFilename}>{data.sourceFilename}</p> : null}
         {data.protected && !data.unlocked ? (
           <div className="protected-placeholder">
             <Lock size={16} strokeWidth={1.75} />

@@ -58,8 +58,8 @@ function xOf(board: Board, id: string): number {
 describe('project pulling force', () => {
   test('defaults on for new boards and legacy documents', () => {
     const created = createEmptyBoard(now);
-    expect(SCHEMA_VERSION).toBe(11);
-    expect(created.schemaVersion).toBe(11);
+    expect(SCHEMA_VERSION).toBe(12);
+    expect(created.schemaVersion).toBe(12);
     expect(created.physicsEnabled).toBe(undefined);
     expect(physicsIsEnabled(created)).toBe(true);
     const legacy = parseBoard({
@@ -73,11 +73,11 @@ describe('project pulling force', () => {
       nodes: [text('n', 0)],
       edges: [],
     });
-    expect(legacy?.schemaVersion).toBe(11);
+    expect(legacy?.schemaVersion).toBe(12);
     expect(physicsIsEnabled(legacy ?? created)).toBe(true);
-    for (const schemaVersion of [2, 3, 4, 5, 6, 7, 8, 9, 10]) {
+    for (const schemaVersion of [2, 3, 4, 5, 6, 7, 8, 9, 10, 11]) {
       const parsed = parseBoard({ ...created, schemaVersion });
-      expect(parsed?.schemaVersion).toBe(11);
+      expect(parsed?.schemaVersion).toBe(12);
       expect(parsed?.physicsEnabled).toBe(undefined);
       expect(physicsIsEnabled(parsed ?? created)).toBe(true);
     }
@@ -116,14 +116,14 @@ describe('project pulling force', () => {
     expect(atlas?.ditherAtlas).toEqual({ seed: 3, rendererVersion: 3 });
     expect(physicsIsEnabled(contours ?? board)).toBe(true);
     expect(physicsIsEnabled(atlas ?? board)).toBe(true);
-    expect(parseBoard({ schemaVersion: 12, id: 'x', nodes: [], edges: [] })).toBeNull();
+    expect(parseBoard({ schemaVersion: 13, id: 'x', nodes: [], edges: [] })).toBeNull();
   });
 
   test('keeps the preference through a zip and through undo', async () => {
     const off = setPhysicsEnabled(addNodes(createEmptyBoard(now), [text('a', 0), text('b', 80)], now), false, later);
     const archive = await readArchive(await buildArchive(off, [], now));
     expect('error' in archive ? '' : archive.board.physicsEnabled).toBe(false);
-    expect(ARCHIVE_VERSION).toBe(1);
+    expect(ARCHIVE_VERSION).toBe(2);
     expect(GRAPH_CLIPBOARD_VERSION).toBe(1);
     const undone = undoHistory(pushHistory(createHistory(), off), setPhysicsEnabled(off, true, later));
     expect(physicsIsEnabled(undone?.board ?? off)).toBe(true);

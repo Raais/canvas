@@ -91,10 +91,10 @@ export function pasteGraph(
 ): Board | { error: string } {
   const decoded = decodeGraphClipboard(encodeGraphClipboard(payload));
   if (!decoded || decoded.nodes.length === 0) return { error: 'The clipboard does not contain a canvas selection.' };
-  const missing = decoded.nodes.filter(
-    (node) => node.kind === 'image' && node.source.type === 'embedded' && !availableAssets.has(node.source.assetId),
-  );
-  if (missing.length > 0) return { error: 'That copy refers to an image that is not on this board.' };
+  const missingFile = decoded.nodes.some((node) => node.kind === 'file' && !availableAssets.has(node.assetId));
+  if (missingFile) return { error: 'That copy refers to a file that is not on this board.' };
+  const missingImage = decoded.nodes.some((node) => node.kind === 'image' && node.source.type === 'embedded' && !availableAssets.has(node.source.assetId));
+  if (missingImage) return { error: 'That copy refers to an image that is not on this board.' };
   const ids = new Set(decoded.nodes.map((node) => node.id));
   const idMap = new Map<string, string>();
   for (const id of ids) idMap.set(id, crypto.randomUUID());
