@@ -61,14 +61,17 @@ export function SuitcaseExplorer({
     });
   }
 
+  const summary = listing
+    ? `${listing.fileCount} ${listing.fileCount === 1 ? 'file' : 'files'}`
+    : 'Reading archive';
+
   return (
     <div className="password-layer">
-      <form
-        className="password-dialog suitcase-explorer"
+      <div
+        className="suitcase-explorer"
         role="dialog"
         aria-modal="true"
         aria-label={filename}
-        onSubmit={(event) => event.preventDefault()}
         onPointerDown={(event) => event.stopPropagation()}
         onKeyDown={(event) => {
           event.stopPropagation();
@@ -77,46 +80,58 @@ export function SuitcaseExplorer({
           onClose();
         }}
       >
-        <p className="menu-label"><Archive size={15} strokeWidth={1.75} /> {filename}</p>
-        <p className="voice-privacy">
-          {listing ? `${listing.fileCount} files` : 'Reading archive'}
-          {byteSize !== undefined ? ` · ${formatBytes(byteSize)} compressed` : ''}
-          {listing ? ` · ${formatBytes(listing.declaredBytes)} expanded` : ''}
-        </p>
-        {loading ? <p className="voice-privacy">Reading the file list…</p> : null}
+        <header className="suitcase-head">
+          <Archive size={16} strokeWidth={1.75} />
+          <div className="suitcase-head-copy">
+            <h2 title={filename}>{filename}</h2>
+            <p>
+              {summary}
+              {byteSize !== undefined ? ` · ${formatBytes(byteSize)} compressed` : ''}
+              {listing ? ` · ${formatBytes(listing.declaredBytes)} expanded` : ''}
+            </p>
+          </div>
+        </header>
+        {loading ? <p className="suitcase-note-line">Reading the file list…</p> : null}
         {error ? <p className="voice-error" role="alert">{error}</p> : null}
         {!error && files.length > 0 && 'error' in allPlan && allPlan.error !== 'Select a file to unpack.' ? <p className="voice-error">{allPlan.error}</p> : null}
         <div className="suitcase-tree" role="tree">
+          {tree && files.length === 0 && !loading ? <p className="suitcase-note-line">This archive is empty.</p> : null}
           {tree ? <FolderRows node={tree} open={open} selected={selected} onOpen={setOpen} onToggle={toggle} /> : null}
         </div>
-        {readOnly ? <p className="voice-privacy">This tab can browse and download the ZIP. Unpacking is off.</p> : null}
-        <label className="suitcase-group">
-          <input type="checkbox" checked={group} disabled={readOnly || busy} onChange={(event) => setGroup(event.target.checked)} />
-          Group extracted files
-        </label>
-        <p className="voice-privacy" role="status">{chosen.length} selected{('bytes' in plan) ? ` · ${formatBytes(plan.bytes)}` : ''}</p>
-        {pending ? (
-          <p className="voice-privacy" role="status">
-            Unpack {pending.paths.length} files ({formatBytes(pending.bytes)}) as {pending.paths.length} notes{pending.group ? ', grouped together' : ''}?
-          </p>
-        ) : null}
-        <div className="voice-dialog-actions">
-          {readOnly ? null : pending ? (
-            <>
-              <button type="button" disabled={busy} onClick={() => { const next = pending; setPending(null); onUnpack(next.paths, next.group); }}>Confirm unpack</button>
-              <button type="button" disabled={busy} onClick={() => setPending(null)}>Cancel</button>
-            </>
-          ) : (
-            <>
-              <button type="button" disabled={busy || !('paths' in allPlan)} onClick={() => { if ('paths' in allPlan) setSelected(new Set(allPlan.paths)); }}>Select all</button>
-              <button type="button" disabled={busy || !('paths' in plan)} onClick={() => { if ('paths' in plan) requestUnpack(plan.paths, plan.bytes, group && plan.paths.length > 1); }}>Unpack selected</button>
-              <button type="button" disabled={busy || !('paths' in allPlan)} onClick={() => { if ('paths' in allPlan) requestUnpack(allPlan.paths, allPlan.bytes, group && allPlan.paths.length > 1); }}>Unpack all</button>
-            </>
+        <footer className="suitcase-foot">
+          <label className="suitcase-group">
+            <input type="checkbox" checked={group} disabled={readOnly || busy} onChange={(event) => setGroup(event.target.checked)} />
+            Group extracted files
+          </label>
+          {readOnly ? <p className="suitcase-note-line">This tab can browse and download the ZIP. Unpacking is off.</p> : null}
+          <p className="suitcase-note-line" role="status">{chosen.length} selected{('bytes' in plan) ? ` · ${formatBytes(plan.bytes)}` : ''}</p>
+          {pending ? (
+            <p className="suitcase-note-line" role="status">
+              Unpack {pending.paths.length} files ({formatBytes(pending.bytes)}) as {pending.paths.length} notes{pending.group ? ', grouped together' : ''}?
+            </p>
+          ) : null}
+          {readOnly ? null : (
+            <div className="suitcase-actions">
+              {pending ? (
+                <>
+                  <button type="button" disabled={busy} onClick={() => setPending(null)}>Cancel</button>
+                  <button type="button" className="is-primary" disabled={busy} onClick={() => { const next = pending; setPending(null); onUnpack(next.paths, next.group); }}>Confirm unpack</button>
+                </>
+              ) : (
+                <>
+                  <button type="button" disabled={busy || !('paths' in allPlan)} onClick={() => { if ('paths' in allPlan) setSelected(new Set(allPlan.paths)); }}>Select all</button>
+                  <button type="button" disabled={busy || !('paths' in allPlan)} onClick={() => { if ('paths' in allPlan) requestUnpack(allPlan.paths, allPlan.bytes, group && allPlan.paths.length > 1); }}>Unpack all</button>
+                  <button type="button" className="is-primary" disabled={busy || !('paths' in plan)} onClick={() => { if ('paths' in plan) requestUnpack(plan.paths, plan.bytes, group && plan.paths.length > 1); }}>Unpack selected</button>
+                </>
+              )}
+            </div>
           )}
-          <button type="button" onClick={onDownload}>Download original</button>
-          <button type="button" onClick={onClose}>Close</button>
-        </div>
-      </form>
+          <div className="suitcase-actions">
+            <button type="button" onClick={onDownload}>Download</button>
+            <button type="button" onClick={onClose}>Close</button>
+          </div>
+        </footer>
+      </div>
     </div>
   );
 }
@@ -172,7 +187,7 @@ function FolderRows({
             onChange={() => onToggle(file.path)}
           />
           <File size={14} strokeWidth={1.75} />
-          <span title={file.path}>{file.path.split('/').pop()}</span>
+          <span className="suitcase-label" title={file.path}>{file.path.split('/').pop()}</span>
           <span className="suitcase-size">{file.extractable ? formatBytes(file.uncompressedSize) : file.reason === 'method' ? 'Unsupported' : 'Unavailable'}</span>
         </label>
       ))}
