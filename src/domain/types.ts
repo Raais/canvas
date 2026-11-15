@@ -19,6 +19,7 @@ export const WEBSITE_URL_LIMIT = 2048;
 export const WEBSITE_TITLE_LIMIT = 120;
 export const TEXT_MIN_WIDTH = 160;
 export const TEXT_MIN_HEIGHT = 72;
+export const TEXT_RESIZE_MIN_HEIGHT = 96;
 export const IMAGE_MIN_SIZE = 48;
 export const IMAGE_MAX_WIDTH = 360;
 export const IMAGE_MAX_HEIGHT = 280;

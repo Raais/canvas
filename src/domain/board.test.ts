@@ -1,11 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import {
   addNodes,
+  collapsedSize,
   commitInteraction,
   createEmbeddedImageNode,
   createEmptyBoard,
   createExternalImageNode,
+  createFileNode,
   createTextNode,
+  createWebsiteNode,
   deleteNodes,
   fitDisplaySize,
   noteImageIntrinsic,
@@ -153,6 +156,25 @@ describe('board model', () => {
     const both = deleteNodes(one.board, [second.id, external.id], now);
     expect(both.removedAssetIds).toEqual(['shared']);
     expect(both.board.edges).toEqual([]);
+  });
+
+  test('collapses one node to the resize minimum', () => {
+    const note = createTextNode({ x: 0, y: 0 }, 'hello', now);
+    const file = createFileNode({ center: { x: 400, y: 0 }, assetId: 'asset', filename: 'a.pdf', now });
+    const site = createWebsiteNode({ center: { x: 700, y: 0 }, url: 'https://example.com/', title: 'Example', now });
+    const image = createEmbeddedImageNode({ center: { x: 200, y: 200 }, assetId: 'pic', intrinsicWidth: 320, intrinsicHeight: 200, now });
+    const board = addNodes(createEmptyBoard(now), [note, file, site, image], now);
+    expect(collapsedSize(board.nodes, note)).toEqual({ width: 160, height: 96 });
+    expect(collapsedSize(board.nodes, file)).toEqual({ width: 180, height: 88 });
+    expect(collapsedSize(board.nodes, site)).toEqual({ width: 185, height: 100 });
+    const stretched = { ...image, mode: 'stretch' as const };
+    expect(collapsedSize(board.nodes, stretched)).toEqual({ width: 48, height: 48 });
+    const shrunk = placeNode(board, note.id, collapsedSize(board.nodes, note));
+    const next = shrunk.nodes.find((node) => node.id === note.id);
+    expect(next?.width).toBe(160);
+    expect(next?.height).toBe(96);
+    expect(next?.kind === 'text' ? next.lastEditedAt : '').toBe(note.lastEditedAt);
+    expect(placeNode(shrunk, note.id, collapsedSize(shrunk.nodes, next ?? note))).toBe(shrunk);
   });
 
   test('commits an interaction as a new revision', () => {

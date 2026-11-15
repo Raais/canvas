@@ -26,6 +26,10 @@ export function zoomSelectionKey(key: string, selectedCount: number): boolean {
   return key.toLowerCase() === 'g' && selectedCount === 1;
 }
 
+export function collapseSelectionKey(key: string, selectedCount: number): boolean {
+  return key.toLowerCase() === 'u' && selectedCount === 1;
+}
+
 export function canLinkSelection(count: number, alreadyLinked: boolean): boolean {
   return count === 2 && !alreadyLinked;
 }

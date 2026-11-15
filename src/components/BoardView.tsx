@@ -25,6 +25,7 @@ import {
   createWebsiteNode,
   updateWebsite,
   noteImageIntrinsic,
+  collapsedSize,
   placeNode,
   referencedAssetIds,
   renameBoard,
@@ -52,7 +53,7 @@ import { facingHandles, isContentNode, normalizeRect, worldTopLeft } from '../do
 import { toggleTaskAt } from '../domain/markdown';
 import { gesturePhase, sameSelection } from '../editor/interaction';
 import { dragBodyUpdates, FLOW_MULTI_SELECTION_KEYS, FLOW_SELECTION_KEY, nextShiftHeld, relaxDrag, shouldRelaxDrag, syncDragLedger } from '../editor/pulling';
-import { plainShortcutBlocked, searchShortcut, zoomSelectionKey } from '../editor/shortcuts';
+import { collapseSelectionKey, plainShortcutBlocked, searchShortcut, zoomSelectionKey } from '../editor/shortcuts';
 import { connectNodes, deleteEdges, hasUndirectedLink } from '../domain/graph';
 import { cameraDuration, frameViewport, noteJumpZoom } from '../domain/camera';
 import { setEdgeLabel, setEdgeStyle } from '../domain/relationships';
@@ -905,6 +906,14 @@ function BoardSurface({ session }: { session: SessionProps }) {
         if (commands.current.edit()) event.preventDefault();
         return;
       }
+      if (!plainBlocked && collapseSelectionKey(event.key, selectedRef.current.length)) {
+        const id = selectedRef.current[0];
+        if (id) {
+          event.preventDefault();
+          collapseSelected(id);
+        }
+        return;
+      }
       if (zoomSelectionKey(event.key, selectedRef.current.length) && !plainShortcutBlocked({
         defaultPrevented: event.defaultPrevented,
         composing: event.isComposing,
@@ -1363,6 +1372,16 @@ function BoardSurface({ session }: { session: SessionProps }) {
     setSearchOpen(false);
     const active = document.activeElement;
     if (active instanceof HTMLElement && active.closest('.search-palette')) active.blur();
+  }
+
+  function collapseSelected(id: string) {
+    if (blockedRef.current) return;
+    const before = boardRef.current;
+    const node = before.nodes.find((entry) => entry.id === id);
+    if (!node) return;
+    const next = placeNode(before, id, collapsedSize(before.nodes, node));
+    if (next === before) return;
+    publish(commitInteraction(next), before, 'save');
   }
 
   function frameNode(id: string) {

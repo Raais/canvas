@@ -8,7 +8,7 @@ import { highlightCode, resolveHighlightLanguage } from '../domain/highlight';
 import { toggleHighlight } from '../domain/markdown';
 import { MarkdownView } from './MarkdownView';
 import { NodeDateLabel } from './NodeDateLabel';
-import type { BackgroundTone, CodeLanguage, TextTone } from '../domain/types';
+import { TEXT_MIN_WIDTH, TEXT_RESIZE_MIN_HEIGHT, type BackgroundTone, type CodeLanguage, type TextTone } from '../domain/types';
 
 export type TextNodeData = {
   text: string;
@@ -210,7 +210,7 @@ function TextNoteNodeComponent({ id, data, selected }: NodeProps<Node<TextNodeDa
 
   return (
     <article className={`text-note ${tone}${selected ? ' is-selected' : ''}`} onDoubleClick={() => actions.beginEditing(id)}>
-      <NodeResizer isVisible={selected} minWidth={160} minHeight={96} />
+      <NodeResizer isVisible={selected} minWidth={TEXT_MIN_WIDTH} minHeight={TEXT_RESIZE_MIN_HEIGHT} />
       {showChrome ? <NoteChrome id={id} data={data} editorRef={editorRef} /> : null}
       {HANDLE_SIDES.map((side) => (
         <Handle key={side} id={side} type="source" position={side as Position} className="port nodrag nopan">

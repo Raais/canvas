@@ -28,6 +28,7 @@ import {
   IMAGE_MIN_SIZE,
   TEXT_MIN_HEIGHT,
   TEXT_MIN_WIDTH,
+  TEXT_RESIZE_MIN_HEIGHT,
   TEXT_NOTE_HEIGHT,
   TEXT_NOTE_WIDTH,
   MAX_EDGE_LABEL,
@@ -268,6 +269,27 @@ export function setViewport(board: Board, viewport: Viewport, now?: string): Boa
     return board;
   }
   return touch(board, { viewport: { ...viewport } }, now);
+}
+
+export function collapsedSize(nodes: readonly BoardNode[], node: BoardNode): { width: number; height: number } {
+  if (node.kind === 'text') return { width: TEXT_MIN_WIDTH, height: TEXT_RESIZE_MIN_HEIGHT };
+  if (node.kind === 'file') return { width: FILE_MIN_WIDTH, height: FILE_MIN_HEIGHT };
+  if (node.kind === 'website') return { width: WEBSITE_MIN_WIDTH, height: WEBSITE_MIN_HEIGHT };
+  if (node.kind === 'group') {
+    const extent = contentExtent(nodes, node.id);
+    return {
+      width: Math.max(GROUP_MIN_WIDTH, extent ? extent.right + GROUP_PAD : 0),
+      height: Math.max(GROUP_MIN_HEIGHT, extent ? extent.bottom + GROUP_PAD : 0),
+    };
+  }
+  if (node.mode === 'aspect' && node.width > 0 && node.height > 0) {
+    const scale = Math.max(ASPECT_MIN_SIZE / node.width, ASPECT_MIN_SIZE / node.height);
+    return {
+      width: Math.max(ASPECT_MIN_SIZE, Math.round(node.width * scale)),
+      height: Math.max(ASPECT_MIN_SIZE, Math.round(node.height * scale)),
+    };
+  }
+  return { width: IMAGE_MIN_SIZE, height: IMAGE_MIN_SIZE };
 }
 
 export function placeNode(
