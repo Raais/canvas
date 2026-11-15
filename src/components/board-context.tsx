@@ -30,6 +30,7 @@ export type BoardActions = {
   commitEdgeLabel: (id: string, label: string) => void;
   setRelationshipStyle: (id: string, style: EdgeStyle) => void;
   downloadFile: (id: string) => void;
+  editWebsite: (id: string) => void;
   deleteRelationship: (id: string) => void;
   claimEdgeEditor: (id: string) => number;
   ownsEdgeEditor: (id: string, token: number) => boolean;

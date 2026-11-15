@@ -97,6 +97,19 @@ function dateHits(nodes: readonly BoardNode[], start: number, end: number, now: 
       });
       continue;
     }
+    if (node.kind === 'website') {
+      hits.push({
+        id: node.id,
+        kind: 'website',
+        title: node.title,
+        snippet: formatted.label,
+        parentLabel,
+        score: time,
+        section: 'date',
+        time,
+      });
+      continue;
+    }
     if (node.kind === 'image') {
       hits.push({
         id: node.id,

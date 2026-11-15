@@ -1,3 +1,5 @@
+import { standaloneHtmlBookmark, websiteFromStandalone } from '../domain/websites';
+
 const MAX_DATA_URL_BYTES = 25 * 1024 * 1024;
 
 const RASTER_MIME = new Map<string, string>([
@@ -16,6 +18,7 @@ const SRC_ATTR = /\bsrc\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/i;
 
 export type IngestAction =
   | { type: 'text'; text: string }
+  | { type: 'website'; url: string; title: string }
   | { type: 'file-image'; fileKey: string }
   | { type: 'bytes-image'; mimeType: string; bytes: Uint8Array }
   | { type: 'external-image'; url: string };
@@ -139,12 +142,16 @@ export function interpretClipboard(input: {
       const text = preferredText(input.plainText, visible);
       return text ? { actions: [{ type: 'text', text }], warnings: [] } : { actions: [], warnings: [] };
     }
+    const bookmark = standaloneHtmlBookmark(html);
+    if (bookmark) return { actions: [{ type: 'website', url: bookmark.url, title: bookmark.title }], warnings: [] };
   }
 
   const plain = input.plainText ?? '';
   const trimmed = plain.trim();
   if (!trimmed) return { actions: [], warnings: [] };
   if (isDirectImageUrl(trimmed)) return { actions: [{ type: 'external-image', url: trimmed }], warnings: [] };
+  const website = websiteFromStandalone(trimmed);
+  if (website) return { actions: [{ type: 'website', url: website.url, title: website.title }], warnings: [] };
   return { actions: [{ type: 'text', text: plain }], warnings: [] };
 }
 

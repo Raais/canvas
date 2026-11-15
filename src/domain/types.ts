@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 12 as const;
+export const SCHEMA_VERSION = 13 as const;
 export const MAX_SAVED_VIEWS = 32;
 export const MAX_SAVED_VIEW_NAME = 60;
 export const MAX_EDGE_LABEL = 80;
@@ -11,6 +11,12 @@ export const FILE_NOTE_WIDTH = 240;
 export const FILE_NOTE_HEIGHT = 116;
 export const FILE_MIN_WIDTH = 180;
 export const FILE_MIN_HEIGHT = 88;
+export const WEBSITE_NOTE_WIDTH = 260;
+export const WEBSITE_NOTE_HEIGHT = 140;
+export const WEBSITE_MIN_WIDTH = 185;
+export const WEBSITE_MIN_HEIGHT = 100;
+export const WEBSITE_URL_LIMIT = 2048;
+export const WEBSITE_TITLE_LIMIT = 120;
 export const TEXT_MIN_WIDTH = 160;
 export const TEXT_MIN_HEIGHT = 72;
 export const IMAGE_MIN_SIZE = 48;
@@ -134,6 +140,20 @@ export type FileNode = {
   lastEditedAt?: string;
 };
 
+export type WebsiteNode = {
+  id: string;
+  kind: 'website';
+  parentId?: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  url: string;
+  title: string;
+  /** ISO timestamp of the last URL or title change, or of insertion. */
+  lastEditedAt: string;
+};
+
 export type GroupNode = {
   id: string;
   kind: 'group';
@@ -145,7 +165,7 @@ export type GroupNode = {
   backgroundTone?: BackgroundTone;
 };
 
-export type ContentNode = TextNode | ImageNode | FileNode;
+export type ContentNode = TextNode | ImageNode | FileNode | WebsiteNode;
 
 export type BoardNode = ContentNode | GroupNode;
 

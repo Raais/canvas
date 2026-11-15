@@ -57,13 +57,13 @@ describe('clipboard precedence', () => {
     expect(result.actions).toEqual([{ type: 'text', text: 'Plan the scene' }]);
   });
 
-  test('treats a bare image url as an image and other urls as text', () => {
+  test('treats a bare image url as an image and a standalone website url as a bookmark', () => {
     expect(
       interpretClipboard({ imageKeys: [], html: null, plainText: 'https://example.com/a.png?x=1' }).actions,
     ).toEqual([{ type: 'external-image', url: 'https://example.com/a.png?x=1' }]);
     expect(
       interpretClipboard({ imageKeys: [], html: null, plainText: 'https://example.com/notes' }).actions,
-    ).toEqual([{ type: 'text', text: 'https://example.com/notes' }]);
+    ).toEqual([{ type: 'website', url: 'https://example.com/notes', title: 'example.com' }]);
   });
 
   test('rejects unsafe and unsupported image sources', () => {

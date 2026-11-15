@@ -87,7 +87,7 @@ describe('image content rotation', () => {
     expect(imageContentTransform({ width: 320, height: 200, degrees: 0, flipX: true, flipY: true })).toBe('scale(-1, -1)');
     const turned = imageContentTransform({ width: 320, height: 200, degrees: 90, flipX: true, flipY: false });
     expect(turned.startsWith('rotate(90deg) scale(-')).toBe(true);
-    expect(SCHEMA_VERSION).toBe(12);
+    expect(SCHEMA_VERSION).toBe(13);
     expect(ARCHIVE_VERSION).toBe(2);
     expect(GRAPH_CLIPBOARD_VERSION).toBe(1);
   });
@@ -125,7 +125,7 @@ describe('image content rotation', () => {
     expect(styled?.kind === 'image' && styled.rotation).toBe(27);
 
     const legacy = parseBoard({ ...createEmptyBoard(now), schemaVersion: 7 });
-    expect(legacy?.schemaVersion).toBe(12);
+    expect(legacy?.schemaVersion).toBe(13);
     expect(legacy?.ditherAtlas?.rendererVersion).toBe(3);
     const contours = parseBoard({
       ...createEmptyBoard(now),
@@ -141,7 +141,7 @@ describe('image content rotation', () => {
       savedViews: [{ id: 'view', name: 'Here', viewport: { x: 1, y: 2, zoom: 1 } }],
     });
     const keptImage = kept?.nodes.find((entry) => entry.kind === 'image');
-    expect(kept?.schemaVersion).toBe(12);
+    expect(kept?.schemaVersion).toBe(13);
     expect(keptImage?.kind === 'image' ? keptImage.rotation : 1).toBe(undefined);
     expect(keptImage?.kind === 'image' && keptImage.flipX).toBe(true);
     expect(keptImage?.kind === 'image' && keptImage.cornerStyle).toBe('square');
@@ -182,7 +182,7 @@ describe('image content rotation', () => {
     const archive = await readArchive(await buildArchive(zipBoard, [], now));
     expect('error' in archive).toBe(false);
     if (!('error' in archive)) {
-      expect(archive.board.schemaVersion).toBe(12);
+      expect(archive.board.schemaVersion).toBe(13);
       expect(rotationOf(archive.board, 'outside')).toBe(33);
       expect(rotationOf(archive.board, 'web')).toBe(-12);
     }
@@ -190,7 +190,7 @@ describe('image content rotation', () => {
     const legacyArchive = await readArchive(await buildArchive(legacyBoard, [], now));
     expect('error' in legacyArchive).toBe(false);
     if (!('error' in legacyArchive)) {
-      expect(legacyArchive.board.schemaVersion).toBe(12);
+      expect(legacyArchive.board.schemaVersion).toBe(13);
       expect(rotationOf(legacyArchive.board, 'old')).toBe(undefined);
     }
     const invalid = parseBoard({ ...rotatedExternal, nodes: rotatedExternal.nodes.map((node) => node.kind === 'image' && node.id === 'inside' ? { ...node, rotation: 'sideways' } : node) });

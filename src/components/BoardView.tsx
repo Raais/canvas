@@ -22,6 +22,8 @@ import {
   createFileNode,
   createExternalImageNode,
   createTextNode,
+  createWebsiteNode,
+  updateWebsite,
   noteImageIntrinsic,
   placeNode,
   referencedAssetIds,
@@ -87,6 +89,7 @@ import { ingestClipboard, ingestFileList, type IngestBundle, type PreparedItem }
 import { createImageOptimizer, type ImageOptimizer } from '../ingest/image-optimizer';
 import { createBatchGuard, mayPlaceImages, mayReplaceBoard, readOptimizeImages, writeOptimizeImages } from '../ingest/image-optimizer-config';
 import { captureClipboardData } from '../ingest/clipboard';
+import { classifyLinkDrop, websiteEditsAllowed } from '../domain/websites';
 import { archiveFilename } from '../archive/format';
 import { buildArchive, readArchive } from '../archive/zip';
 import { downloadBytes } from '../project/download';
@@ -123,6 +126,8 @@ const DitherAtlasLayer = lazy(() => import('../backgrounds/DitherAtlasLayer'));
 const TopographicContoursLayer = lazy(() => import('../backgrounds/TopographicContoursLayer'));
 import { Toolbar } from './Toolbar';
 import { FileNode } from './FileNode';
+import { WebsiteDialog } from './WebsiteDialog';
+import { WebsiteNode } from './WebsiteNode';
 import { createEdgeProjection, createNodeProjection, type CanvasFlowNode } from './flow-projection';
 import { downloadBlob } from '../project/download';
 
@@ -132,6 +137,7 @@ const nodeTypes = {
   text: TextNoteNode,
   image: ImageNoteNode,
   file: FileNode,
+  website: WebsiteNode,
   group: GroupNode,
 };
 
@@ -180,6 +186,8 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const [readOnly, setReadOnly] = useState(false);
   const [unlockEpoch, setUnlockEpoch] = useState(0);
   const [passwordPrompt, setPasswordPrompt] = useState<{ mode: 'protect' | 'unlock'; id: string } | null>(null);
+  const [websiteDialog, setWebsiteDialog] = useState<{ mode: 'create' | 'edit'; id: string | null; url: string; title: string } | null>(null);
+  const websiteReturn = useRef<HTMLElement | null>(null);
   const [passwordError, setPasswordError] = useState('');
   const [passwordBusy, setPasswordBusy] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -530,6 +538,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
       if (item.type === 'image') return [{ key: String(index), name: 'image', bytes: item.blob.size }];
       if (item.type === 'file') return [{ key: String(index), name: item.filename, bytes: item.blob.size }];
       if (item.type === 'text') return [{ key: String(index), name: item.sourceFilename ?? 'note', bytes: new TextEncoder().encode(item.text).length }];
+      if (item.type === 'website') return [];
       return [];
     });
     const decision = partitionIncoming({
@@ -540,12 +549,16 @@ function BoardSurface({ session }: { session: SessionProps }) {
     });
     if (decision.warnings.length > 0) showWarnings(decision.warnings);
     const allowed = new Set(decision.accepted);
-    const acceptedItems = items.filter((item, index) => item.type === 'external-image' || allowed.has(String(index)));
+    const acceptedItems = items.filter((item, index) => item.type === 'external-image' || item.type === 'website' || allowed.has(String(index)));
     if (acceptedItems.length === 0) return;
     const positions = staggeredPositions(origin, acceptedItems.length);
     const nodes: BoardNode[] = [];
     acceptedItems.forEach((item, index) => {
       const center = positions[index] ?? origin;
+      if (item.type === 'website') {
+        nodes.push(createWebsiteNode({ center, url: item.url, title: item.title }));
+        return;
+      }
       if (item.type === 'text') {
         nodes.push(createTextNode(center, item.text, new Date().toISOString(), {
           ...(item.presentation ? { presentation: item.presentation } : {}),
@@ -1256,6 +1269,14 @@ function BoardSurface({ session }: { session: SessionProps }) {
         if (!next || next === before) return;
         publish(next, before, 'save');
       },
+      editWebsite(id) {
+        if (!websiteEditsAllowed(blockedRef.current)) return;
+        const node = boardRef.current.nodes.find((entry) => entry.id === id);
+        if (!node || node.kind !== 'website') return;
+        const active = document.activeElement;
+        websiteReturn.current = active instanceof HTMLElement ? active : null;
+        setWebsiteDialog({ mode: 'edit', id, url: node.url, title: node.title });
+      },
       downloadFile(id) {
         const node = boardRef.current.nodes.find((entry) => entry.id === id);
         if (!node || node.kind !== 'file') return;
@@ -1304,6 +1325,17 @@ function BoardSurface({ session }: { session: SessionProps }) {
   useEffect(() => {
     if (chromeHidden) setViewsOpen(false);
   }, [chromeHidden]);
+
+  useEffect(() => {
+    if (!websiteDialog) return;
+    if (!websiteEditsAllowed(readOnly)) {
+      setWebsiteDialog(null);
+      return;
+    }
+    if (websiteDialog.mode === 'create') return;
+    const node = board.nodes.find((entry) => entry.id === websiteDialog.id);
+    if (!node || node.kind !== 'website') setWebsiteDialog(null);
+  }, [board.nodes, websiteDialog, readOnly]);
 
   const clock = useMinuteClock();
   const [searchModule, setSearchModule] = useState<typeof import('../search/query') | null>(null);
@@ -1847,13 +1879,14 @@ function BoardSurface({ session }: { session: SessionProps }) {
         ref={boardEl}
         className={`${tool === 'frame' ? 'board is-framing' : 'board'}${atlasActive ? ' has-dither-atlas' : ''}${contoursActive ? ' has-topographic-contours' : ''}`}
         onDragEnter={(event) => {
+          if (hasExternalLink(event.dataTransfer)) event.preventDefault();
           if (!hasFiles(event.dataTransfer)) return;
           event.preventDefault();
           dragDepth.current += 1;
           setFileDrag(true);
         }}
         onDragOver={(event) => {
-          if (!hasFiles(event.dataTransfer)) return;
+          if (!hasFiles(event.dataTransfer) && !hasExternalLink(event.dataTransfer)) return;
           event.preventDefault();
           event.dataTransfer.dropEffect = 'copy';
         }}
@@ -1862,13 +1895,27 @@ function BoardSurface({ session }: { session: SessionProps }) {
           if (dragDepth.current === 0) setFileDrag(false);
         }}
         onDrop={(event) => {
-          if (!hasFiles(event.dataTransfer)) return;
+          const files = hasFiles(event.dataTransfer);
+          const link = files ? null : classifyLinkDrop({
+            uriList: event.dataTransfer.getData('text/uri-list'),
+            plain: event.dataTransfer.getData('text/plain'),
+            html: event.dataTransfer.getData('text/html'),
+          });
+          if (!files && !link) return;
           event.preventDefault();
           dragDepth.current = 0;
           setFileDrag(false);
           if (blockedRef.current) return;
           const origin = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-          void runIngest(origin, () => ingestFileList(event.dataTransfer.files, ingestOptions()));
+          if (files) {
+            void runIngest(origin, () => ingestFileList(event.dataTransfer.files, ingestOptions()));
+            return;
+          }
+          if (!link || !websiteEditsAllowed(blockedRef.current)) return;
+          const before = boardRef.current;
+          const node = createWebsiteNode({ center: origin, url: link.url, title: link.title });
+          publish(addNodes(before, [node]), before, 'save');
+          replaceSelection([node.id]);
         }}
       >
         {atlasActive && board.ditherAtlas ? (
@@ -1926,6 +1973,12 @@ function BoardSurface({ session }: { session: SessionProps }) {
             if (blockedRef.current) return;
             const origin = pointerRef.current ?? viewportCenter();
             void runIngest(origin, () => ingestFileList(files, ingestOptions()));
+          }}
+          onAddWebsite={() => {
+            if (!websiteEditsAllowed(blockedRef.current)) return;
+            const active = document.activeElement;
+            websiteReturn.current = active instanceof HTMLElement ? active : null;
+            setWebsiteDialog({ mode: 'create', id: null, url: '', title: '' });
           }}
           onUndo={() => commands.current.undo()}
           onRedo={() => commands.current.redo()}
@@ -2254,6 +2307,38 @@ function BoardSurface({ session }: { session: SessionProps }) {
         )}
         {chromeHidden ? null : <Coordinates ref={coordinatesRef} selection={selectionLabel} />}
         <PwaUpdateNotice prepareUpdate={preparePwaUpdate} />
+        {websiteDialog ? (
+          <WebsiteDialog
+            key={`${websiteDialog.mode}:${websiteDialog.id ?? 'new'}`}
+            mode={websiteDialog.mode}
+            initialUrl={websiteDialog.url}
+            initialTitle={websiteDialog.title}
+            readOnly={!websiteEditsAllowed(readOnly)}
+            onCancel={() => {
+              setWebsiteDialog(null);
+              websiteReturn.current?.focus();
+            }}
+            onSubmit={(url, title) => {
+              if (!websiteEditsAllowed(blockedRef.current)) return;
+              const before = boardRef.current;
+              if (websiteDialog.mode === 'create') {
+                const node = createWebsiteNode({ center: viewportCenter(), url, title });
+                publish(addNodes(before, [node]), before, 'save');
+                replaceSelection([node.id]);
+              } else if (websiteDialog.id) {
+                const current = before.nodes.find((entry) => entry.id === websiteDialog.id);
+                if (!current || current.kind !== 'website') {
+                  setWebsiteDialog(null);
+                  return;
+                }
+                const next = updateWebsite(before, websiteDialog.id, { url, title });
+                if (next !== before) publish(next, before, 'save');
+              }
+              setWebsiteDialog(null);
+              websiteReturn.current?.focus();
+            }}
+          />
+        ) : null}
         {passwordPrompt ? (
           <PasswordDialog
             mode={passwordPrompt.mode}
@@ -2311,6 +2396,12 @@ function missingAssetMessage(board: Board, missing: readonly string[]): string {
 
 function hasFiles(data: DataTransfer | null): boolean {
   return Boolean(data && Array.from(data.types).includes('Files'));
+}
+
+function hasExternalLink(data: DataTransfer | null): boolean {
+  if (!data || hasFiles(data)) return false;
+  const types = Array.from(data.types);
+  return types.includes('text/uri-list') || types.includes('text/plain') || types.includes('text/html');
 }
 
 function browserStorage(): Storage | null {

@@ -31,6 +31,7 @@ import type { CodeLanguage, NotePresentation } from '../domain/types';
 
 export type PreparedItem =
   | { type: 'text'; text: string; presentation?: NotePresentation; codeLanguage?: CodeLanguage; language?: string; sourceFilename?: string }
+  | { type: 'website'; url: string; title: string }
   | { type: 'file'; blob: Blob; mimeType: string; filename: string }
   | {
       type: 'image';
@@ -199,7 +200,7 @@ async function prepareActions(actions: readonly IngestAction[], files: Map<strin
   const stats = { optimized: 0, unchanged: 0, failedKept: 0, savedBytes: 0 };
   let announced = false;
   for (const action of actions) {
-    if (action.type === 'text') {
+    if (action.type === 'text' || action.type === 'website') {
       items.push(action);
       continue;
     }

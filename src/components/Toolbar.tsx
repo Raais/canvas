@@ -3,6 +3,7 @@ import {
   Bookmark,
   Frame,
   FilePlus2,
+  Globe,
   Image as ImageIcon,
   Moon,
   MousePointer2,
@@ -41,6 +42,7 @@ type ToolbarProps = {
   onNewNote: () => void;
   onAddImages: (files: FileList) => void;
   onAddFiles: (files: FileList) => void;
+  onAddWebsite: () => void;
   readOnly?: boolean;
   onViewport: (viewport: { x: number; y: number; zoom: number }) => void;
   onTool: (tool: 'select' | 'frame') => void;
@@ -68,6 +70,7 @@ export function Toolbar({
   onNewNote,
   onAddImages,
   onAddFiles,
+  onAddWebsite,
   readOnly = false,
   onViewport,
   onTool,
@@ -143,6 +146,9 @@ export function Toolbar({
               event.target.value = '';
             }}
           />
+          <button type="button" className="icon-button" aria-label="Add website" title="Add website" disabled={readOnly} onClick={onAddWebsite}>
+            <Globe size={17} strokeWidth={1.75} />
+          </button>
           <button type="button" className="icon-button" aria-pressed={tool === 'frame'} aria-label="Frame" title="Frame" onClick={() => onTool(tool === 'frame' ? 'select' : 'frame')}>
             <Frame size={17} strokeWidth={1.75} />
           </button>

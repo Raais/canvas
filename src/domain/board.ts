@@ -5,12 +5,18 @@ import { isProtectedTextNode, parseProtectedPayload } from './text-protection';
 import { contentExtent } from './geometry';
 import { classifyPlainText } from './code';
 import { sanitizeFilename } from './files';
+import { canonicalWebsiteUrl } from './websites';
 import {
   ASPECT_MIN_SIZE,
   FILE_MIN_HEIGHT,
   FILE_MIN_WIDTH,
   FILE_NOTE_HEIGHT,
   FILE_NOTE_WIDTH,
+  WEBSITE_MIN_HEIGHT,
+  WEBSITE_MIN_WIDTH,
+  WEBSITE_NOTE_HEIGHT,
+  WEBSITE_NOTE_WIDTH,
+  WEBSITE_TITLE_LIMIT,
   FALLBACK_IMAGE_HEIGHT,
   FALLBACK_IMAGE_WIDTH,
   GROUP_MIN_HEIGHT,
@@ -47,6 +53,7 @@ import {
   type BackgroundTone,
   type CodeLanguage,
   type FileNode,
+  type WebsiteNode,
   type CornerStyle,
   type TextTone,
 } from './types';
@@ -95,6 +102,28 @@ export function createTextNode(
     ...(presentation === 'code' && options?.codeLanguage ? { codeLanguage: options.codeLanguage } : {}),
     ...(options?.sourceFilename ? { sourceFilename: options.sourceFilename } : {}),
   };
+}
+
+export function createWebsiteNode(input: { center: Point; url: string; title: string; now?: string }): WebsiteNode {
+  return {
+    id: crypto.randomUUID(),
+    kind: 'website',
+    x: Math.round(input.center.x - WEBSITE_NOTE_WIDTH / 2),
+    y: Math.round(input.center.y - WEBSITE_NOTE_HEIGHT / 2),
+    width: WEBSITE_NOTE_WIDTH,
+    height: WEBSITE_NOTE_HEIGHT,
+    url: input.url,
+    title: input.title,
+    lastEditedAt: input.now ?? new Date().toISOString(),
+  };
+}
+
+export function updateWebsite(board: Board, id: string, input: { url: string; title: string }, now = new Date().toISOString()): Board {
+  return mapNode(board, id, (node) => {
+    if (node.kind !== 'website') return node;
+    if (node.url === input.url && node.title === input.title) return node;
+    return { ...node, url: input.url, title: input.title, lastEditedAt: now };
+  }, now);
 }
 
 export function createFileNode(input: { center: Point; assetId: string; filename: string; now?: string }): FileNode {
@@ -392,7 +421,7 @@ export function migrateStoredAppearance(
   storedAppearance: Appearance | null,
   legacy: Appearance,
 ): Board {
-  if (storedAppearance && (storedSchema === 5 || storedSchema === 6 || storedSchema === 7 || storedSchema === 8 || storedSchema === 9 || storedSchema === 10 || storedSchema === 11 || storedSchema === SCHEMA_VERSION)) return board;
+  if (storedAppearance && schemaAtLeast(storedSchema, 5)) return board;
   return { ...board, appearance: storedAppearance ?? legacy };
 }
 
@@ -531,8 +560,8 @@ export function parseBoard(value: unknown): Board | null {
   if (!isRecord(value)) return null;
   if (value.schemaVersion === 1) return migrateVersion1(value);
   const version = value.schemaVersion;
-  if (version !== 2 && version !== 3 && version !== 4 && version !== 5 && version !== 6 && version !== 7 && version !== 8 && version !== 9 && version !== 10 && version !== 11 && version !== SCHEMA_VERSION) return null;
-  const relationshipStrict = version === 6 || version === 7 || version === 8 || version === 9 || version === 10 || version === 11 || version === SCHEMA_VERSION;
+  if (!acceptedSchema(version)) return null;
+  const relationshipStrict = schemaAtLeast(version, 6);
   if (!isNonEmptyString(value.id) || typeof value.title !== 'string') return null;
   if (typeof value.createdAt !== 'string' || typeof value.updatedAt !== 'string') return null;
   if (!isFiniteNumber(value.revision)) return null;
@@ -596,16 +625,24 @@ export function isSafeHttpUrl(value: string): boolean {
   }
 }
 
+function acceptedSchema(version: unknown): version is number {
+  return typeof version === 'number' && Number.isInteger(version) && version >= 2 && version <= SCHEMA_VERSION;
+}
+
+function schemaAtLeast(version: unknown, minimum: number): boolean {
+  return typeof version === 'number' && Number.isInteger(version) && version >= minimum && version <= SCHEMA_VERSION;
+}
+
 function strictDocument(schemaVersion: unknown): boolean {
-  return schemaVersion === 5 || schemaVersion === 6 || schemaVersion === 7 || schemaVersion === 8 || schemaVersion === 9 || schemaVersion === 10 || schemaVersion === 11 || schemaVersion === SCHEMA_VERSION;
+  return schemaAtLeast(schemaVersion, 5);
 }
 
 function supportsContours(schemaVersion: unknown): boolean {
-  return schemaVersion === 7 || schemaVersion === 8 || schemaVersion === 9 || schemaVersion === 10 || schemaVersion === 11 || schemaVersion === SCHEMA_VERSION;
+  return schemaAtLeast(schemaVersion, 7);
 }
 
 function supportsPhysics(schemaVersion: unknown): boolean {
-  return schemaVersion === 10 || schemaVersion === 11 || schemaVersion === SCHEMA_VERSION;
+  return schemaAtLeast(schemaVersion, 10);
 }
 
 function parsePhysics(schemaVersion: unknown, value: Record<string, unknown>): false | undefined | null {
@@ -684,6 +721,7 @@ function touch(
 function minWidth(node: BoardNode): number {
   if (node.kind === 'text') return TEXT_MIN_WIDTH;
   if (node.kind === 'file') return FILE_MIN_WIDTH;
+  if (node.kind === 'website') return WEBSITE_MIN_WIDTH;
   if (node.kind === 'group') return GROUP_MIN_WIDTH;
   if (node.mode === 'aspect') return ASPECT_MIN_SIZE;
   return IMAGE_MIN_SIZE;
@@ -692,6 +730,7 @@ function minWidth(node: BoardNode): number {
 function minHeight(node: BoardNode): number {
   if (node.kind === 'text') return TEXT_MIN_HEIGHT;
   if (node.kind === 'file') return FILE_MIN_HEIGHT;
+  if (node.kind === 'website') return WEBSITE_MIN_HEIGHT;
   if (node.kind === 'group') return GROUP_MIN_HEIGHT;
   if (node.mode === 'aspect') return ASPECT_MIN_SIZE;
   return IMAGE_MIN_SIZE;
@@ -772,6 +811,31 @@ function parseNode(value: unknown): BoardNode | null {
       assetId: value.assetId,
       filename,
       ...stamped,
+    };
+  }
+  if (value.kind === 'website') {
+    if (typeof value.url !== 'string' || typeof value.title !== 'string') return null;
+    const url = canonicalWebsiteUrl(value.url, 'absolute');
+    if (!url || url !== value.url) return null;
+    const title = value.title.trim();
+    if (!title || title !== value.title || title.length > WEBSITE_TITLE_LIMIT) return null;
+    for (const char of title) {
+      const code = char.charCodeAt(0);
+      if (code < 32 || code === 127) return null;
+    }
+    const stamped = timestampFields(value.lastEditedAt);
+    if (!stamped || !('lastEditedAt' in stamped)) return null;
+    return {
+      id: value.id,
+      kind: 'website',
+      ...(parentId ? { parentId } : {}),
+      x: value.x,
+      y: value.y,
+      width: value.width,
+      height: value.height,
+      url,
+      title,
+      lastEditedAt: stamped.lastEditedAt,
     };
   }
   if (value.kind === 'image') {

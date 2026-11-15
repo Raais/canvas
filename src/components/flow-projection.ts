@@ -14,8 +14,9 @@ import type { FileFlowNode } from './FileNode';
 import type { GroupFlowNode } from './GroupNode';
 import type { ImageFlowNode } from './ImageNoteNode';
 import type { TextFlowNode } from './TextNoteNode';
+import type { WebsiteFlowNode } from './WebsiteNode';
 
-export type CanvasFlowNode = TextFlowNode | ImageFlowNode | FileFlowNode | GroupFlowNode;
+export type CanvasFlowNode = TextFlowNode | ImageFlowNode | FileFlowNode | WebsiteFlowNode | GroupFlowNode;
 
 export type NodeProjectionInput = {
   selected: ReadonlySet<string>;
@@ -58,7 +59,7 @@ export function createNodeProjection() {
         seen.add(node.id);
         const selected = input.selected.has(node.id);
         const editing = input.editingId === node.id;
-        const readOnly = node.kind === 'text' ? input.readOnly : false;
+        const readOnly = node.kind === 'text' || node.kind === 'website' ? input.readOnly : false;
         const session = sessionStamp(node, input.unlocked);
         const asset = assetStamp(node, input.registry, input.library);
         const extent = node.kind === 'group' ? (extents.get(node.id) ?? '') : '';
@@ -233,6 +234,18 @@ function toFlowNode(
         unlocked: protectedNote && input.unlocked.has(node.id),
         readOnly: input.readOnly,
         sourceFilename: node.sourceFilename,
+      },
+    };
+  }
+  if (node.kind === 'website') {
+    return {
+      ...base,
+      type: 'website',
+      data: {
+        url: node.url,
+        title: node.title,
+        lastEditedAt: node.lastEditedAt,
+        readOnly: input.readOnly,
       },
     };
   }

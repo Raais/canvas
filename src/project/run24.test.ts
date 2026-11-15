@@ -108,7 +108,7 @@ describe('viewport projection', () => {
     expect(again[1]).toBe(first[1]);
     const source = await Bun.file(new URL('../components/BoardView.tsx', import.meta.url)).text();
     expect(source.includes('onlyRenderVisibleElements')).toBe(true);
-    expect(SCHEMA_VERSION).toBe(12);
+    expect(SCHEMA_VERSION).toBe(13);
     expect(ARCHIVE_VERSION).toBe(2);
     expect(GRAPH_CLIPBOARD_VERSION).toBe(1);
   });
