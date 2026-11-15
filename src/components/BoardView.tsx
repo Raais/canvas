@@ -46,7 +46,7 @@ import {
   replaceProtectedPayload,
   unprotectTextNode,
 } from '../domain/board';
-import { contentExtent, facingHandles, isContentNode, normalizeRect, worldTopLeft } from '../domain/geometry';
+import { facingHandles, isContentNode, normalizeRect, worldTopLeft } from '../domain/geometry';
 import { toggleTaskAt } from '../domain/markdown';
 import { gesturePhase, sameSelection } from '../editor/interaction';
 import { dragBodyUpdates, FLOW_MULTI_SELECTION_KEYS, FLOW_SELECTION_KEY, nextShiftHeld, relaxDrag, shouldRelaxDrag, syncDragLedger } from '../editor/pulling';
@@ -73,12 +73,8 @@ import {
   ungroup,
 } from '../domain/groups';
 import { createHistory, pushHistory, redoHistory, retainedAssetIds, undoHistory, type History } from '../domain/history';
-import { lookupEmbeddedByteSize } from '../domain/image-size';
 import { forgetRemovedSessions, isProtectedTextNode, passwordIsUsable } from '../domain/text-protection';
 import {
-  GROUP_MIN_HEIGHT,
-  GROUP_MIN_WIDTH,
-  GROUP_PAD,
   type AssetRecord,
   type Board,
   type BoardNode,
@@ -107,10 +103,10 @@ import { SavedViewsPanel } from './SavedViewsPanel';
 import { SearchPalette } from './SearchPalette';
 import { NodeClockProvider, useMinuteClock } from './node-clock';
 import { Coordinates, type CoordinatesHandle } from './Coordinates';
-import { GroupNode, type GroupFlowNode } from './GroupNode';
-import { ImageNoteNode, type ImageFlowNode } from './ImageNoteNode';
+import { GroupNode } from './GroupNode';
+import { ImageNoteNode } from './ImageNoteNode';
 import { SelectionBar } from './SelectionBar';
-import { TextNoteNode, type TextFlowNode } from './TextNoteNode';
+import { TextNoteNode } from './TextNoteNode';
 import { AtlasBoundary } from '../backgrounds/AtlasBoundary';
 import { AtlasTuningPanel } from '../backgrounds/AtlasTuningPanel';
 import { ContoursTuningPanel } from '../backgrounds/ContoursTuningPanel';
@@ -125,10 +121,10 @@ import { ProjectMenu } from './ProjectMenu';
 const DitherAtlasLayer = lazy(() => import('../backgrounds/DitherAtlasLayer'));
 const TopographicContoursLayer = lazy(() => import('../backgrounds/TopographicContoursLayer'));
 import { Toolbar } from './Toolbar';
-import { FileNode, type FileFlowNode } from './FileNode';
+import { FileNode } from './FileNode';
+import { createEdgeProjection, createNodeProjection, type CanvasFlowNode } from './flow-projection';
 import { downloadBlob } from '../project/download';
 
-type CanvasFlowNode = TextFlowNode | ImageFlowNode | FileFlowNode | GroupFlowNode;
 type Tool = 'select' | 'frame';
 
 const nodeTypes = {
@@ -267,12 +263,8 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const exportHold = useRef<{ board: Board; assets: AssetRecord[]; unsaved: boolean; key: string } | null>(null);
   const pasteRepeat = useRef({ key: '', count: 0 });
   const boardEl = useRef<HTMLDivElement>(null);
-  const flowCache = useRef<{ nodeKey: string; nodes: CanvasFlowNode[]; edgeKey: string; edges: Edge[] }>({
-    nodeKey: '',
-    nodes: [],
-    edgeKey: '',
-    edges: [],
-  });
+  const nodeProjection = useRef(createNodeProjection());
+  const edgeProjection = useRef(createEdgeProjection());
   toWorldRef.current = screenToFlowPosition;
   flowRef.current = flow;
   toolRef.current = tool;
@@ -1331,32 +1323,18 @@ function BoardSurface({ session }: { session: SessionProps }) {
   }
 
   const nodes = useMemo(() => {
-    const ordered = [...board.nodes].sort((left, right) => Number(left.kind !== 'group') - Number(right.kind !== 'group'));
-    const projected = ordered.map((node) => toFlowNode(node, board.nodes, selectedIds.includes(node.id), editingId === node.id, registryRef.current, libraryRef.current, unlockedRef.current, readOnly));
-    const nodeKey = JSON.stringify(projected.map((node) => [node.id, node.position, node.width, node.height, node.selected, node.parentId, node.data, node.draggable]));
-    if (nodeKey === flowCache.current.nodeKey) return flowCache.current.nodes;
-    flowCache.current = { ...flowCache.current, nodeKey, nodes: projected };
-    return projected;
+    return nodeProjection.current.project(board.nodes, {
+      selected: new Set(selectedIds),
+      editingId,
+      readOnly,
+      unlocked: unlockedRef.current,
+      registry: registryRef.current,
+      library: libraryRef.current,
+    });
   }, [board.nodes, editingId, selectedIds, urlEpoch, unlockEpoch, readOnly]);
 
   const edges = useMemo<Edge[]>(() => {
-    const solo = selectedEdgeIds.length === 1;
-    const projected = board.edges.map((edge) => ({
-      id: edge.id,
-      type: 'relationship',
-      source: edge.sourceId,
-      target: edge.targetId,
-      sourceHandle: edge.sourceHandle,
-      targetHandle: edge.targetHandle,
-      selected: selectedEdgeIds.includes(edge.id),
-      interactionWidth: 18,
-      className: edge.style === 'dashed' ? 'relationship-dashed' : edge.style === 'red-string' ? 'relationship-string' : undefined,
-      data: { label: edge.label, style: edge.style, solo },
-    }));
-    const edgeKey = JSON.stringify(projected);
-    if (edgeKey === flowCache.current.edgeKey) return flowCache.current.edges;
-    flowCache.current = { ...flowCache.current, edgeKey, edges: projected };
-    return projected;
+    return edgeProjection.current.project(board.edges, new Set(selectedEdgeIds));
   }, [board.edges, selectedEdgeIds]);
 
   function onNodesChange(changes: NodeChange<CanvasFlowNode>[]) {
@@ -1687,7 +1665,8 @@ function BoardSurface({ session }: { session: SessionProps }) {
     }
   }
 
-  const selectedNodes = board.nodes.filter((node) => selectedIds.includes(node.id));
+  const selectedIdSet = new Set(selectedIds);
+  const selectedNodes = board.nodes.filter((node) => selectedIdSet.has(node.id));
   const movement = moveTargets(board, selectedIds);
   const groupTargets = movement.groups;
   const selectionLabel = selectionReadout(board, selectedIds);
@@ -2139,6 +2118,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
         <ReactFlow
           nodes={nodes}
           edges={edges}
+          onlyRenderVisibleElements
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           defaultViewport={initialViewport.current}
@@ -2263,94 +2243,6 @@ function BoardSurface({ session }: { session: SessionProps }) {
     </BoardActionsProvider>
     </NodeClockProvider>
   );
-}
-
-function toFlowNode(
-  node: BoardNode,
-  nodes: readonly BoardNode[],
-  selected: boolean,
-  editing: boolean,
-  registry: ObjectUrlRegistry | null,
-  library: ReadonlyMap<string, AssetRecord>,
-  unlocked: ReadonlyMap<string, { text: string }>,
-  readOnly: boolean,
-): CanvasFlowNode {
-  const base = {
-    id: node.id,
-    position: { x: node.x, y: node.y },
-    width: node.width,
-    height: node.height,
-    selected,
-    parentId: isContentNode(node) ? node.parentId : undefined,
-    zIndex: node.kind === 'group' ? 0 : 1,
-    draggable: node.kind !== 'text' || !editing,
-    style: { width: node.width, height: node.height },
-    measured: { width: node.width, height: node.height },
-  };
-  if (node.kind === 'group') {
-    const extent = contentExtent(nodes, node.id);
-    return {
-      ...base,
-      type: 'group',
-      dragHandle: '.group-node',
-      data: {
-        label: node.label,
-        minWidth: Math.max(GROUP_MIN_WIDTH, extent ? extent.right + GROUP_PAD : GROUP_MIN_WIDTH),
-        minHeight: Math.max(GROUP_MIN_HEIGHT, extent ? extent.bottom + GROUP_PAD : GROUP_MIN_HEIGHT),
-        backgroundTone: node.backgroundTone,
-      },
-    };
-  }
-  if (node.kind === 'text') {
-    return {
-      ...base,
-      type: 'text',
-      data: {
-        text: isProtectedTextNode(node) ? (unlocked.get(node.id)?.text ?? '') : node.text,
-        editing: isProtectedTextNode(node) && !unlocked.has(node.id) ? false : editing,
-        presentation: node.presentation ?? 'text',
-        language: node.language,
-        codeLanguage: node.codeLanguage,
-        backgroundTone: node.backgroundTone,
-        textTone: node.textTone,
-        lastEditedAt: node.lastEditedAt,
-        protected: isProtectedTextNode(node),
-        unlocked: isProtectedTextNode(node) && unlocked.has(node.id),
-        readOnly,
-        sourceFilename: node.sourceFilename,
-      },
-    };
-  }
-  if (node.kind === 'file') {
-    const asset = library.get(node.assetId);
-    return {
-      ...base,
-      type: 'file',
-      data: {
-        filename: node.filename,
-        byteSize: asset?.byteSize,
-        missing: !asset,
-        lastEditedAt: node.lastEditedAt,
-      },
-    };
-  }
-  const image = node;
-  const src = image.source.type === 'external' ? image.source.url : (registry?.get(image.source.assetId) ?? null);
-  return {
-    ...base,
-    type: 'image',
-    data: {
-      mode: image.mode,
-      src,
-      externalUrl: image.source.type === 'external' ? image.source.url : null,
-      flipX: image.flipX === true,
-      flipY: image.flipY === true,
-      cornerStyle: image.cornerStyle === 'square' ? 'square' : 'rounded',
-      rotation: image.rotation ?? 0,
-      lastEditedAt: image.lastEditedAt,
-      byteSize: lookupEmbeddedByteSize(image.source, library),
-    },
-  };
 }
 
 function selectionReadout(board: Board, ids: readonly string[]): string | null {

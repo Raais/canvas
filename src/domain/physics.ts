@@ -1,6 +1,6 @@
 import { forceSimulation, type Force, type SimulationNodeDatum } from 'd3-force';
-import { attachmentPoint, effectiveBodyId } from './geometry';
-import type { Board, BoardNode, Point } from './types';
+import { isContentNode } from './geometry';
+import type { Board, BoardNode, HandleSide, Point } from './types';
 
 /** Tension-only tether. Tuned to nudge stretched links without rearranging the board. */
 export const TENSION = {
@@ -118,36 +118,73 @@ function tensionForce(links: readonly TensionLink[]): Force<TensionBody, undefin
   return force;
 }
 
+type PhysicsIndex = {
+  byId: Map<string, BoardNode>;
+  childCount: Map<string, number>;
+};
+
+function indexBoard(nodes: readonly BoardNode[]): PhysicsIndex {
+  const byId = new Map<string, BoardNode>();
+  const childCount = new Map<string, number>();
+  for (const node of nodes) {
+    byId.set(node.id, node);
+    if (node.kind === 'group' || !node.parentId) continue;
+    childCount.set(node.parentId, (childCount.get(node.parentId) ?? 0) + 1);
+  }
+  return { byId, childCount };
+}
+
+function bodyIdOf(node: BoardNode): string {
+  if (isContentNode(node) && node.parentId) return node.parentId;
+  return node.id;
+}
+
+function worldOrigin(byId: ReadonlyMap<string, BoardNode>, node: BoardNode): Point {
+  if (isContentNode(node) && node.parentId) {
+    const parent = byId.get(node.parentId);
+    if (parent?.kind === 'group') return { x: parent.x + node.x, y: parent.y + node.y };
+  }
+  return { x: node.x, y: node.y };
+}
+
+function attachment(byId: ReadonlyMap<string, BoardNode>, node: BoardNode, handle: HandleSide): Point {
+  const origin = worldOrigin(byId, node);
+  if (handle === 'left') return { x: origin.x, y: origin.y + node.height / 2 };
+  if (handle === 'right') return { x: origin.x + node.width, y: origin.y + node.height / 2 };
+  if (handle === 'top') return { x: origin.x + node.width / 2, y: origin.y };
+  return { x: origin.x + node.width / 2, y: origin.y + node.height };
+}
+
 function buildSystem(board: Board, pinnedNodeIds: readonly string[]): { bodies: TensionBody[]; links: TensionLink[] } | null {
-  const allLinks = physicsLinks(board);
+  const index = indexBoard(board.nodes);
+  const allLinks = physicsLinks(board, index.byId);
   if (allLinks.length === 0) return null;
-  const pinned = new Set(
-    pinnedNodeIds
-      .map((id) => effectiveBodyId(board.nodes, id))
-      .filter((id): id is string => Boolean(id)),
-  );
+  const pinned = new Set<string>();
+  for (const id of pinnedNodeIds) {
+    const node = index.byId.get(id);
+    if (node) pinned.add(bodyIdOf(node));
+  }
   const seeds = pinned.size > 0 ? pinned : new Set(allLinks.flatMap((link) => [link.sourceId, link.targetId]));
   const component = componentOf(allLinks, seeds);
   const links = allLinks.filter((link) => component.has(link.sourceId) && component.has(link.targetId));
   if (links.length === 0) return null;
-  const bodies = [...component].map((id) => bodyFrom(board, id, pinned.has(id)));
+  const bodies = [...component].map((id) => bodyFrom(index, id, pinned.has(id)));
   return { bodies, links };
 }
 
-function physicsLinks(board: Board): TensionLink[] {
+function physicsLinks(board: Board, byId: ReadonlyMap<string, BoardNode>): TensionLink[] {
   const links: TensionLink[] = [];
   for (const edge of board.edges) {
-    const sourceBody = effectiveBodyId(board.nodes, edge.sourceId);
-    const targetBody = effectiveBodyId(board.nodes, edge.targetId);
-    const source = board.nodes.find((node) => node.id === edge.sourceId);
-    const target = board.nodes.find((node) => node.id === edge.targetId);
-    const sourceBodyNode = sourceBody ? board.nodes.find((node) => node.id === sourceBody) : undefined;
-    const targetBodyNode = targetBody ? board.nodes.find((node) => node.id === targetBody) : undefined;
-    if (!sourceBody || !targetBody || sourceBody === targetBody || !source || !target || !sourceBodyNode || !targetBodyNode) {
-      continue;
-    }
-    const sourcePoint = attachmentPoint(board.nodes, source, edge.sourceHandle);
-    const targetPoint = attachmentPoint(board.nodes, target, edge.targetHandle);
+    const source = byId.get(edge.sourceId);
+    const target = byId.get(edge.targetId);
+    if (!source || !target) continue;
+    const sourceBody = bodyIdOf(source);
+    const targetBody = bodyIdOf(target);
+    const sourceBodyNode = byId.get(sourceBody);
+    const targetBodyNode = byId.get(targetBody);
+    if (sourceBody === targetBody || !sourceBodyNode || !targetBodyNode) continue;
+    const sourcePoint = attachment(byId, source, edge.sourceHandle);
+    const targetPoint = attachment(byId, target, edge.targetHandle);
     links.push({
       sourceId: sourceBody,
       targetId: targetBody,
@@ -180,26 +217,21 @@ function componentOf(links: readonly TensionLink[], seeds: ReadonlySet<string>):
   return seen;
 }
 
-function bodyFrom(board: Board, id: string, pinned: boolean): TensionBody {
-  const node = board.nodes.find((entry) => entry.id === id);
+function bodyFrom(index: PhysicsIndex, id: string, pinned: boolean): TensionBody {
+  const node = index.byId.get(id);
   const x = node?.x ?? 0;
   const y = node?.y ?? 0;
+  const count = index.childCount.get(id) ?? 0;
+  const mass = node?.kind === 'group' ? Math.min(5, 1.25 + count * 0.2) : 1;
   return {
     id,
     x,
     y,
     vx: 0,
     vy: 0,
-    mass: massOf(board.nodes, id),
+    mass,
     ...(pinned ? { fx: x, fy: y } : {}),
   };
-}
-
-function massOf(nodes: readonly BoardNode[], id: string): number {
-  const node = nodes.find((entry) => entry.id === id);
-  if (node?.kind !== 'group') return 1;
-  const count = nodes.filter((entry) => entry.kind !== 'group' && entry.parentId === id).length;
-  return Math.min(5, 1.25 + count * 0.2);
 }
 
 function applyBodyPositions(board: Board, bodies: readonly TensionBody[]): Board {

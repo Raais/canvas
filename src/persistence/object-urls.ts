@@ -1,7 +1,15 @@
+const DISPLAY_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/avif']);
+
+/** Raster images need a display URL. Download-only attachments do not. */
+export function isDisplayAsset(asset: { mimeType: string }): boolean {
+  return DISPLAY_TYPES.has(asset.mimeType.trim().toLowerCase());
+}
+
 export function createObjectUrlRegistry() {
   const urls = new Map<string, string>();
   return {
-    remember(asset: { id: string; blob: Blob }): string {
+    remember(asset: { id: string; mimeType: string; blob: Blob }): string | null {
+      if (!isDisplayAsset(asset)) return null;
       const existing = urls.get(asset.id);
       if (existing) return existing;
       const url = URL.createObjectURL(asset.blob);

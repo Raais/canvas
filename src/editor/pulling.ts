@@ -31,9 +31,10 @@ type DragNode = { id: string; kind: string; parentId?: string };
 
 /** Count physics bodies being dragged. Children carried by a dragged group frame are not extra drags. */
 export function dragBodyUpdates(changes: readonly DragChange[], nodes: readonly DragNode[]): { id: string; dragging: boolean }[] {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
   const draggingParents = new Set(
     changes.flatMap((change) =>
-      change.type === 'position' && change.dragging === true && change.id != null && nodes.some((node) => node.id === change.id && node.kind === 'group')
+      change.type === 'position' && change.dragging === true && change.id != null && byId.get(change.id)?.kind === 'group'
         ? [change.id]
         : [],
     ),
@@ -41,7 +42,7 @@ export function dragBodyUpdates(changes: readonly DragChange[], nodes: readonly 
   const updates: { id: string; dragging: boolean }[] = [];
   for (const change of changes) {
     if (change.type !== 'position' || !change.id || (change.dragging !== true && change.dragging !== false)) continue;
-    const node = nodes.find((entry) => entry.id === change.id);
+    const node = byId.get(change.id);
     if (!node) continue;
     if (node.parentId && draggingParents.has(node.parentId)) continue;
     updates.push({ id: change.id, dragging: change.dragging === true });
