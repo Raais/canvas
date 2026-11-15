@@ -26,6 +26,7 @@ export type ImageNodeData = {
   cornerStyle: 'rounded' | 'square';
   rotation: number;
   lastEditedAt?: string;
+  byteSize?: number;
 };
 
 export type ImageFlowNode = Node<ImageNodeData, 'image'>;
@@ -335,7 +336,7 @@ export function ImageNoteNode({ id, data, selected, width, height }: NodeProps<I
         </div>
       )}
       {data.externalUrl ? <span className="image-flag">External</span> : null}
-      <NodeDateLabel iso={data.lastEditedAt} />
+      <NodeDateLabel iso={data.lastEditedAt} byteSize={data.byteSize} />
     </div>
   );
 }

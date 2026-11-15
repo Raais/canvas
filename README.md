@@ -31,17 +31,21 @@ The board itself is not stored in `localStorage`. A board's appearance is part o
 
 The browser can still delete site data. An exported archive is the copy to keep. canvas does not upload the board anywhere. External image links are recorded as URLs only; their bytes are not included.
 
-Boards are document schema 9. A ZIP archive is still format 1, and a copied selection is still clipboard format 1. Image rotation is stored on the image note in degrees and is omitted at 0°. Text and image notes may store `lastEditedAt`. Labels, link styles, saved views, and a Topographic Contours seed travel with the board JSON. Older boards migrate forward without changing their saved background or inventing dates. There is no remote search service.
+Boards are document schema 10. A ZIP archive is still format 1, and a copied selection is still clipboard format 1. Image rotation is stored on the image note in degrees and is omitted at 0°. Text and image notes may store `lastEditedAt`. Pulling force is a project setting: it is omitted while on, and stored as `physicsEnabled: false` when off. Labels, link styles, saved views, and a Topographic Contours seed travel with the board JSON. Older boards migrate forward without changing their saved background or inventing dates. There is no remote search service.
 
 One tab owns writing, using a browser lock named `raais-canvas-active-board-v1` when the browser provides it. Other tabs can pan, zoom, search, recall saved views, and inspect, but they do not save. If a tab has open edits when it loses the board, it keeps them in memory and offers **Download recovery ZIP**. Reload asks before discarding those edits. IndexedDB still refuses a stale revision. Embedded images must be 64 MiB or smaller, and a backup must stay within 256 MiB including the manifest. The project menu warns when a board is near or past that limit. Copying a note out of a group pastes it in world coordinates. Escape finishes a note edit and cancels a group rename. Delete contents asks before removing a group and its children. Checklists toggle for unordered, ordered, nested, and quoted tasks.
 
 ## Node dates
 
-A text note's date is the last time its text actually changed. Moving, resizing, grouping, physics, colors, presentation, and code language do not change it. An image's date is the moment that image node was added. Rotation, flips, stretch, corners, and resizing leave it alone. Groups have no date. Older notes and images without a stored time show `-` until a text note is genuinely edited; an old image stays undated. The label sits outside the bottom-right of the frame, for example `2m ago | 14/11`, and refreshes about once a minute without saving. A copied or duplicated note gets a new time. A ZIP import keeps the times in the archive.
+A text note's date is the last time its text actually changed. Moving, resizing, grouping, physics, colors, presentation, and code language do not change it. An image's date is the moment that image node was added. Rotation, flips, stretch, corners, and resizing leave it alone. Groups have no date. Older notes and images without a stored time show `-` until a text note is genuinely edited; an old image stays undated. The label sits outside the bottom-right of the frame, for example `2m ago | 14/11`, and refreshes about once a minute without saving. An embedded image puts its stored file size first, using the bytes kept for that asset, for example `0.3MB | 3m ago | 15/11`. A file under 0.1 MB shows `<0.1MB`. An undated embedded image with a known size shows `0.3MB | -`. An external image, or an embedded image whose asset is missing, keeps the date alone. The label still appears only while the note is hovered, selected, or focused. A copied or duplicated note gets a new time. A ZIP import keeps the times and the stored asset bytes.
 
 ## Search
 
 Ctrl+K still ranks note titles, note text, and group labels locally, including short prefixes and small typos, through MiniSearch plus a substring pass. A query that is also a date, such as `today`, `yesterday`, `last friday`, `june`, `june 2025`, `14/11`, or `2025`, lists dated text and image notes in that range and content matches underneath. `edited:yesterday` searches dates only. Groups never match a date. `may need fixing` stays a text search. Date matches can focus an image. Search is downloaded with the app and works offline.
+
+## Node physics
+
+Project → Node physics has **Pulling force**. It starts on, including for boards saved before schema 10. The choice is part of the board, so a ZIP keeps it and a read-only tab cannot change it. Turning it off does not move nodes or rewrite dates. While it is on, dragging still uses the same tension tether as before. Hold Shift while dragging exactly one note, image, or group frame to temporarily reverse the setting: on becomes a free drag, and off becomes a pull. Releasing Shift during the drag restores the project setting immediately. Dragging several selected nodes at once follows the project setting, and Shift does not reverse it. Selection, resizing, and panning do not use this override. Shift still starts a selection box on empty canvas, and Cmd or Ctrl still adds to the selection.
 
 ## Image rotation
 
@@ -66,7 +70,7 @@ A newer version shows **Update available**. Later leaves the current version run
 ## Known limitations
 
 - Groups cannot contain other groups.
-- Physics is a weak tension-only tether. It does not run a force-directed layout, and links inside one group do not move that group.
+- Physics is a weak tension-only tether. It does not run a force-directed layout, and links inside one group do not move that group. Project → Node physics can turn pulling off. Shift reverses that choice only while one node is dragged.
 - Deleting a group frame keeps the notes. Delete contents is the separate action that removes the notes too.
 - Undo cannot survive a reload, an import, or a new board.
 - There is no cloud backup, account, or multi-project library.

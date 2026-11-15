@@ -16,6 +16,9 @@ type ProjectMenuProps = {
   contoursBlocked: boolean;
   rendererVersion: 1 | 2 | 3 | null;
   optimizeImages: boolean;
+  physicsEnabled: boolean;
+  readOnly: boolean;
+  onPhysicsEnabled: (enabled: boolean) => void;
   onOptimizeImages: (enabled: boolean) => void;
   onPattern: (pattern: BackgroundPattern) => void;
   onTune: () => void;
@@ -40,6 +43,9 @@ export function ProjectMenu({
   contoursBlocked,
   rendererVersion,
   optimizeImages,
+  physicsEnabled,
+  readOnly,
+  onPhysicsEnabled,
   onOptimizeImages,
   onPattern,
   onTune,
@@ -95,6 +101,22 @@ export function ProjectMenu({
                 Tune Contours
               </button>
             ) : null}
+          </section>
+          <div className="project-divider" />
+          <section className="pattern-section">
+            <p className="menu-label">Node physics</p>
+            <button
+              type="button"
+              role="switch"
+              className="storage-toggle"
+              aria-checked={physicsEnabled}
+              disabled={readOnly}
+              onClick={() => onPhysicsEnabled(!physicsEnabled)}
+            >
+              <span>Pulling force</span>
+              <span className={physicsEnabled ? 'switch is-on' : 'switch'} aria-hidden="true" />
+            </button>
+            <p className="project-note">Hold Shift while dragging one node to temporarily reverse this setting.</p>
           </section>
           <div className="project-divider" />
           <section className="pattern-section">

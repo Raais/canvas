@@ -49,6 +49,7 @@ export function boardSnapshotKey(board: Board): string {
     edges: board.edges,
     savedViews: board.savedViews,
     viewport: board.viewport,
+    physicsEnabled: board.physicsEnabled === false,
   });
 }
 

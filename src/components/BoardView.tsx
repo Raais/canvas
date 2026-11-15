@@ -27,6 +27,8 @@ import {
   renameBoard,
   setImageMode,
   setAppearance,
+  applyPhysicsPreference,
+  physicsIsEnabled,
   setBackgroundPattern,
   setGroupBackgroundTone,
   setCodeLanguage,
@@ -43,6 +45,7 @@ import {
 import { contentExtent, facingHandles, isContentNode, normalizeRect, worldTopLeft } from '../domain/geometry';
 import { toggleTaskAt } from '../domain/markdown';
 import { gesturePhase, sameSelection } from '../editor/interaction';
+import { dragBodyUpdates, FLOW_MULTI_SELECTION_KEYS, FLOW_SELECTION_KEY, nextShiftHeld, relaxDrag, shouldRelaxDrag, syncDragLedger } from '../editor/pulling';
 import { plainShortcutBlocked, searchShortcut } from '../editor/shortcuts';
 import { connectNodes, deleteEdges, hasUndirectedLink } from '../domain/graph';
 import { cameraDuration, frameViewport, noteJumpZoom } from '../domain/camera';
@@ -66,7 +69,7 @@ import {
   ungroup,
 } from '../domain/groups';
 import { createHistory, pushHistory, redoHistory, retainedAssetIds, undoHistory, type History } from '../domain/history';
-import { relaxBoard } from '../domain/physics';
+import { lookupEmbeddedByteSize } from '../domain/image-size';
 import {
   GROUP_MIN_HEIGHT,
   GROUP_MIN_WIDTH,
@@ -218,6 +221,9 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const toWorldRef = useRef(screenToFlowPosition);
   const flowRef = useRef(flow);
   const gestureRef = useRef<Board | null>(null);
+  const dragLedger = useRef(new Set<string>());
+  const shiftRef = useRef(false);
+  const rebalanceRef = useRef<() => void>(() => {});
   const textBefore = useRef<Board | null>(null);
   const renameBefore = useRef<Board | null>(null);
   const historyRef = useRef<History>(createHistory());
@@ -793,6 +799,37 @@ function BoardSurface({ session }: { session: SessionProps }) {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  useEffect(() => {
+    const apply = (signal: Parameters<typeof nextShiftHeld>[1]) => {
+      const next = nextShiftHeld(shiftRef.current, signal);
+      const changed = next !== shiftRef.current;
+      shiftRef.current = next;
+      if (signal === 'blur' || signal === 'cancel') dragLedger.current.clear();
+      if (signal === 'hide' || signal === 'blur' || signal === 'cancel') return;
+      if (changed) rebalanceRef.current();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Shift') apply('shift-down');
+    };
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.key === 'Shift') apply('shift-up');
+    };
+    const onBlur = () => apply('blur');
+    const onVisibility = () => {
+      if (document.hidden) apply('hide');
+    };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, []);
+
   const actions = useMemo<BoardActions>(
     () => ({
       beginEditing(id) {
@@ -1051,7 +1088,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
 
   const nodes = useMemo(() => {
     const ordered = [...board.nodes].sort((left, right) => Number(left.kind !== 'group') - Number(right.kind !== 'group'));
-    const projected = ordered.map((node) => toFlowNode(node, board.nodes, selectedIds.includes(node.id), editingId === node.id, registryRef.current));
+    const projected = ordered.map((node) => toFlowNode(node, board.nodes, selectedIds.includes(node.id), editingId === node.id, registryRef.current, libraryRef.current));
     const nodeKey = JSON.stringify(projected.map((node) => [node.id, node.position, node.width, node.height, node.selected, node.parentId, node.data, node.draggable]));
     if (nodeKey === flowCache.current.nodeKey) return flowCache.current.nodes;
     flowCache.current = { ...flowCache.current, nodeKey, nodes: projected };
@@ -1080,6 +1117,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
 
   function onNodesChange(changes: NodeChange<CanvasFlowNode>[]) {
     if (blockedRef.current) return;
+    const dragUpdates = dragBodyUpdates(changes, boardRef.current.nodes);
     const draggingParents = new Set(
       changes.flatMap((change) =>
         change.type === 'position' && change.dragging && boardRef.current.nodes.some((node) => node.id === change.id && node.kind === 'group')
@@ -1135,8 +1173,16 @@ function BoardSurface({ session }: { session: SessionProps }) {
       }
     }
 
-    if (sawDrag && !document.hidden) geometry = relaxBoard(geometry, pinned, 4);
-    if (dragFinished && !document.hidden) geometry = relaxBoard(geometry, pinned, 40);
+    const draggedNodeCount = syncDragLedger(dragLedger.current, dragUpdates);
+    if (!document.hidden && shouldRelaxDrag(sawDrag, dragFinished)) {
+      geometry = relaxDrag(geometry, pinned, {
+        projectEnabled: physicsIsEnabled(geometry),
+        shiftHeld: shiftRef.current,
+        draggedNodeCount,
+        live: sawDrag,
+        settle: dragFinished,
+      });
+    }
     const phase = gesturePhase({
       sawDrag,
       dragFinished,
@@ -1156,6 +1202,21 @@ function BoardSurface({ session }: { session: SessionProps }) {
     }
     if (selectionChanged) replaceSelection(selection);
   }
+
+  rebalanceRef.current = () => {
+    if (document.hidden || blockedRef.current || dragLedger.current.size === 0) return;
+    const geometry = relaxDrag(boardRef.current, [...dragLedger.current], {
+      projectEnabled: physicsIsEnabled(boardRef.current),
+      shiftHeld: shiftRef.current,
+      draggedNodeCount: dragLedger.current.size,
+      live: true,
+      settle: false,
+    });
+    if (geometry === boardRef.current) return;
+    if (!gestureRef.current) gestureRef.current = structuredClone(boardRef.current);
+    replaceBoard(geometry);
+    queue.markUnsaved();
+  };
 
   function createNote(origin: Point) {
     if (blockedRef.current) return;
@@ -1504,6 +1565,10 @@ function BoardSurface({ session }: { session: SessionProps }) {
     boardEl.current?.style.setProperty('--handle-scale', String(1 / zoom));
   }, []);
   const onPointerMoveStable = useCallback((event: ReactPointerEvent) => {
+    const next = nextShiftHeld(shiftRef.current, { pointer: event.shiftKey });
+    const changed = next !== shiftRef.current;
+    shiftRef.current = next;
+    if (changed) rebalanceRef.current();
     handlers.current.onPointerMove(flowRef.current.screenToFlowPosition({ x: event.clientX, y: event.clientY }));
   }, []);
 
@@ -1617,6 +1682,14 @@ function BoardSurface({ session }: { session: SessionProps }) {
               contoursBlocked={contoursBlocked}
               rendererVersion={board.ditherAtlas?.rendererVersion ?? null}
               optimizeImages={optimizeImages}
+              physicsEnabled={physicsIsEnabled(board)}
+              readOnly={readOnly}
+              onPhysicsEnabled={(enabled) => {
+                const next = applyPhysicsPreference(blockedRef.current, boardRef.current, enabled);
+                if (next === boardRef.current) return;
+                replaceBoard(next);
+                queue.schedule(300);
+              }}
               onOptimizeImages={(enabled) => {
                 setOptimizeImages(enabled);
                 writeOptimizeImages(browserStorage(), enabled);
@@ -1824,6 +1897,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
           onMoveEnd={onMoveEndStable}
           onPointerMove={onPointerMoveStable}
           onPointerDown={(event) => {
+            shiftRef.current = nextShiftHeld(shiftRef.current, { pointer: event.shiftKey });
             if (toolRef.current !== 'frame') return;
             if (!(event.target instanceof Element) || !event.target.classList.contains('react-flow__pane')) return;
             frameRef.current = screenToFlowPosition({ x: event.clientX, y: event.clientY });
@@ -1850,8 +1924,8 @@ function BoardSurface({ session }: { session: SessionProps }) {
           panOnDrag={tool !== 'frame'}
           panOnScroll={false}
           selectionOnDrag={false}
-          selectionKeyCode="Shift"
-          multiSelectionKeyCode={['Meta', 'Control']}
+          selectionKeyCode={FLOW_SELECTION_KEY}
+          multiSelectionKeyCode={[...FLOW_MULTI_SELECTION_KEYS]}
           panActivationKeyCode="Space"
           deleteKeyCode={['Backspace', 'Delete']}
           nodesConnectable
@@ -1931,6 +2005,7 @@ function toFlowNode(
   selected: boolean,
   editing: boolean,
   registry: ObjectUrlRegistry | null,
+  library: ReadonlyMap<string, AssetRecord>,
 ): CanvasFlowNode {
   const base = {
     id: node.id,
@@ -1979,6 +2054,7 @@ function toFlowNode(
       cornerStyle: image.cornerStyle === 'square' ? 'square' : 'rounded',
       rotation: image.rotation ?? 0,
       lastEditedAt: image.lastEditedAt,
+      byteSize: lookupEmbeddedByteSize(image.source, library),
     },
   };
 }

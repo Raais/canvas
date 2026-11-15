@@ -46,7 +46,7 @@ export function retainedAssetIds(current: Board, history: History): Set<string> 
 }
 
 function revive(snapshot: Board, current: Board): Board {
-  return {
+  const revived: Board = {
     ...cloneBoard(snapshot),
     title: current.title,
     appearance: current.appearance,
@@ -58,6 +58,9 @@ function revive(snapshot: Board, current: Board): Board {
     revision: current.revision + 1,
     updatedAt: new Date().toISOString(),
   };
+  if (current.physicsEnabled === false) revived.physicsEnabled = false;
+  else delete revived.physicsEnabled;
+  return revived;
 }
 
 function cloneBoard(board: Board): Board {

@@ -352,13 +352,32 @@ export function migrateStoredAppearance(
   storedAppearance: Appearance | null,
   legacy: Appearance,
 ): Board {
-  if (storedAppearance && (storedSchema === 5 || storedSchema === 6 || storedSchema === 7 || storedSchema === 8 || storedSchema === SCHEMA_VERSION)) return board;
+  if (storedAppearance && (storedSchema === 5 || storedSchema === 6 || storedSchema === 7 || storedSchema === 8 || storedSchema === 9 || storedSchema === SCHEMA_VERSION)) return board;
   return { ...board, appearance: storedAppearance ?? legacy };
 }
 
 export function setAppearance(board: Board, appearance: Appearance, now?: string): Board {
   if (board.appearance === appearance) return board;
   return touch(board, { appearance }, now);
+}
+
+export function physicsIsEnabled(board: Pick<Board, 'physicsEnabled'>): boolean {
+  return board.physicsEnabled !== false;
+}
+
+export function setPhysicsEnabled(board: Board, enabled: boolean, now?: string): Board {
+  if (physicsIsEnabled(board) === enabled) return board;
+  if (enabled) {
+    const cleared: Board = { ...board };
+    delete cleared.physicsEnabled;
+    return touch(cleared, {}, now);
+  }
+  return touch(board, { physicsEnabled: false }, now);
+}
+
+export function applyPhysicsPreference(readOnly: boolean, board: Board, enabled: boolean, now?: string): Board {
+  if (readOnly) return board;
+  return setPhysicsEnabled(board, enabled, now);
 }
 
 export function setImageRotation(board: Board, id: string, rotation: number, now?: string): Board {
@@ -439,8 +458,8 @@ export function parseBoard(value: unknown): Board | null {
   if (!isRecord(value)) return null;
   if (value.schemaVersion === 1) return migrateVersion1(value);
   const version = value.schemaVersion;
-  if (version !== 2 && version !== 3 && version !== 4 && version !== 5 && version !== 6 && version !== 7 && version !== 8 && version !== SCHEMA_VERSION) return null;
-  const relationshipStrict = version === 6 || version === 7 || version === 8 || version === SCHEMA_VERSION;
+  if (version !== 2 && version !== 3 && version !== 4 && version !== 5 && version !== 6 && version !== 7 && version !== 8 && version !== 9 && version !== SCHEMA_VERSION) return null;
+  const relationshipStrict = version === 6 || version === 7 || version === 8 || version === 9 || version === SCHEMA_VERSION;
   if (!isNonEmptyString(value.id) || typeof value.title !== 'string') return null;
   if (typeof value.createdAt !== 'string' || typeof value.updatedAt !== 'string') return null;
   if (!isFiniteNumber(value.revision)) return null;
@@ -471,7 +490,8 @@ export function parseBoard(value: unknown): Board | null {
   const backgroundPattern = parsePattern(value.schemaVersion, value.backgroundPattern);
   const ditherAtlas = parseDither(value.ditherAtlas);
   const topographicContours = parseContours(value.schemaVersion, value.topographicContours);
-  if (!viewport || !appearance || !backgroundPattern || ditherAtlas === null || topographicContours === null || !validGraph(nodes, edges)) return null;
+  const physicsEnabled = parsePhysics(value.schemaVersion, value);
+  if (physicsEnabled === null || !viewport || !appearance || !backgroundPattern || ditherAtlas === null || topographicContours === null || !validGraph(nodes, edges)) return null;
   if (backgroundPattern === 'dither-atlas' && !ditherAtlas) return null;
   if (backgroundPattern === 'topographic-contours' && !topographicContours) return null;
 
@@ -490,6 +510,7 @@ export function parseBoard(value: unknown): Board | null {
     edges,
     savedViews,
     viewport,
+    ...(physicsEnabled === false ? { physicsEnabled: false as const } : {}),
   };
 }
 
@@ -503,11 +524,19 @@ export function isSafeHttpUrl(value: string): boolean {
 }
 
 function strictDocument(schemaVersion: unknown): boolean {
-  return schemaVersion === 5 || schemaVersion === 6 || schemaVersion === 7 || schemaVersion === 8 || schemaVersion === SCHEMA_VERSION;
+  return schemaVersion === 5 || schemaVersion === 6 || schemaVersion === 7 || schemaVersion === 8 || schemaVersion === 9 || schemaVersion === SCHEMA_VERSION;
 }
 
 function supportsContours(schemaVersion: unknown): boolean {
-  return schemaVersion === 7 || schemaVersion === 8 || schemaVersion === SCHEMA_VERSION;
+  return schemaVersion === 7 || schemaVersion === 8 || schemaVersion === 9 || schemaVersion === SCHEMA_VERSION;
+}
+
+function parsePhysics(schemaVersion: unknown, value: Record<string, unknown>): false | undefined | null {
+  if (schemaVersion !== SCHEMA_VERSION) return undefined;
+  if (!Object.prototype.hasOwnProperty.call(value, 'physicsEnabled')) return undefined;
+  if (value.physicsEnabled === true) return undefined;
+  if (value.physicsEnabled === false) return false;
+  return null;
 }
 
 function parseAppearanceField(schemaVersion: unknown, value: unknown): Appearance | null {
@@ -564,7 +593,7 @@ function mapNode(
 
 function touch(
   board: Board,
-  patch: Partial<Pick<Board, 'title' | 'nodes' | 'edges' | 'viewport' | 'appearance' | 'backgroundPattern' | 'ditherAtlas' | 'topographicContours' | 'savedViews'>>,
+  patch: Partial<Pick<Board, 'title' | 'nodes' | 'edges' | 'viewport' | 'appearance' | 'backgroundPattern' | 'ditherAtlas' | 'topographicContours' | 'savedViews' | 'physicsEnabled'>>,
   now = new Date().toISOString(),
 ): Board {
   return {

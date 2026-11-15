@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 9 as const;
+export const SCHEMA_VERSION = 10 as const;
 export const MAX_SAVED_VIEWS = 32;
 export const MAX_SAVED_VIEW_NAME = 60;
 export const MAX_EDGE_LABEL = 80;
@@ -141,6 +141,8 @@ export type Board = {
   edges: BoardEdge[];
   savedViews: SavedView[];
   viewport: Viewport;
+  /** Omitted when pulling force is on. `false` turns project pulling off. */
+  physicsEnabled?: boolean;
 };
 
 export type AssetRecord = {
