@@ -15,13 +15,13 @@ export const Coordinates = forwardRef<CoordinatesHandle, CoordinatesProps>(funct
     setCursor(x, y) {
       const node = cursorRef.current;
       if (!node) return;
-      node.textContent = `Cursor  X: ${x}  Y: ${y}`;
+      node.textContent = `X: ${x}  Y: ${y}`;
     },
   }));
 
   return (
     <div className="coordinates" aria-live="off">
-      <span ref={cursorRef}>Cursor  X: —  Y: —</span>
+      <span ref={cursorRef}>X: —  Y: —</span>
       {selection ? <span>{selection}</span> : null}
     </div>
   );
