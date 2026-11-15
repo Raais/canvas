@@ -68,6 +68,7 @@ describe('organic ink', () => {
   test('offers three brushes and keeps fountain as the default width', () => {
     expect(DRAWING_BRUSHES.map((entry) => entry.id)).toEqual(['fineliner', 'fountain', 'brush']);
     expect(DRAWING_BRUSHES.map((entry) => entry.label)).toEqual(['Fineliner', 'Fountain Pen', 'Brush Pen']);
+    expect(DRAWING_BRUSHES.map((entry) => entry.short)).toEqual(['Fineliner', 'Fountain', 'Brush']);
     expect(getBrushPreset('fountain').simulatePressure).toBe(true);
     expect(getBrushPreset('fineliner').simulatePressure).toBe(false);
     expect(getBrushPreset('fineliner').thinning).toBe(0);

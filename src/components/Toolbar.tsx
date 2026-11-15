@@ -188,8 +188,7 @@ export function Toolbar({
               ))}
               {DRAWING_BRUSHES.map((entry) => (
                 <button key={entry.id} type="button" className="pen-brush" aria-pressed={penBrush === entry.id} aria-label={entry.label} title={entry.label} onClick={() => onPenBrush(entry.id)}>
-                  <span className={`pen-sample is-${entry.id}`} aria-hidden="true" />
-                  {entry.label}
+                  {entry.short}
                 </button>
               ))}
             </div>

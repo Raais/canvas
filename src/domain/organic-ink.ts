@@ -6,6 +6,7 @@ export type OrganicBrush = Exclude<DrawingBrush, 'legacy'>;
 export type BrushPreset = {
   id: OrganicBrush;
   label: string;
+  short: string;
   screenPx: number;
   thinning: number;
   smoothing: number;
@@ -14,9 +15,9 @@ export type BrushPreset = {
 };
 
 export const DRAWING_BRUSHES: readonly BrushPreset[] = [
-  { id: 'fineliner', label: 'Fineliner', screenPx: 3, thinning: 0, smoothing: 0.5, streamline: 0.3, simulatePressure: false },
-  { id: 'fountain', label: 'Fountain Pen', screenPx: 5, thinning: 0.55, smoothing: 0.65, streamline: 0.45, simulatePressure: true },
-  { id: 'brush', label: 'Brush Pen', screenPx: 9, thinning: 0.8, smoothing: 0.7, streamline: 0.5, simulatePressure: true },
+  { id: 'fineliner', label: 'Fineliner', short: 'Fineliner', screenPx: 3, thinning: 0, smoothing: 0.5, streamline: 0.3, simulatePressure: false },
+  { id: 'fountain', label: 'Fountain Pen', short: 'Fountain', screenPx: 5, thinning: 0.55, smoothing: 0.65, streamline: 0.45, simulatePressure: true },
+  { id: 'brush', label: 'Brush Pen', short: 'Brush', screenPx: 9, thinning: 0.8, smoothing: 0.7, streamline: 0.5, simulatePressure: true },
 ];
 
 const PATH_LIMIT = 2200;
