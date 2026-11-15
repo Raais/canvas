@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { ARCHIVE_VERSION } from '../archive/format';
 import { buildArchive, readArchive } from '../archive/zip';
 import { addNodes, createEmptyBoard, createTextNode, eraseDrawings, parseBoard } from '../domain/board';
-import { DRAWING_COLORS, drawingFromWorld, drawingHits, finishStroke, beginStroke, extendStroke, penScreenPx, worldStrokeWidth } from '../domain/drawing';
+import { DRAWING_COLORS, drawingFromWorld, drawingHits, eraserWorldRadius, finishStroke, beginStroke, extendStroke, penScreenPx, pointSegmentDistance, worldStrokeWidth } from '../domain/drawing';
 import { GRAPH_CLIPBOARD_VERSION, decodeGraphClipboard, encodeGraphClipboard, pasteGraph, selectionClosure } from '../domain/graph-clipboard';
 import { duplicateSelection } from '../domain/groups';
 import { createHistory, pushHistory, redoHistory, undoHistory } from '../domain/history';
@@ -198,6 +198,93 @@ describe('organic ink', () => {
     const projection = createNodeProjection().project([stroke, dot], { selected: new Set(), editingId: null, readOnly: false, unlocked: new Map(), registry: null, library: new Map() });
     expect({ pointerEvents: 'all', ...projection[0]?.style }.pointerEvents).toBe('none');
     expect(projection.find((node) => node.id === 'dot')?.type === 'drawing' ? projection.find((node) => node.id === 'dot')?.data && 'dot' in (projection.find((node) => node.id === 'dot')?.data ?? {}) : false).toBe(true);
+  });
+
+  test('erases the filled interior of an organic stroke without filling empty loops', () => {
+    const width = worldStrokeWidth(penScreenPx('brush'), 0.1);
+    const broad = ink(
+      [
+        { x: 0, y: 0 },
+        { x: 80, y: 0 },
+        { x: 160, y: 0 },
+        { x: 240, y: 0 },
+      ],
+      'brush',
+      width,
+      'broad',
+    );
+    const outline = getOrganicOutline(
+      Array.from({ length: broad.points.length / 2 }, (_, index) => ({ x: broad.points[index * 2] ?? 0, y: broad.points[index * 2 + 1] ?? 0 })),
+      'brush',
+      broad.strokeWidth,
+      true,
+    );
+    const radius = eraserWorldRadius(6);
+    let center = { x: broad.x + broad.width / 2, y: broad.y + broad.height / 2 };
+    let clearance = 0;
+    for (let x = broad.x; x <= broad.x + broad.width; x += 4) {
+      for (let y = broad.y; y <= broad.y + broad.height; y += 4) {
+        const local = { x: x - broad.x, y: y - broad.y };
+        if (!pointInOutline(local, outline)) continue;
+        let nearest = Infinity;
+        for (let index = 0; index < outline.length; index += 1) {
+          const start = outline[index];
+          const end = outline[(index + 1) % outline.length];
+          if (!start || !end) continue;
+          nearest = Math.min(nearest, pointSegmentDistance(local.x, local.y, start.x, start.y, end.x, end.y));
+        }
+        if (nearest > clearance) {
+          clearance = nearest;
+          center = { x, y };
+        }
+      }
+    }
+    expect(clearance).toBeGreaterThan(radius);
+    expect(drawingHits([broad], center, center, 0)).toEqual(['broad']);
+    expect(drawingHits([broad], center, center, radius)).toEqual(['broad']);
+    const inside = { x: center.x + 2, y: center.y };
+    expect(drawingHits([broad], center, inside, 0)).toEqual(['broad']);
+    const edge = { x: broad.x + (outline[0]?.x ?? 0), y: broad.y + (outline[0]?.y ?? 0) };
+    expect(drawingHits([broad], edge, edge, 0)).toEqual(['broad']);
+    const outside = { x: edge.x, y: edge.y - clearance - 8 };
+    expect(drawingHits([broad], outside, { x: outside.x + 12, y: outside.y }, 0)).toEqual([]);
+    expect(drawingHits([broad], outside, center, radius)).toEqual(['broad']);
+    const bow = ink(
+      [
+        { x: 0, y: 0 },
+        { x: 0, y: 180 },
+        { x: 140, y: 180 },
+        { x: 140, y: 150 },
+        { x: 24, y: 150 },
+        { x: 24, y: 30 },
+        { x: 140, y: 30 },
+        { x: 140, y: 0 },
+      ],
+      'fineliner',
+      3,
+      'bow',
+    );
+    const hollow = { x: bow.x + 80, y: bow.y + 90 };
+    expect(drawingHits([bow], hollow, { x: hollow.x, y: hollow.y + 20 }, 2)).toEqual([]);
+    const dot = ink([{ x: 12, y: 12 }], 'fountain', 5, 'dot');
+    expect(drawingHits([dot], { x: dot.x + (dot.points[0] ?? 0), y: dot.y + (dot.points[1] ?? 0) }, { x: dot.x + (dot.points[0] ?? 0), y: dot.y + (dot.points[1] ?? 0) }, 0)).toEqual(['dot']);
+    const child = { ...broad, id: 'child', parentId: 'group', x: 20, y: 30 };
+    const group = { id: 'group', kind: 'group' as const, x: 500, y: 80, width: 400, height: 200, label: 'Ink' };
+    const world = { x: group.x + child.x + (center.x - broad.x), y: group.y + child.y + (center.y - broad.y) };
+    expect(drawingHits([group, child], world, world, 0)).toEqual(['child']);
+    const legacy = ink([{ x: 0, y: 0 }, { x: 40, y: 0 }], 'legacy', 4, 'old');
+    const legacyMid = { x: legacy.x + (legacy.points[0] ?? 0) / 2 + (legacy.points[2] ?? 0) / 2, y: legacy.y + (legacy.points[1] ?? 0) };
+    expect(drawingHits([legacy], legacyMid, legacyMid, 0)).toEqual(['old']);
+    expect(drawingHits([legacy], { x: legacyMid.x, y: legacyMid.y + 30 }, { x: legacyMid.x + 10, y: legacyMid.y + 30 }, 1)).toEqual([]);
+    const note = { ...createTextNode({ x: 0, y: 0 }, 'keep', now), id: 'note' };
+    expect(drawingHits([note, broad], center, center, 0)).toEqual(['broad']);
+    const page = addNodes(createEmptyBoard(now), [broad, legacy, note], now);
+    const swept = eraseDrawings(page, drawingHits(page.nodes, { x: -20, y: -20 }, { x: 400, y: 80 }, 12), later);
+    expect(swept.nodes.some((node) => node.id === 'note')).toBe(true);
+    expect(swept.nodes.some((node) => node.kind === 'drawing')).toBe(false);
+    const restored = undoHistory(pushHistory(createHistory(), page), swept);
+    expect(restored?.board.nodes.filter((node) => node.kind === 'drawing')).toHaveLength(2);
+    expect(restored?.history.past).toHaveLength(0);
   });
 
   test('migrates schema 14 drawings as legacy and keeps new brushes', async () => {

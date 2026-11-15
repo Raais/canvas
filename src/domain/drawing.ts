@@ -1,4 +1,4 @@
-import { getBrushPreset, isDrawingBrush, isOrganicBrush, outlineForPairs, type OrganicBrush } from './organic-ink';
+import { getBrushPreset, isDrawingBrush, isOrganicBrush, outlineForPairs, pointInOutline, type OrganicBrush } from './organic-ink';
 import {
   DRAWING_STROKE_MAX,
   DRAWING_STROKE_MIN,
@@ -241,6 +241,8 @@ export function drawingHits(
 function strokeTouches(node: DrawingNode, origin: Point, from: Point, to: Point, radius: number): boolean {
   if (isOrganicBrush(node.brush) && node.points.length > 2) {
     const outline = outlineForPairs(node.points, node.brush, node.strokeWidth);
+    const local = (point: Point): Point => ({ x: point.x - origin.x, y: point.y - origin.y });
+    if (pointInOutline(local(from), outline) || pointInOutline(local(to), outline)) return true;
     for (let index = 0; index < outline.length; index += 1) {
       const start = outline[index];
       const end = outline[(index + 1) % outline.length];
