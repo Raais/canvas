@@ -244,6 +244,7 @@ function toFlowNode(
       type: 'drawing',
       connectable: false,
       focusable: true,
+      style: { ...base.style, pointerEvents: 'none' },
       data: {
         color: node.color,
         strokeWidth: node.strokeWidth,

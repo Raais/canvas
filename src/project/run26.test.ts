@@ -222,6 +222,26 @@ describe('drawing nodes', () => {
     expect(dragBodyUpdates([{ type: 'position', id: 'ink', dragging: true }], [{ id: 'ink', kind: 'drawing' }])).toEqual([]);
   });
 
+  test('drawing wrappers ignore hits outside the stroke', () => {
+    const drawing = stroke([{ x: 0, y: 0 }, { x: 48, y: 12 }], 'ink', 4, 'ink');
+    const dot = stroke([{ x: 6, y: 6 }], 'rose', 4, 'dot');
+    const grouped = { ...drawing, id: 'grouped', parentId: 'g1' };
+    const note = { ...createTextNode({ x: 0, y: 80 }, 'under', now), id: 'note' };
+    const projection = createNodeProjection();
+    const input = { selected: new Set<string>(), editingId: null, readOnly: false, unlocked: new Map(), registry: null, library: new Map() };
+    const nodes = projection.project(addNodes(createEmptyBoard(now), [drawing, dot, grouped, note], now).nodes, input);
+    const wrapper = (id: string) => ({ pointerEvents: 'all', ...nodes.find((node) => node.id === id)?.style });
+    expect(wrapper('ink').pointerEvents).toBe('none');
+    expect(wrapper('dot').pointerEvents).toBe('none');
+    expect(wrapper('grouped').pointerEvents).toBe('none');
+    expect(wrapper('note').pointerEvents).toBe('all');
+    const ink = nodes.find((node) => node.id === 'ink');
+    const point = nodes.find((node) => node.id === 'dot');
+    expect(ink?.type).toBe('drawing');
+    expect(point?.type === 'drawing' ? point.data.dot : false).toBe(true);
+    expect(point?.type === 'drawing' ? point.connectable : true).toBe(false);
+  });
+
   test('projects stably and leaves drawings out of search', () => {
     const drawing = stroke([{ x: 0, y: 0 }, { x: 20, y: 8 }], 'ink', 4, 'ink');
     const note = { ...createTextNode({ x: 0, y: 80 }, 'hello canvas', now), id: 'note' };
