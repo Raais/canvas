@@ -21,7 +21,7 @@ export function connectNodes(
   if (sourceId === targetId || hasUndirectedLink(board, sourceId, targetId)) return null;
   const source = board.nodes.find((node) => node.id === sourceId);
   const target = board.nodes.find((node) => node.id === targetId);
-  if (!source || !target) return null;
+  if (!source || !target || source.kind === 'drawing' || target.kind === 'drawing') return null;
   const restLength = distance(
     attachmentPoint(board.nodes, source, sourceHandle),
     attachmentPoint(board.nodes, target, targetHandle),

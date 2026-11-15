@@ -49,7 +49,7 @@ export function buildSearchIndex(nodes: readonly BoardNode[]): IndexedNode[] {
   }
   const indexed: IndexedNode[] = [];
   nodes.forEach((node, order) => {
-    if (node.kind === 'image' || isProtectedTextNode(node)) return;
+    if (node.kind === 'image' || node.kind === 'drawing' || isProtectedTextNode(node)) return;
     if (node.kind === 'file') {
       const parentLabel = node.parentId ? labels.get(node.parentId) ?? null : null;
       indexed.push({ id: node.id, kind: 'file', title: node.filename, foldedTitle: fold(node.filename), body: '', foldedBody: '', parentLabel, order });
@@ -88,6 +88,7 @@ export function contentSignature(nodes: readonly BoardNode[]): string {
     if (node.kind === 'file') return `f\t${node.id}\t${node.parentId ?? ''}\t${node.filename}\t${node.lastEditedAt ?? ''}`;
     if (node.kind === 'website') return `w\t${node.id}\t${node.parentId ?? ''}\t${node.title}\t${node.url}\t${node.lastEditedAt}`;
     if (node.kind === 'group') return `g\t${node.id}\t${node.label}`;
+    if (node.kind === 'drawing') return `d\t${node.id}`;
     return `i\t${node.id}\t${node.parentId ?? ''}\t${node.lastEditedAt ?? ''}\t${node.source.type}`;
   }).join('\n');
 }

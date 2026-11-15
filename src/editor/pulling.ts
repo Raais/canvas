@@ -43,7 +43,7 @@ export function dragBodyUpdates(changes: readonly DragChange[], nodes: readonly 
   for (const change of changes) {
     if (change.type !== 'position' || !change.id || (change.dragging !== true && change.dragging !== false)) continue;
     const node = byId.get(change.id);
-    if (!node) continue;
+    if (!node || node.kind === 'drawing') continue;
     if (node.parentId && draggingParents.has(node.parentId)) continue;
     updates.push({ id: change.id, dragging: change.dragging === true });
   }

@@ -15,7 +15,9 @@ import {
 import { Eye, EyeOff } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import {
+  addDrawing,
   addNodes,
+  eraseDrawings,
   commitInteraction,
   createEmptyBoard,
   createEmbeddedImageNode,
@@ -53,7 +55,7 @@ import { facingHandles, isContentNode, normalizeRect, worldTopLeft } from '../do
 import { toggleTaskAt } from '../domain/markdown';
 import { gesturePhase, sameSelection } from '../editor/interaction';
 import { dragBodyUpdates, FLOW_MULTI_SELECTION_KEYS, FLOW_SELECTION_KEY, nextShiftHeld, relaxDrag, shouldRelaxDrag, syncDragLedger } from '../editor/pulling';
-import { collapseSelectionKey, plainShortcutBlocked, searchShortcut, zoomSelectionKey } from '../editor/shortcuts';
+import { collapseSelectionKey, eraserToolKey, penToolKey, plainShortcutBlocked, searchShortcut, zoomSelectionKey } from '../editor/shortcuts';
 import { connectNodes, deleteEdges, hasUndirectedLink } from '../domain/graph';
 import { cameraDuration, frameViewport, noteJumpZoom } from '../domain/camera';
 import { setEdgeLabel, setEdgeStyle } from '../domain/relationships';
@@ -81,6 +83,8 @@ import {
   type AssetRecord,
   type Board,
   type BoardNode,
+  type DrawingColor,
+  type DrawingNode as DrawingBoardNode,
   type HandleSide,
   type Point,
   type Rect,
@@ -125,20 +129,24 @@ import { ProjectMenu } from './ProjectMenu';
 
 const DitherAtlasLayer = lazy(() => import('../backgrounds/DitherAtlasLayer'));
 const TopographicContoursLayer = lazy(() => import('../backgrounds/TopographicContoursLayer'));
-import { Toolbar } from './Toolbar';
+import { Toolbar, type CanvasTool } from './Toolbar';
+import { DrawingNode } from './DrawingNode';
+import { DrawingOverlay } from './DrawingOverlay';
+import { penScreenPx, type PenSizeId } from '../domain/drawing';
 import { FileNode } from './FileNode';
 import { WebsiteDialog } from './WebsiteDialog';
 import { WebsiteNode } from './WebsiteNode';
 import { createEdgeProjection, createNodeProjection, type CanvasFlowNode } from './flow-projection';
 import { downloadBlob } from '../project/download';
 
-type Tool = 'select' | 'frame';
+type Tool = CanvasTool;
 
 const nodeTypes = {
   text: TextNoteNode,
   image: ImageNoteNode,
   file: FileNode,
   website: WebsiteNode,
+  drawing: DrawingNode,
   group: GroupNode,
 };
 
@@ -179,6 +187,9 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const [fileDrag, setFileDrag] = useState(false);
   const [urlEpoch, setUrlEpoch] = useState(0);
   const [tool, setTool] = useState<Tool>('select');
+  const [penColor, setPenColor] = useState<DrawingColor>('ink');
+  const [penSize, setPenSize] = useState<PenSizeId>('medium');
+  const inkGestureRef = useRef(false);
   const [draft, setDraft] = useState<Rect | null>(null);
   const [projectOpen, setProjectOpen] = useState(false);
   const [usage, setUsage] = useState<LogicalUsage | null>(null);
@@ -368,6 +379,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
         confirming: confirmingRef.current,
         ingesting: ingestRef.current > 0,
         adjustingRotation: rotationAdjustRef.current,
+        drawing: inkGestureRef.current,
         focusedField,
         readOnly: blockedRef.current,
         saveStatus: statusRef.current,
@@ -898,6 +910,20 @@ function BoardSurface({ session }: { session: SessionProps }) {
         editing: editingRef.current !== null,
         blocked: blockedRef.current,
       });
+      if (!plainBlocked && penToolKey(event.key)) {
+        event.preventDefault();
+        frameRef.current = null;
+        setDraft(null);
+        setTool('pen');
+        return;
+      }
+      if (!plainBlocked && eraserToolKey(event.key)) {
+        event.preventDefault();
+        frameRef.current = null;
+        setDraft(null);
+        setTool('eraser');
+        return;
+      }
       if (!plainBlocked && (event.key === 'l' || event.key === 'L')) {
         if (commands.current.link()) event.preventDefault();
         return;
@@ -1437,8 +1463,30 @@ function BoardSurface({ session }: { session: SessionProps }) {
     return edgeProjection.current.project(board.edges, new Set(selectedEdgeIds));
   }, [board.edges, selectedEdgeIds]);
 
-  function onNodesChange(changes: NodeChange<CanvasFlowNode>[]) {
+  function commitDrawing(node: DrawingBoardNode) {
     if (blockedRef.current) return;
+    const before = boardRef.current;
+    const result = addDrawing(before, node);
+    if ('error' in result) {
+      setNotice({ text: result.error, source: 'ingest', ephemeral: true });
+      return;
+    }
+    publish(result, before, 'save');
+    replaceSelection([node.id]);
+  }
+
+  function commitErasure(ids: readonly string[]) {
+    if (blockedRef.current || ids.length === 0) return;
+    const before = boardRef.current;
+    const next = eraseDrawings(before, ids);
+    if (next === before) return;
+    publish(next, before, 'save');
+    const live = new Set(next.nodes.map((node) => node.id));
+    replaceSelection(selectedRef.current.filter((id) => live.has(id)));
+  }
+
+  function onNodesChange(changes: NodeChange<CanvasFlowNode>[]) {
+    if (blockedRef.current || toolRef.current === 'pen' || toolRef.current === 'eraser') return;
     const dragUpdates = dragBodyUpdates(changes, boardRef.current.nodes);
     const draggingParents = new Set(
       changes.flatMap((change) =>
@@ -1896,7 +1944,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
     <BoardActionsProvider value={actions}>
       <div
         ref={boardEl}
-        className={`${tool === 'frame' ? 'board is-framing' : 'board'}${atlasActive ? ' has-dither-atlas' : ''}${contoursActive ? ' has-topographic-contours' : ''}`}
+        className={`${tool === 'frame' ? 'board is-framing' : 'board'}${tool === 'pen' || tool === 'eraser' ? ' is-inking' : ''}${atlasActive ? ' has-dither-atlas' : ''}${contoursActive ? ' has-topographic-contours' : ''}`}
         onDragEnter={(event) => {
           const types = dragTypes(event.dataTransfer);
           if (resolveLinkDrop({ types, uriList: null, plain: null, html: null }).preventDefault) event.preventDefault();
@@ -1977,6 +2025,10 @@ function BoardSurface({ session }: { session: SessionProps }) {
             setDraft(null);
             setTool(next);
           }}
+          penColor={penColor}
+          penSize={penSize}
+          onPenColor={setPenColor}
+          onPenSize={setPenSize}
           onGroup={groupSelected}
           onUngroup={ungroupSelected}
           onViewport={(viewport) => {
@@ -2219,6 +2271,27 @@ function BoardSurface({ session }: { session: SessionProps }) {
           </div>
         ) : null}
         {fileDrag ? <div className="drop-overlay" /> : null}
+        {tool === 'pen' || tool === 'eraser' ? (
+          <DrawingOverlay
+            mode={tool}
+            color={penColor}
+            screenWidth={penScreenPx(penSize)}
+            appearance={board.appearance}
+            generation={board.revision}
+            readOnly={readOnly}
+            getViewport={() => flowRef.current.getViewport()}
+            screenToFlow={(point) => flowRef.current.screenToFlowPosition(point)}
+            setViewport={(viewport) => {
+              void flowRef.current.setViewport(viewport);
+            }}
+            nodes={() => boardRef.current.nodes}
+            onActive={(active) => {
+              inkGestureRef.current = active;
+            }}
+            onCommit={commitDrawing}
+            onErase={commitErasure}
+          />
+        ) : null}
         {searchOpen ? (
           <SearchPalette query={searchQuery} results={searchOutcome.results} notice={searchOutcome.notice} dateLabel={searchOutcome.dateLabel} onQuery={setSearchQuery} onJump={jumpToNode} onClose={closeSearch} />
         ) : null}
@@ -2258,7 +2331,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
             finishFrame(screenToFlowPosition({ x: event.clientX, y: event.clientY }));
           }}
           onDoubleClick={(event) => {
-            if (toolRef.current === 'frame') return;
+            if (toolRef.current !== 'select') return;
             if (!(event.target instanceof Element) || !event.target.classList.contains('react-flow__pane')) return;
             createNote(screenToFlowPosition({ x: event.clientX, y: event.clientY }));
           }}
@@ -2271,14 +2344,15 @@ function BoardSurface({ session }: { session: SessionProps }) {
           zoomOnDoubleClick={false}
           zoomOnScroll
           zoomOnPinch
-          panOnDrag={tool !== 'frame'}
+          panOnDrag={tool === 'select'}
+          nodesDraggable={tool === 'select'}
+          nodesConnectable={tool === 'select'}
           panOnScroll={false}
           selectionOnDrag={false}
           selectionKeyCode={FLOW_SELECTION_KEY}
           multiSelectionKeyCode={[...FLOW_MULTI_SELECTION_KEYS]}
           panActivationKeyCode="Space"
           deleteKeyCode={['Backspace', 'Delete']}
-          nodesConnectable
           connectOnClick={false}
           connectionMode={ConnectionMode.Loose}
           elementsSelectable

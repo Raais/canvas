@@ -39,7 +39,7 @@ describe('migration', () => {
       nodes: [note('n1', 10, 20)],
       edges: [{ id: 'e1', sourceId: 'missing', targetId: 'n1', restLength: 10 }],
     });
-    expect(migrated?.schemaVersion).toBe(13);
+    expect(migrated?.schemaVersion).toBe(14);
     expect(migrated?.title).toBe('Kept');
     expect(migrated?.viewport).toEqual({ x: 12, y: -4, zoom: 1.5 });
     expect(migrated?.nodes).toHaveLength(1);
@@ -47,7 +47,7 @@ describe('migration', () => {
   });
 
   test('does not replace an unsupported document', () => {
-    expect(parseBoard({ schemaVersion: 14, id: 'x', nodes: [], edges: [] })).toBeNull();
+    expect(parseBoard({ schemaVersion: 15, id: 'x', nodes: [], edges: [] })).toBeNull();
     expect(parseBoard({ schemaVersion: 2, id: 'x', title: 'T', createdAt: now, updatedAt: now, revision: 1, nodes: [note('a', 0, 0), { ...note('b', 1, 1), parentId: 'missing' }], edges: [], viewport: { x: 0, y: 0, zoom: 1 } })).toBeNull();
   });
 });

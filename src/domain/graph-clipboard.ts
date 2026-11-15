@@ -1,5 +1,5 @@
 import { childrenOf, worldTopLeft } from './geometry';
-import type { Board, BoardEdge, BoardNode, Point } from './types';
+import { SCHEMA_VERSION, type Board, type BoardEdge, type BoardNode, type Point } from './types';
 import { parseBoard, revise, withInsertedTimestamp } from './board';
 
 export const GRAPH_CLIPBOARD_FORMAT = 'canvas-graph';
@@ -60,7 +60,7 @@ export function decodeGraphClipboard(raw: string): GraphClipboard | null {
   if (!Array.isArray(record.nodes) || !Array.isArray(record.edges)) return null;
   if (raw.length > GRAPH_CLIPBOARD_LIMIT || record.nodes.length > 2000 || record.edges.length > 4000) return null;
   const parsed = parseBoard({
-    schemaVersion: 6,
+    schemaVersion: SCHEMA_VERSION,
     id: 'clipboard',
     title: 'clipboard',
     createdAt: '2020-01-01T00:00:00.000Z',

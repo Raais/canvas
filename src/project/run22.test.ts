@@ -190,7 +190,7 @@ describe('protected notes', () => {
     expect(preferProtectedBoard(stale, board)).toBe(board);
     expect(JSON.stringify(preferProtectedBoard(stale, board)).includes(secret)).toBe(false);
     const migrated = parseBoard({ ...createEmptyBoard(now), schemaVersion: 10, physicsEnabled: false });
-    expect(migrated?.schemaVersion).toBe(13);
+    expect(migrated?.schemaVersion).toBe(14);
     expect(migrated?.physicsEnabled).toBe(false);
     expect(migrated?.nodes.every((node) => node.kind !== 'text' || !node.protection)).toBe(true);
     const contours = parseBoard({ ...createEmptyBoard(now), schemaVersion: 7, backgroundPattern: 'topographic-contours', topographicContours: { seed: 4, rendererVersion: 1 } });

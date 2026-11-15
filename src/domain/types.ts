@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 13 as const;
+export const SCHEMA_VERSION = 14 as const;
 export const MAX_SAVED_VIEWS = 32;
 export const MAX_SAVED_VIEW_NAME = 60;
 export const MAX_EDGE_LABEL = 80;
@@ -31,6 +31,11 @@ export const GROUP_PAD = 20;
 export const GROUP_MIN_WIDTH = 120;
 export const GROUP_MIN_HEIGHT = 88;
 export const DUPLICATE_OFFSET = 32;
+export const MAX_DRAWING_POINTS = 1024;
+export const MAX_DRAWING_NODES = 2000;
+export const DRAWING_STROKE_MIN = 0.2;
+export const DRAWING_STROKE_MAX = 96;
+export const ERASER_RADIUS_PX = 12;
 
 export type Viewport = {
   x: number;
@@ -141,6 +146,23 @@ export type FileNode = {
   lastEditedAt?: string;
 };
 
+export type DrawingColor = 'ink' | 'blue' | 'sage' | 'rose' | 'sand';
+
+export type DrawingNode = {
+  id: string;
+  kind: 'drawing';
+  parentId?: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** Local coordinates as flat pairs: [x0, y0, x1, y1, ...]. */
+  points: number[];
+  color: DrawingColor;
+  strokeWidth: number;
+  lastEditedAt: string;
+};
+
 export type WebsiteNode = {
   id: string;
   kind: 'website';
@@ -166,7 +188,7 @@ export type GroupNode = {
   backgroundTone?: BackgroundTone;
 };
 
-export type ContentNode = TextNode | ImageNode | FileNode | WebsiteNode;
+export type ContentNode = TextNode | ImageNode | FileNode | WebsiteNode | DrawingNode;
 
 export type BoardNode = ContentNode | GroupNode;
 

@@ -10,13 +10,14 @@ import {
   type BoardEdge,
   type BoardNode,
 } from '../domain/types';
+import type { DrawingFlowNode } from './DrawingNode';
 import type { FileFlowNode } from './FileNode';
 import type { GroupFlowNode } from './GroupNode';
 import type { ImageFlowNode } from './ImageNoteNode';
 import type { TextFlowNode } from './TextNoteNode';
 import type { WebsiteFlowNode } from './WebsiteNode';
 
-export type CanvasFlowNode = TextFlowNode | ImageFlowNode | FileFlowNode | WebsiteFlowNode | GroupFlowNode;
+export type CanvasFlowNode = TextFlowNode | ImageFlowNode | FileFlowNode | WebsiteFlowNode | DrawingFlowNode | GroupFlowNode;
 
 export type NodeProjectionInput = {
   selected: ReadonlySet<string>;
@@ -197,7 +198,7 @@ function toFlowNode(
     height: node.height,
     selected,
     parentId: isContentNode(node) ? node.parentId : undefined,
-    zIndex: node.kind === 'group' ? 0 : 1,
+    zIndex: node.kind === 'group' ? 0 : node.kind === 'drawing' ? 2 : 1,
     draggable: node.kind !== 'text' || !editing,
     style: { width: node.width, height: node.height },
     measured: { width: node.width, height: node.height },
@@ -234,6 +235,20 @@ function toFlowNode(
         unlocked: protectedNote && input.unlocked.has(node.id),
         readOnly: input.readOnly,
         sourceFilename: node.sourceFilename,
+      },
+    };
+  }
+  if (node.kind === 'drawing') {
+    return {
+      ...base,
+      type: 'drawing',
+      connectable: false,
+      focusable: true,
+      data: {
+        color: node.color,
+        strokeWidth: node.strokeWidth,
+        points: node.points,
+        dot: node.points.length <= 2,
       },
     };
   }

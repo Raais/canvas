@@ -128,7 +128,7 @@ function indexBoard(nodes: readonly BoardNode[]): PhysicsIndex {
   const childCount = new Map<string, number>();
   for (const node of nodes) {
     byId.set(node.id, node);
-    if (node.kind === 'group' || !node.parentId) continue;
+    if (node.kind === 'group' || node.kind === 'drawing' || !node.parentId) continue;
     childCount.set(node.parentId, (childCount.get(node.parentId) ?? 0) + 1);
   }
   return { byId, childCount };

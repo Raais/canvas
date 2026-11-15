@@ -26,6 +26,14 @@ export function zoomSelectionKey(key: string, selectedCount: number): boolean {
   return key.toLowerCase() === 'g' && selectedCount === 1;
 }
 
+export function penToolKey(key: string): boolean {
+  return key.toLowerCase() === 'p';
+}
+
+export function eraserToolKey(key: string): boolean {
+  return key.toLowerCase() === 'e';
+}
+
 export function collapseSelectionKey(key: string, selectedCount: number): boolean {
   return key.toLowerCase() === 'u' && selectedCount === 1;
 }

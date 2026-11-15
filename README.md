@@ -2,7 +2,7 @@
 
 **Implemented by Cursor Grok 4.7.**
 
-canvas is a local-first spatial notebook and moodboard. Arrange text, Markdown, code, images, file attachments, links, and groups on an infinite canvas. The board stays in this browser. There is no account, backend, or upload server.
+canvas is a local-first spatial notebook and moodboard. Arrange text, Markdown, code, images, file attachments, links, drawings, and groups on an infinite canvas. The board stays in this browser. There is no account, backend, or upload server.
 
 A new board starts dark. Project → Canvas background can switch it to light, and can use dots, a grid, a cross, a blank canvas, Dither Atlas, or topographic contours. An existing board keeps the background it already saved.
 
@@ -21,6 +21,7 @@ A new board starts dark. Project → Canvas background can switch it to light, a
 - Undo and redo recent edits until the page reloads. History is not stored in IndexedDB.
 - Read the cursor and the selected object in world coordinates.
 - Press G with one node selected to bring that node into view. Press U to shrink that node to its smallest allowed size. Cmd+G or Ctrl+G still groups the selection, and Shift with that shortcut ungroups it.
+- Press P for the pen and E for the eraser. A pen stroke becomes one drawing. The eraser removes each stroke it touches, and one sweep is one undo.
 - Add a website from the toolbar, or paste or drop a single http or https address. The card stores the address and a title. It does not load the page.
 - Export the open board as a `.canvas.zip` archive, start a blank board, or import an archive in place of the current one.
 - See an approximate size for canvas data, plus the browser's estimate for this whole origin.
@@ -33,7 +34,7 @@ The board itself is not stored in `localStorage`. A board's appearance is part o
 
 The browser can still delete site data. An exported archive is the copy to keep. canvas does not upload the board anywhere. External image links are recorded as URLs only; their bytes are not included. A website card stores its address in the board and in an exported ZIP. That address is not encrypted. A query string can contain a private token, so do not bookmark a secret URL you would not want in a backup.
 
-Boards are document schema 13. A new ZIP archive is format 2, and older format 1 archives still import. A copied selection is still clipboard format 1. Schema 12 boards open and are saved as schema 13. An older copy of canvas will not open a schema 13 board, so export a backup before upgrading. Image rotation is stored on the image note in degrees and is omitted at 0°. Text, image, and file notes may store `lastEditedAt`. Pulling force is a project setting: it is omitted while on, and stored as `physicsEnabled: false` when off. A password-protected note stores ciphertext instead of its text. Labels, link styles, saved views, and a Topographic Contours seed travel with the board JSON. Older boards migrate forward without changing their saved background or inventing dates. There is no remote search service.
+Boards are document schema 14. A new ZIP archive is format 2, and older format 1 archives still import. A copied selection is still clipboard format 1. Schema 13 boards open and are saved as schema 14. An older copy of canvas will not open a schema 14 board, so export a backup before upgrading. Image rotation is stored on the image note in degrees and is omitted at 0°. Text, image, and file notes may store `lastEditedAt`. Pulling force is a project setting: it is omitted while on, and stored as `physicsEnabled: false` when off. A password-protected note stores ciphertext instead of its text. Labels, link styles, saved views, and a Topographic Contours seed travel with the board JSON. Older boards migrate forward without changing their saved background or inventing dates. There is no remote search service.
 
 One tab owns writing, using a browser lock named `raais-canvas-active-board-v1` when the browser provides it. Other tabs can pan, zoom, search, recall saved views, and inspect, but they do not save. If a tab has open edits when it loses the board, it keeps them in memory and offers **Download recovery ZIP**. Reload asks before discarding those edits. IndexedDB still refuses a stale revision. Embedded images and file attachments must be 64 MiB or smaller, and a backup must stay within 256 MiB including the manifest. The project menu warns when a board is near or past that limit. Copying a note out of a group pastes it in world coordinates. Escape finishes a note edit and cancels a group rename. Delete contents asks before removing a group and its children. Checklists toggle for unordered, ordered, nested, and quoted tasks.
 
@@ -43,11 +44,15 @@ A text note's date is the last time its text actually changed. Moving, resizing,
 
 ## Search
 
-Ctrl+K still ranks note titles, note text, file names, website titles, website addresses, and group labels locally, including short prefixes and small typos, through MiniSearch plus a substring pass. A query that is also a date, such as `today`, `yesterday`, `last friday`, `june`, `june 2025`, `14/11`, or `2025`, lists dated text, image, file, and website notes in that range and content matches underneath. `edited:yesterday` searches dates only. Groups never match a date. `may need fixing` stays a text search. Date matches can focus an image. Search is downloaded with the app and works offline.
+Ctrl+K still ranks note titles, note text, file names, website titles, website addresses, and group labels locally, including short prefixes and small typos, through MiniSearch plus a substring pass. Drawings are ink, so they are left out of text search and date search. A query that is also a date, such as `today`, `yesterday`, `last friday`, `june`, `june 2025`, `14/11`, or `2025`, lists dated text, image, file, and website notes in that range and content matches underneath. `edited:yesterday` searches dates only. Groups never match a date. `may need fixing` stays a text search. Date matches can focus an image. Search is downloaded with the app and works offline.
 
 ## Node physics
 
 Project → Node physics has **Pulling force**. It starts on, including for boards saved before schema 10. The choice is part of the board, so a ZIP keeps it and a read-only tab cannot change it. Turning it off does not move nodes or rewrite dates. While it is on, dragging still uses the same tension tether as before. Hold Shift while dragging exactly one note, image, file, website, or group frame to temporarily reverse the setting: on becomes a free drag, and off becomes a pull. Releasing Shift during the drag restores the project setting immediately. Dragging several selected nodes at once follows the project setting, and Shift does not reverse it. Selection, resizing, and panning do not use this override. Shift still starts a selection box on empty canvas, and Cmd or Ctrl still adds to the selection.
+
+## Drawings
+
+Pen and Eraser sit with the other tools. Pen keeps five colors — Ink, Blue, Sage, Rose, and Sand — and three widths, Thin, Medium, and Thick. Ink is dark on a light board and light on a dark board. The choice is not saved as a preference; each stroke stores its own color and width. One pointer gesture creates one drawing node, including a tap, which becomes a dot. The stroke is stored as coordinates on that node, not as an image. Drawings can be selected, moved, copied, grouped, and deleted. They have no resize handles, no link handles, and no spring of their own. A group that contains drawings still moves as one body. Click and drag the ink itself: empty space inside a scribble's rectangle stays open to whatever is underneath. The eraser deletes a whole stroke when it touches any part of the line, and a single swipe is a single undo. It does not erase notes, images, files, websites, groups, or links. Hold Space to pan while Pen or Eraser is selected. The wheel still zooms. A stroke in progress is cancelled by Escape, a second finger, or leaving the page, and it is not saved. Pinch zoom stays available in Select. Read-only tabs cannot draw or erase. A board holds at most 2,000 drawings.
 
 ## Websites
 

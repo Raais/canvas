@@ -79,7 +79,7 @@ function dateHits(nodes: readonly BoardNode[], start: number, end: number, now: 
   }
   const hits: Array<SearchResult & { time: number }> = [];
   for (const node of nodes) {
-    if (node.kind === 'group' || !node.lastEditedAt) continue;
+    if (node.kind === 'group' || node.kind === 'drawing' || !node.lastEditedAt) continue;
     const time = Date.parse(node.lastEditedAt);
     if (!Number.isFinite(time) || time < start || time >= end) continue;
     const parentLabel = node.parentId ? labels.get(node.parentId) ?? null : null;

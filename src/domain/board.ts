@@ -6,6 +6,7 @@ import { contentExtent } from './geometry';
 import { classifyPlainText } from './code';
 import { sanitizeFilename } from './files';
 import { canonicalWebsiteUrl } from './websites';
+import { countDrawings, parseDrawingNode } from './drawing';
 import {
   ASPECT_MIN_SIZE,
   FILE_MIN_HEIGHT,
@@ -34,12 +35,14 @@ import {
   MAX_EDGE_LABEL,
   MAX_SAVED_VIEW_NAME,
   MAX_SAVED_VIEWS,
+  MAX_DRAWING_NODES,
   MAX_ZOOM,
   MIN_ZOOM,
   SCHEMA_VERSION,
   type Board,
   type BoardEdge,
   type BoardNode,
+  type DrawingNode,
   type HandleSide,
   type ImageDisplayMode,
   type ImageNode,
@@ -233,6 +236,30 @@ export function referencedAssetIds(board: Board): Set<string> {
   return ids;
 }
 
+export function addDrawing(board: Board, node: DrawingNode, now?: string): Board | { error: string } {
+  if (countDrawings(board.nodes) >= MAX_DRAWING_NODES) {
+    return { error: 'This board already has 2,000 drawings. Erase one to draw again.' };
+  }
+  return addNodes(board, [node], now);
+}
+
+export function eraseDrawings(board: Board, ids: readonly string[], now?: string): Board {
+  const removing = new Set<string>();
+  for (const id of ids) {
+    const node = board.nodes.find((entry) => entry.id === id);
+    if (node?.kind === 'drawing') removing.add(id);
+  }
+  if (removing.size === 0) return board;
+  const nodes = board.nodes.filter((node) => !removing.has(node.id));
+  const edges = board.edges.filter((edge) => !removing.has(edge.sourceId) && !removing.has(edge.targetId));
+  return revise(board, { nodes, edges }, now);
+}
+
+export function resolveErasure(board: Board, ids: readonly string[], cancelled: boolean, now?: string): Board {
+  if (cancelled) return board;
+  return eraseDrawings(board, ids, now);
+}
+
 export function addNodes(board: Board, nodes: BoardNode[], now?: string): Board {
   if (nodes.length === 0) return board;
   return touch(board, { nodes: [...board.nodes, ...nodes] }, now);
@@ -275,6 +302,7 @@ export function collapsedSize(nodes: readonly BoardNode[], node: BoardNode): { w
   if (node.kind === 'text') return { width: TEXT_MIN_WIDTH, height: TEXT_RESIZE_MIN_HEIGHT };
   if (node.kind === 'file') return { width: FILE_MIN_WIDTH, height: FILE_MIN_HEIGHT };
   if (node.kind === 'website') return { width: WEBSITE_MIN_WIDTH, height: WEBSITE_MIN_HEIGHT };
+  if (node.kind === 'drawing') return { width: node.width, height: node.height };
   if (node.kind === 'group') {
     const extent = contentExtent(nodes, node.id);
     return {
@@ -303,6 +331,10 @@ export function placeNode(
     const height = patch.height === undefined ? node.height : Math.max(minHeight(node), patch.height);
     const x = patch.x ?? node.x;
     const y = patch.y ?? node.y;
+    if (node.kind === 'drawing') {
+      if (x === node.x && y === node.y) return node;
+      return { ...node, x, y };
+    }
     if (node.kind === 'group') {
       const extent = contentExtent(board.nodes, node.id);
       const nextWidth = Math.max(width, GROUP_MIN_WIDTH, extent ? extent.right + GROUP_PAD : 0);
@@ -592,11 +624,12 @@ export function parseBoard(value: unknown): Board | null {
   const seen = new Set<string>();
   const nodes: BoardNode[] = [];
   for (const entry of value.nodes) {
-    const node = parseNode(entry);
+    const node = parseNode(entry, version);
     if (!node || seen.has(node.id)) return null;
     seen.add(node.id);
     nodes.push(node);
   }
+  if (countDrawings(nodes) > MAX_DRAWING_NODES) return null;
 
   const edges: BoardEdge[] = [];
   const edgeIds = new Set<string>();
@@ -741,6 +774,7 @@ function touch(
 }
 
 function minWidth(node: BoardNode): number {
+  if (node.kind === 'drawing') return node.width;
   if (node.kind === 'text') return TEXT_MIN_WIDTH;
   if (node.kind === 'file') return FILE_MIN_WIDTH;
   if (node.kind === 'website') return WEBSITE_MIN_WIDTH;
@@ -750,6 +784,7 @@ function minWidth(node: BoardNode): number {
 }
 
 function minHeight(node: BoardNode): number {
+  if (node.kind === 'drawing') return node.height;
   if (node.kind === 'text') return TEXT_MIN_HEIGHT;
   if (node.kind === 'file') return FILE_MIN_HEIGHT;
   if (node.kind === 'website') return WEBSITE_MIN_HEIGHT;
@@ -758,7 +793,7 @@ function minHeight(node: BoardNode): number {
   return IMAGE_MIN_SIZE;
 }
 
-function parseNode(value: unknown): BoardNode | null {
+function parseNode(value: unknown, schemaVersion: number): BoardNode | null {
   if (!isRecord(value) || !isNonEmptyString(value.id)) return null;
   if (!isFiniteNumber(value.x) || !isFiniteNumber(value.y)) return null;
   if (!isPositive(value.width) || !isPositive(value.height)) return null;
@@ -834,6 +869,10 @@ function parseNode(value: unknown): BoardNode | null {
       filename,
       ...stamped,
     };
+  }
+  if (value.kind === 'drawing') {
+    if (!schemaAtLeast(schemaVersion, 14)) return null;
+    return parseDrawingNode(value, parentId || undefined);
   }
   if (value.kind === 'website') {
     if (typeof value.url !== 'string' || typeof value.title !== 'string') return null;
@@ -1004,7 +1043,9 @@ function validGraph(nodes: readonly BoardNode[], edges: readonly BoardEdge[]): b
     if (!parent || parent.kind !== 'group') return false;
   }
   for (const edge of edges) {
-    if (!byId.has(edge.sourceId) || !byId.has(edge.targetId)) return false;
+    const source = byId.get(edge.sourceId);
+    const target = byId.get(edge.targetId);
+    if (!source || !target || source.kind === 'drawing' || target.kind === 'drawing') return false;
     const key = edge.sourceId < edge.targetId ? `${edge.sourceId}\0${edge.targetId}` : `${edge.targetId}\0${edge.sourceId}`;
     if (pairs.has(key)) return false;
     pairs.add(key);

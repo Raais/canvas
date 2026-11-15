@@ -1,12 +1,14 @@
 import { useReactFlow } from '@xyflow/react';
 import {
   Bookmark,
+  Eraser,
   Frame,
   FilePlus2,
   Globe,
   Image as ImageIcon,
   Moon,
   MousePointer2,
+  Pencil,
   Redo2,
   StickyNote,
   Sun,
@@ -19,8 +21,12 @@ import {
   Search,
 } from 'lucide-react';
 import { useRef, type ReactNode } from 'react';
+import { DRAWING_COLORS, PEN_SIZES, type PenSizeId } from '../domain/drawing';
+import type { DrawingColor } from '../domain/types';
 import type { Appearance } from '../persistence/db';
 import type { SaveStatus } from '../persistence/save-queue';
+
+export type CanvasTool = 'select' | 'frame' | 'pen' | 'eraser';
 
 const STATUS_LABEL: Record<SaveStatus, string> = {
   saving: 'Saving',
@@ -32,7 +38,9 @@ const STATUS_LABEL: Record<SaveStatus, string> = {
 type ToolbarProps = {
   title: string;
   status: SaveStatus;
-  tool: 'select' | 'frame';
+  tool: CanvasTool;
+  penColor: DrawingColor;
+  penSize: PenSizeId;
   appearance: Appearance;
   canGroup: boolean;
   canUngroup: boolean;
@@ -45,7 +53,9 @@ type ToolbarProps = {
   onAddWebsite: () => void;
   readOnly?: boolean;
   onViewport: (viewport: { x: number; y: number; zoom: number }) => void;
-  onTool: (tool: 'select' | 'frame') => void;
+  onTool: (tool: CanvasTool) => void;
+  onPenColor: (color: DrawingColor) => void;
+  onPenSize: (size: PenSizeId) => void;
   onGroup: () => void;
   onUngroup: () => void;
   onUndo: () => void;
@@ -61,6 +71,8 @@ export function Toolbar({
   title,
   status,
   tool,
+  penColor,
+  penSize,
   appearance,
   canGroup,
   canUngroup,
@@ -74,6 +86,8 @@ export function Toolbar({
   readOnly = false,
   onViewport,
   onTool,
+  onPenColor,
+  onPenSize,
   onGroup,
   onUngroup,
   onUndo,
@@ -152,6 +166,32 @@ export function Toolbar({
           <button type="button" className="icon-button" aria-pressed={tool === 'frame'} aria-label="Frame" title="Frame" onClick={() => onTool(tool === 'frame' ? 'select' : 'frame')}>
             <Frame size={17} strokeWidth={1.75} />
           </button>
+          <button type="button" className="icon-button" aria-pressed={tool === 'pen'} aria-label="Pen" title="Pen" disabled={readOnly} onClick={() => onTool('pen')}>
+            <Pencil size={17} strokeWidth={1.75} />
+          </button>
+          <button type="button" className="icon-button" aria-pressed={tool === 'eraser'} aria-label="Eraser" title="Eraser" disabled={readOnly} onClick={() => onTool('eraser')}>
+            <Eraser size={17} strokeWidth={1.75} />
+          </button>
+          {tool === 'pen' ? (
+            <div className="pen-palette" role="group" aria-label="Pen settings">
+              {DRAWING_COLORS.map((entry) => (
+                <button
+                  key={entry}
+                  type="button"
+                  className={`pen-swatch stroke-${entry}`}
+                  aria-pressed={penColor === entry}
+                  aria-label={entry === 'ink' ? 'Ink' : entry[0]?.toUpperCase() + entry.slice(1)}
+                  title={entry === 'ink' ? 'Ink' : entry[0]?.toUpperCase() + entry.slice(1)}
+                  onClick={() => onPenColor(entry)}
+                />
+              ))}
+              {PEN_SIZES.map((entry) => (
+                <button key={entry.id} type="button" className="pen-width" aria-pressed={penSize === entry.id} onClick={() => onPenSize(entry.id)}>
+                  {entry.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
       </div>
       <div className="chrome chrome-status">
