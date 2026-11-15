@@ -66,6 +66,20 @@ import { setEdgeLabel, setEdgeStyle } from '../domain/relationships';
 import { editSavedView, recallViewport } from '../domain/saved-views';
 import { centerOf, contentSignature, resultBounds, type SearchOutcome } from '../domain/search';
 import { classifyXray, clearedXrayLens, xrayLensActive } from '../domain/xray';
+import {
+  applyContentDeletion,
+  contentRemovalIds,
+  createMirror,
+  detachMirror,
+  expandDeletedMirrors,
+  keepLinkedMirrors,
+  MIRROR_LIMIT_MESSAGE,
+  MIRROR_PROTECT_MESSAGE,
+  mirrorDeletePlan,
+  textEditTarget,
+  resolveMirrorSource,
+  selectionRemovalIds,
+} from '../domain/mirrors';
 import { decodeGraphClipboard, encodeGraphClipboard, GRAPH_CLIPBOARD_LIMIT, GRAPH_MIME, looksLikeGraphClipboard, pasteGraph, selectionClosure } from '../domain/graph-clipboard';
 import {
   createTextInside,
@@ -272,6 +286,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
     | { kind: 'export'; thenClear: boolean; summary: string; unsaved: boolean }
     | { kind: 'import'; summary: string; board: Board; assets: AssetRecord[] }
     | { kind: 'delete-contents'; groupId: string; label: string; count: number }
+    | { kind: 'mirrors'; scope: 'selection' | 'contents'; ids: string[]; outside: number; title: string }
     | { kind: 'reload' }
   >(null);
 
@@ -906,7 +921,12 @@ function BoardSurface({ session }: { session: SessionProps }) {
       return;
     }
     const next = duplicateSelection(before, selectedRef.current);
-    if (next === before) return;
+    if (next === before) {
+      if (before.nodes.some((node) => node.kind === 'mirror' && selectedRef.current.includes(node.id))) {
+        setNotice({ text: MIRROR_LIMIT_MESSAGE, source: 'ingest', ephemeral: true });
+      }
+      return;
+    }
     publish(next, before, 'save');
     const previous = new Set(before.nodes.map((node) => node.id));
     replaceSelection(next.nodes.filter((node) => !previous.has(node.id) && (node.kind === 'group' || !node.parentId)).map((node) => node.id));
@@ -990,7 +1010,10 @@ function BoardSurface({ session }: { session: SessionProps }) {
           return;
         }
         const next = protectTextNode(previous, node.id, payload);
-        if (next === previous) return;
+        if (next === previous) {
+          setPasswordError(MIRROR_PROTECT_MESSAGE);
+          return;
+        }
         const saved = await commitSensitive(next, previous, 'Unable to protect because saving failed.');
         if (!saved) return;
         unlockedRef.current.delete(node.id);
@@ -1234,6 +1257,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
     () => ({
       beginEditing(id) {
         const node = boardRef.current.nodes.find((entry) => entry.id === id);
+        if (node?.kind === 'mirror' && !resolveMirrorSource(boardRef.current, id)) return;
         if (node && isProtectedTextNode(node) && !unlockedRef.current.has(id)) {
           setPasswordError('');
           setPasswordPrompt({ mode: 'unlock', id });
@@ -1284,7 +1308,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
           queue.schedule(500);
           return;
         }
-        const next = updateText(current, id, text);
+        const next = updateText(current, textEditTarget(current, id)?.id ?? id, text);
         if (next === current) return;
         boardRef.current = next;
         setBoard(next);
@@ -1308,7 +1332,9 @@ function BoardSurface({ session }: { session: SessionProps }) {
       setPresentation(id, presentation) {
         if (blockedRef.current) return;
         const before = boardRef.current;
-        const next = setPresentation(before, id, presentation);
+        const target = textEditTarget(before, id)?.id;
+        if (!target) return;
+        const next = setPresentation(before, target, presentation);
         if (next === before) return;
         publish(next, before, 'save');
       },
@@ -1322,42 +1348,52 @@ function BoardSurface({ session }: { session: SessionProps }) {
       setCodeLanguage(id, language) {
         if (blockedRef.current) return;
         const before = boardRef.current;
-        const next = setCodeLanguage(before, id, language as 'auto');
+        const target = textEditTarget(before, id)?.id;
+        if (!target) return;
+        const next = setCodeLanguage(before, target, language as 'auto');
         if (next === before) return;
         publish(next, before, 'save');
       },
       toggleTask(id, index) {
         if (blockedRef.current) return;
         const before = boardRef.current;
-        const node = before.nodes.find((entry) => entry.id === id);
-        if (!node || node.kind !== 'text') return;
-        if (isProtectedTextNode(node)) {
-          const session = unlockedRef.current.get(id);
+        const source = textEditTarget(before, id);
+        if (!source) return;
+        if (isProtectedTextNode(source)) {
+          const session = unlockedRef.current.get(source.id);
           const api = cryptoApi.current;
           if (!session || !api) return;
           const text = toggleTaskAt(session.text, index);
           if (text === session.text) return;
           let protection;
           try {
-            protection = api.reseal(node.protection, session.key, text);
+            protection = api.reseal(source.protection, session.key, text);
           } catch {
             setNotice({ text: 'The note could not be saved. The previous protected copy is unchanged.', source: 'save' });
             return;
           }
-          const next = replaceProtectedPayload(before, id, protection);
+          const next = replaceProtectedPayload(before, source.id, protection);
           if (next === before) return;
           session.text = text;
           publish(next, before, 'save');
           return;
         }
-        const text = toggleTaskAt(node.text, index);
-        if (text === node.text) return;
-        publish(updateText(before, id, text), before, 'save');
+        const text = toggleTaskAt(source.text, index);
+        if (text === source.text) return;
+        publish(updateText(before, source.id, text), before, 'save');
       },
       requestProtect(id) {
         if (blockedRef.current) return;
         const node = boardRef.current.nodes.find((entry) => entry.id === id);
-        if (!node || node.kind !== 'text' || node.protection) return;
+        if (!node || node.kind === 'mirror') {
+          if (node?.kind === 'mirror') setNotice({ text: MIRROR_PROTECT_MESSAGE, source: 'ingest' });
+          return;
+        }
+        if (node.kind !== 'text' || node.protection) return;
+        if (boardRef.current.nodes.some((entry) => entry.kind === 'mirror' && entry.sourceId === id)) {
+          setNotice({ text: MIRROR_PROTECT_MESSAGE, source: 'ingest' });
+          return;
+        }
         if (editingRef.current === id) dropTextSession();
         setPasswordError('');
         setPasswordPrompt({ mode: 'protect', id });
@@ -1558,6 +1594,50 @@ function BoardSurface({ session }: { session: SessionProps }) {
           return;
         }
         downloadBlob(asset.blob, node.filename);
+      },
+      createMirror(id) {
+        if (blockedRef.current) return;
+        const before = boardRef.current;
+        const created = createMirror(before, id);
+        if ('error' in created) {
+          setNotice({ text: created.error, source: 'ingest' });
+          return;
+        }
+        publish(created.board, before, 'save');
+        replaceSelection([created.id]);
+      },
+      detachMirror(id) {
+        if (blockedRef.current) return;
+        const before = boardRef.current;
+        const next = detachMirror(before, id);
+        if ('error' in next) {
+          setNotice({ text: next.error, source: 'ingest' });
+          return;
+        }
+        if (editingRef.current === id) dropTextSession();
+        publish(next, before, 'save');
+        replaceSelection([id]);
+      },
+      jumpToSource(id) {
+        const source = resolveMirrorSource(boardRef.current, id);
+        if (!source) {
+          setNotice({ text: 'That mirror no longer has a source note.', source: 'ingest' });
+          return;
+        }
+        const open = textSession.current;
+        if (open) {
+          const edited = textBefore.current;
+          textBefore.current = null;
+          textSession.current = null;
+          editingRef.current = null;
+          setEditingId(null);
+          if (edited && JSON.stringify(edited.nodes) !== JSON.stringify(boardRef.current.nodes)) {
+            historyRef.current = pushHistory(historyRef.current, edited);
+            setHistoryStamp((value) => value + 1);
+          }
+          queue.saveNow();
+        }
+        jumpToNode(source.id);
       },
       downloadFile(id) {
         const node = boardRef.current.nodes.find((entry) => entry.id === id);
@@ -2122,7 +2202,13 @@ function BoardSurface({ session }: { session: SessionProps }) {
       if (blockedRef.current) return false;
       const before = boardRef.current;
       const withoutEdges = deleteEdges(before, doomedEdges.map((edge) => edge.id));
-      const result = deleteSelection(withoutEdges, doomed.map((node) => node.id));
+      const ids = doomed.map((node) => node.id);
+      const plan = mirrorDeletePlan(withoutEdges, selectionRemovalIds(withoutEdges, ids));
+      if (plan.kind === 'choose') {
+        setConfirming({ kind: 'mirrors', scope: 'selection', ids, outside: plan.outside, title: plan.title });
+        return false;
+      }
+      const result = deleteSelection(withoutEdges, ids);
       if (result.board !== before) {
         publish(result.board, before, 'save');
         const live = new Set(result.board.nodes.map((node) => node.id));
@@ -2166,7 +2252,13 @@ function BoardSurface({ session }: { session: SessionProps }) {
     if (blockedRef.current) return false;
     const before = boardRef.current;
     const withoutEdges = deleteEdges(before, doomedEdges.map((edge) => edge.id));
-    const result = deleteSelection(withoutEdges, doomed.map((node) => node.id));
+    const ids = doomed.map((node) => node.id);
+    const plan = mirrorDeletePlan(withoutEdges, selectionRemovalIds(withoutEdges, ids));
+    if (plan.kind === 'choose') {
+      setConfirming({ kind: 'mirrors', scope: 'selection', ids, outside: plan.outside, title: plan.title });
+      return false;
+    }
+    const result = deleteSelection(withoutEdges, ids);
     if (result.board !== before) {
       publish(result.board, before, 'save');
       const live = new Set(result.board.nodes.map((node) => node.id));
@@ -2469,7 +2561,9 @@ function BoardSurface({ session }: { session: SessionProps }) {
             }}
           >
             <p>
-              {confirming.kind === 'delete-contents'
+              {confirming.kind === 'mirrors'
+                ? `This note has ${confirming.outside} live ${confirming.outside === 1 ? 'mirror' : 'mirrors'}. What should happen to them?`
+                : confirming.kind === 'delete-contents'
                 ? `Delete "${confirming.label}" and its ${confirming.count} notes/images? Connected links will also be removed.`
                 : confirming.kind === 'reload'
                   ? 'Reload will discard open edits that are not in the saved board. Download a recovery ZIP first if you need them.'
@@ -2486,8 +2580,23 @@ function BoardSurface({ session }: { session: SessionProps }) {
             <button
               type="button"
               onClick={() => {
-                if (confirming.kind === 'delete-contents') {
+                if (confirming.kind === 'mirrors') {
                   const before = boardRef.current;
+                  const result = confirming.scope === 'contents'
+                    ? applyContentDeletion(before, confirming.ids[0] ?? '', 'keep')
+                    : deleteSelection(keepLinkedMirrors(before, selectionRemovalIds(before, confirming.ids)), confirming.ids);
+                  setConfirming(null);
+                  if (result.board === before) return;
+                  publish(result.board, before, 'save');
+                  replaceSelection([]);
+                  setUrlEpoch((value) => value + 1);
+                } else if (confirming.kind === 'delete-contents') {
+                  const before = boardRef.current;
+                  const plan = mirrorDeletePlan(before, contentRemovalIds(before, confirming.groupId));
+                  if (plan.kind === 'choose') {
+                    setConfirming({ kind: 'mirrors', scope: 'contents', ids: [confirming.groupId], outside: plan.outside, title: plan.title });
+                    return;
+                  }
                   const next = deleteGroupContents(before, confirming.groupId);
                   setConfirming(null);
                   if (next === before) return;
@@ -2510,8 +2619,26 @@ function BoardSurface({ session }: { session: SessionProps }) {
                 }
               }}
             >
-              {confirming.kind === 'export' ? 'Download' : confirming.kind === 'delete-contents' ? 'Delete' : confirming.kind === 'reload' ? 'Reload anyway' : 'Continue'}
+              {confirming.kind === 'mirrors' ? 'Keep linked mirrors' : confirming.kind === 'export' ? 'Download' : confirming.kind === 'delete-contents' ? 'Delete' : confirming.kind === 'reload' ? 'Reload anyway' : 'Continue'}
             </button>
+            {confirming.kind === 'mirrors' ? (
+              <button
+                type="button"
+                onClick={() => {
+                  const before = boardRef.current;
+                  const result = confirming.scope === 'contents'
+                    ? applyContentDeletion(before, confirming.ids[0] ?? '', 'everywhere')
+                    : deleteSelection(before, [...new Set([...confirming.ids, ...expandDeletedMirrors(before, selectionRemovalIds(before, confirming.ids))])]);
+                  setConfirming(null);
+                  if (result.board === before) return;
+                  publish(result.board, before, 'save');
+                  replaceSelection([]);
+                  setUrlEpoch((value) => value + 1);
+                }}
+              >
+                Delete everywhere
+              </button>
+            ) : null}
             <button type="button" onClick={() => setConfirming(null)}>
               Cancel
             </button>

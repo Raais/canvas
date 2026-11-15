@@ -50,7 +50,7 @@ export function buildSearchIndex(nodes: readonly BoardNode[]): IndexedNode[] {
   }
   const indexed: IndexedNode[] = [];
   nodes.forEach((node, order) => {
-    if (node.kind === 'image' || node.kind === 'drawing' || isProtectedTextNode(node)) return;
+    if (node.kind === 'image' || node.kind === 'drawing' || node.kind === 'mirror' || isProtectedTextNode(node)) return;
     if (node.kind === 'file') {
       const parentLabel = node.parentId ? labels.get(node.parentId) ?? null : null;
       const fileTitle = node.sourcePath ?? node.filename;
@@ -102,6 +102,7 @@ export function contentSignature(nodes: readonly BoardNode[]): string {
     if (node.kind === 'website') return `w\t${node.id}\t${node.parentId ?? ''}\t${node.title}\t${node.url}\t${node.lastEditedAt}`;
     if (node.kind === 'group') return `g\t${node.id}\t${node.label}`;
     if (node.kind === 'drawing') return `d\t${node.id}`;
+    if (node.kind === 'mirror') return `m\t${node.id}\t${node.sourceId}\t${node.lastEditedAt}`;
     if (node.kind === 'voice') return `v\t${node.id}\t${node.parentId ?? ''}\t${node.title}\t${node.lastEditedAt}`;
     return `i\t${node.id}\t${node.parentId ?? ''}\t${node.lastEditedAt ?? ''}\t${node.source.type}`;
   }).join('\n');

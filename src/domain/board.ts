@@ -44,6 +44,7 @@ import {
   MAX_SAVED_VIEW_NAME,
   MAX_SAVED_VIEWS,
   MAX_DRAWING_NODES,
+  MIRROR_LIMIT,
   MAX_ZOOM,
   MIN_ZOOM,
   SCHEMA_VERSION,
@@ -346,7 +347,7 @@ export function setViewport(board: Board, viewport: Viewport, now?: string): Boa
 }
 
 export function collapsedSize(nodes: readonly BoardNode[], node: BoardNode): { width: number; height: number } {
-  if (node.kind === 'text') return { width: TEXT_MIN_WIDTH, height: TEXT_RESIZE_MIN_HEIGHT };
+  if (node.kind === 'text' || node.kind === 'mirror') return { width: TEXT_MIN_WIDTH, height: TEXT_RESIZE_MIN_HEIGHT };
   if (node.kind === 'file') return { width: FILE_MIN_WIDTH, height: FILE_MIN_HEIGHT };
   if (node.kind === 'voice') return { width: VOICE_MIN_WIDTH, height: VOICE_MIN_HEIGHT };
   if (node.kind === 'suitcase') return { width: SUITCASE_MIN_WIDTH, height: SUITCASE_MIN_HEIGHT };
@@ -482,7 +483,7 @@ export function setNoteTone(
   now?: string,
 ): Board {
   return mapNode(board, id, (node) => {
-    if (node.kind !== 'text') return node;
+    if (node.kind !== 'text' && node.kind !== 'mirror') return node;
     const next = { ...node };
     if (kind === 'background') {
       if (tone === 'default') delete next.backgroundTone;
@@ -555,6 +556,7 @@ export function applyPhysicsPreference(readOnly: boolean, board: Board, enabled:
 export function protectTextNode(board: Board, id: string, protection: ProtectedTextPayload, now?: string): Board {
   const parsed = parseProtectedPayload(protection);
   if (!parsed) return board;
+  if (board.nodes.some((node) => node.kind === 'mirror' && node.sourceId === id)) return board;
   return mapNode(board, id, (node) => {
     if (node.kind !== 'text' || node.protection) return node;
     return { ...node, text: '', protection: parsed };
@@ -659,7 +661,7 @@ export function revise(
   return touch(board, patch, now);
 }
 
-export function parseBoard(value: unknown): Board | null {
+export function parseBoard(value: unknown, mode: 'board' | 'fragment' = 'board'): Board | null {
   if (!isRecord(value)) return null;
   if (value.schemaVersion === 1) return migrateVersion1(value);
   const version = value.schemaVersion;
@@ -697,7 +699,7 @@ export function parseBoard(value: unknown): Board | null {
   const ditherAtlas = parseDither(value.ditherAtlas);
   const topographicContours = parseContours(value.schemaVersion, value.topographicContours);
   const physicsEnabled = parsePhysics(value.schemaVersion, value);
-  if (physicsEnabled === null || !viewport || !appearance || !backgroundPattern || ditherAtlas === null || topographicContours === null || !validGraph(nodes, edges)) return null;
+  if (physicsEnabled === null || !viewport || !appearance || !backgroundPattern || ditherAtlas === null || topographicContours === null || !validGraph(nodes, edges) || mirrorGraphProblem(nodes, mode === 'fragment')) return null;
   if (backgroundPattern === 'dither-atlas' && !ditherAtlas) return null;
   if (backgroundPattern === 'topographic-contours' && !topographicContours) return null;
 
@@ -824,7 +826,7 @@ function touch(
 
 function minWidth(node: BoardNode): number {
   if (node.kind === 'drawing') return node.width;
-  if (node.kind === 'text') return TEXT_MIN_WIDTH;
+  if (node.kind === 'text' || node.kind === 'mirror') return TEXT_MIN_WIDTH;
   if (node.kind === 'file') return FILE_MIN_WIDTH;
   if (node.kind === 'voice') return VOICE_MIN_WIDTH;
   if (node.kind === 'suitcase') return SUITCASE_MIN_WIDTH;
@@ -836,7 +838,7 @@ function minWidth(node: BoardNode): number {
 
 function minHeight(node: BoardNode): number {
   if (node.kind === 'drawing') return node.height;
-  if (node.kind === 'text') return TEXT_MIN_HEIGHT;
+  if (node.kind === 'text' || node.kind === 'mirror') return TEXT_MIN_HEIGHT;
   if (node.kind === 'file') return FILE_MIN_HEIGHT;
   if (node.kind === 'voice') return VOICE_MIN_HEIGHT;
   if (node.kind === 'suitcase') return SUITCASE_MIN_HEIGHT;
@@ -949,6 +951,29 @@ function parseNode(value: unknown, schemaVersion: number): BoardNode | null {
       assetId: value.assetId,
       filename,
       fileCount: value.fileCount,
+      lastEditedAt: stamped.lastEditedAt,
+    };
+  }
+  if (value.kind === 'mirror') {
+    if (!schemaAtLeast(schemaVersion, 18)) return null;
+    if (typeof value.sourceId !== 'string' || !isNonEmptyString(value.sourceId) || value.sourceId.length > 80 || value.sourceId === value.id) return null;
+    if (value.width < TEXT_MIN_WIDTH || value.height < TEXT_MIN_HEIGHT) return null;
+    const backgroundTone = parseTone(value.backgroundTone, ['slate', 'sage', 'sand', 'rose'] as const);
+    const textTone = parseTone(value.textTone, ['muted', 'blue', 'sage', 'warm'] as const);
+    if (backgroundTone === null || textTone === null) return null;
+    const stamped = timestampFields(value.lastEditedAt);
+    if (!stamped || !('lastEditedAt' in stamped)) return null;
+    return {
+      id: value.id,
+      kind: 'mirror',
+      sourceId: value.sourceId,
+      ...(parentId ? { parentId } : {}),
+      x: value.x,
+      y: value.y,
+      width: value.width,
+      height: value.height,
+      ...(backgroundTone ? { backgroundTone } : {}),
+      ...(textTone ? { textTone } : {}),
       lastEditedAt: stamped.lastEditedAt,
     };
   }
@@ -1145,6 +1170,24 @@ function parseSavedViewport(value: unknown): Viewport | null {
 
 function hasControlCharacter(value: string): boolean {
   return /[\u0000-\u001F\u007F]/.test(value);
+}
+
+function mirrorGraphProblem(nodes: readonly BoardNode[], fragment: boolean): boolean {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const counts = new Map<string, number>();
+  for (const node of nodes) {
+    if (node.kind !== 'mirror') continue;
+    const source = byId.get(node.sourceId);
+    if (!source) {
+      if (!fragment) return true;
+      continue;
+    }
+    if (source.kind !== 'text' || source.protection) return true;
+    const count = (counts.get(source.id) ?? 0) + 1;
+    if (count > MIRROR_LIMIT) return true;
+    counts.set(source.id, count);
+  }
+  return false;
 }
 
 function validGraph(nodes: readonly BoardNode[], edges: readonly BoardEdge[]): boolean {

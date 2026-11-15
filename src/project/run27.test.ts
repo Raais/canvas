@@ -75,7 +75,7 @@ describe('organic ink', () => {
     expect(penScreenPx('fountain')).toBe(5);
     expect(DRAWING_COLORS).toHaveLength(5);
     expect(worldStrokeWidth(penScreenPx('brush'), 2)).toBe(4.5);
-    expect(SCHEMA_VERSION).toBe(17);
+    expect(SCHEMA_VERSION).toBe(18);
     expect(ARCHIVE_VERSION).toBe(2);
     expect(GRAPH_CLIPBOARD_VERSION).toBe(1);
   });
@@ -293,14 +293,14 @@ describe('organic ink', () => {
     const raw = { ...board, schemaVersion: 14, nodes: board.nodes.map((node) => (node.kind === 'drawing' ? { ...node, brush: undefined } : node)) };
     const migrated = parseBoard(raw);
     const kept = migrated?.nodes.find((node) => node.id === 'old');
-    expect(migrated?.schemaVersion).toBe(17);
+    expect(migrated?.schemaVersion).toBe(18);
     expect(kept?.kind === 'drawing' ? kept.brush : '').toBe('legacy');
     expect(kept?.kind === 'drawing' ? kept.points : []).toEqual(legacy.points);
     expect(kept?.kind === 'drawing' ? kept.strokeWidth : 0).toBe(legacy.strokeWidth);
     expect(kept?.kind === 'drawing' ? kept.x : 0).toBe(legacy.x);
     expect(parseBoard({ ...board, nodes: board.nodes.map((node) => (node.kind === 'drawing' ? { ...node, brush: 'marker' } : node)) })).toBeNull();
-    expect(parseBoard({ ...createEmptyBoard(now), schemaVersion: 13 })?.schemaVersion).toBe(17);
-    expect(parseBoard({ ...createEmptyBoard(now), schemaVersion: 18 })).toBeNull();
+    expect(parseBoard({ ...createEmptyBoard(now), schemaVersion: 13 })?.schemaVersion).toBe(18);
+    expect(parseBoard({ ...createEmptyBoard(now), schemaVersion: 19 })).toBeNull();
     const fresh = ink(line(), 'brush', 9, 'new');
     const live = addNodes(createEmptyBoard(now), [fresh], now);
     const payload = selectionClosure(live, ['new']);

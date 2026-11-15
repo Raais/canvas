@@ -46,7 +46,7 @@ const marker = 'VOICEBYTES29';
 
 describe('voice notes', () => {
   test('validates a voice node and migrates schema 15 to 16', () => {
-    expect(SCHEMA_VERSION).toBe(17);
+    expect(SCHEMA_VERSION).toBe(18);
     expect(ARCHIVE_VERSION).toBe(2);
     expect(GRAPH_CLIPBOARD_VERSION).toBe(1);
     const voice = voiceOn(createEmptyBoard(now), 'asset-voice', 'Harbor', 2400);
@@ -56,9 +56,9 @@ describe('voice notes', () => {
     expect(node?.kind === 'voice' ? node.durationMs : 0).toBe(2400);
     expect(node?.kind === 'voice' ? node.assetId : '').toBe('asset-voice');
     expect(JSON.stringify(parsed).includes(marker)).toBe(false);
-    expect(parseBoard({ ...createEmptyBoard(now), schemaVersion: 15 })?.schemaVersion).toBe(17);
-    expect(parseBoard({ ...createEmptyBoard(now), schemaVersion: 2 })?.schemaVersion).toBe(17);
-    expect(parseBoard({ ...createEmptyBoard(now), schemaVersion: 18 })).toBeNull();
+    expect(parseBoard({ ...createEmptyBoard(now), schemaVersion: 15 })?.schemaVersion).toBe(18);
+    expect(parseBoard({ ...createEmptyBoard(now), schemaVersion: 2 })?.schemaVersion).toBe(18);
+    expect(parseBoard({ ...createEmptyBoard(now), schemaVersion: 19 })).toBeNull();
     const legacy = voiceOn(createEmptyBoard(now), 'asset-voice', 'Harbor', 2400);
     expect(parseBoard({ ...legacy, schemaVersion: 15 })).toBeNull();
     expect(parseBoard(badVoice(voice, { title: '  Harbor' }))).toBeNull();

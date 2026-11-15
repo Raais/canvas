@@ -48,13 +48,14 @@ export function queryBoard(nodes: readonly BoardNode[], index: ContentIndex, raw
     : mergeContent(index, interpreted.content);
   const dated = interpreted.range ? dateHits(nodes, interpreted.range.start, interpreted.range.end, now) : [];
   if (!interpreted.range) {
-    return { results: content.slice(0, SEARCH_LIMIT).map(asContent), matchIds: content.map((hit) => hit.id), notice: null, dateLabel: null };
+    const matchIds = withPlacements(nodes, content.map((hit) => hit.id));
+    return { results: notePlacements(nodes, content.slice(0, SEARCH_LIMIT).map(asContent)), matchIds, notice: null, dateLabel: null };
   }
   const dateIds = new Set(dated.map((hit) => hit.id));
   const contentOnly = content.filter((hit) => !dateIds.has(hit.id));
-  const matchIds = unionMatchIds(dated, content);
-  if (interpreted.dateOnly) return { results: dated.slice(0, SEARCH_LIMIT), matchIds, notice: null, dateLabel: interpreted.range.label };
-  return { results: shareResults(dated, contentOnly.map(asContent)), matchIds, notice: null, dateLabel: interpreted.range.label };
+  const matchIds = withPlacements(nodes, unionMatchIds(dated, content));
+  if (interpreted.dateOnly) return { results: notePlacements(nodes, dated.slice(0, SEARCH_LIMIT)), matchIds, notice: null, dateLabel: interpreted.range.label };
+  return { results: notePlacements(nodes, shareResults(dated, contentOnly.map(asContent))), matchIds, notice: null, dateLabel: interpreted.range.label };
 }
 
 function unionMatchIds(primary: readonly { id: string }[], extra: readonly { id: string }[]): string[] {
@@ -98,7 +99,7 @@ function dateHits(nodes: readonly BoardNode[], start: number, end: number, now: 
   }
   const hits: Array<SearchResult & { time: number }> = [];
   for (const node of nodes) {
-    if (node.kind === 'group' || node.kind === 'drawing' || !node.lastEditedAt) continue;
+    if (node.kind === 'group' || node.kind === 'drawing' || node.kind === 'mirror' || !node.lastEditedAt) continue;
     const time = Date.parse(node.lastEditedAt);
     if (!Number.isFinite(time) || time < start || time >= end) continue;
     const parentLabel = node.parentId ? labels.get(node.parentId) ?? null : null;
@@ -188,6 +189,28 @@ function dateHits(nodes: readonly BoardNode[], start: number, end: number, now: 
 
 function asContent(hit: SearchHit): SearchResult {
   return { ...hit, section: 'content' };
+}
+
+function withPlacements(nodes: readonly BoardNode[], ids: readonly string[]): string[] {
+  const matched = new Set(ids);
+  const extra: string[] = [];
+  for (const node of nodes) {
+    if (node.kind === 'mirror' && matched.has(node.sourceId)) extra.push(node.id);
+  }
+  return extra.length === 0 ? [...ids] : [...ids, ...extra];
+}
+
+function notePlacements(nodes: readonly BoardNode[], results: SearchResult[]): SearchResult[] {
+  const counts = new Map<string, number>();
+  for (const node of nodes) {
+    if (node.kind === 'mirror') counts.set(node.sourceId, (counts.get(node.sourceId) ?? 0) + 1);
+  }
+  return results.map((result) => {
+    const mirrors = result.kind === 'text' ? counts.get(result.id) ?? 0 : 0;
+    if (mirrors === 0) return result;
+    const label = `${mirrors + 1} placements`;
+    return { ...result, snippet: result.snippet ? `${result.snippet} · ${label}` : label };
+  });
 }
 
 function shareResults(dates: SearchResult[], content: SearchResult[]): SearchResult[] {

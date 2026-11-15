@@ -34,6 +34,8 @@ type Extent = { right: number; bottom: number };
 
 type NodeCacheEntry = {
   node: BoardNode;
+  source: BoardNode | null;
+  links: number;
   selected: boolean;
   editing: boolean;
   readOnly: boolean;
@@ -55,6 +57,11 @@ export function createNodeProjection() {
   return {
     project(nodes: readonly BoardNode[], input: NodeProjectionInput): CanvasFlowNode[] {
       const extents = groupExtents(nodes);
+      const byId = new Map(nodes.map((node) => [node.id, node]));
+      const mirrorCounts = new Map<string, number>();
+      for (const node of nodes) {
+        if (node.kind === 'mirror') mirrorCounts.set(node.sourceId, (mirrorCounts.get(node.sourceId) ?? 0) + 1);
+      }
       const ordered = [...nodes].sort((left, right) => Number(left.kind !== 'group') - Number(right.kind !== 'group'));
       const seen = new Set<string>();
       const projected: CanvasFlowNode[] = [];
@@ -62,7 +69,9 @@ export function createNodeProjection() {
         seen.add(node.id);
         const selected = input.selected.has(node.id);
         const editing = input.editingId === node.id;
-        const readOnly = node.kind === 'text' || node.kind === 'website' || node.kind === 'voice' ? input.readOnly : false;
+        const readOnly = node.kind === 'text' || node.kind === 'mirror' || node.kind === 'website' || node.kind === 'voice' ? input.readOnly : false;
+        const source = node.kind === 'mirror' ? byId.get(node.sourceId) ?? null : null;
+        const links = node.kind === 'text' ? mirrorCounts.get(node.id) ?? 0 : node.kind === 'mirror' ? mirrorCounts.get(node.sourceId) ?? 0 : 0;
         const session = sessionStamp(node, input.unlocked);
         const asset = assetStamp(node, input.registry, input.library);
         const extent = node.kind === 'group' ? (extents.get(node.id) ?? '') : '';
@@ -70,6 +79,8 @@ export function createNodeProjection() {
         if (
           previous &&
           previous.node === node &&
+          previous.source === source &&
+          previous.links === links &&
           previous.selected === selected &&
           previous.editing === editing &&
           previous.readOnly === readOnly &&
@@ -80,9 +91,11 @@ export function createNodeProjection() {
           projected.push(previous.projected);
           continue;
         }
-        const next = toFlowNode(node, extents.get(node.id) ?? null, selected, editing, input);
+        const next = toFlowNode(node, source, links, extents.get(node.id) ?? null, selected, editing, input);
         cache.set(node.id, {
           node,
+          source,
+          links,
           selected,
           editing,
           readOnly,
@@ -196,6 +209,8 @@ function assetStamp(
 
 function toFlowNode(
   node: BoardNode,
+  sourceNode: BoardNode | null,
+  links: number,
   extentStamp: string | null,
   selected: boolean,
   editing: boolean,
@@ -209,7 +224,7 @@ function toFlowNode(
     selected,
     parentId: isContentNode(node) ? node.parentId : undefined,
     zIndex: node.kind === 'group' ? 0 : node.kind === 'drawing' ? 2 : 1,
-    draggable: node.kind !== 'text' || !editing,
+    draggable: (node.kind !== 'text' && node.kind !== 'mirror') || !editing,
     style: { width: node.width, height: node.height },
     measured: { width: node.width, height: node.height },
   };
@@ -245,6 +260,32 @@ function toFlowNode(
         unlocked: protectedNote && input.unlocked.has(node.id),
         readOnly: input.readOnly,
         sourceFilename: node.sourceFilename,
+        mirror: false,
+        mirrorCount: links,
+      },
+    };
+  }
+  if (node.kind === 'mirror') {
+    const source = sourceNode?.kind === 'text' && !sourceNode.protection ? sourceNode : null;
+    return {
+      ...base,
+      type: 'text',
+      data: {
+        text: source?.text ?? '',
+        editing,
+        presentation: source?.presentation ?? 'text',
+        language: source?.language,
+        codeLanguage: source?.codeLanguage,
+        backgroundTone: node.backgroundTone,
+        textTone: node.textTone,
+        lastEditedAt: source?.lastEditedAt,
+        protected: false,
+        unlocked: false,
+        readOnly: input.readOnly,
+        sourceFilename: source?.sourceFilename,
+        mirror: true,
+        mirrorCount: links,
+        sourceMissing: source === null,
       },
     };
   }

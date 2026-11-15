@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState, type ChangeEvent, type PointerEvent, type RefObject } from 'react';
 import { Handle, NodeResizer, NodeToolbar, Position, useInternalNode, useViewport, type Node, type NodeProps } from '@xyflow/react';
-import { Code2, FileText, Highlighter, ListTodo, Lock, LockOpen, Palette, Type } from 'lucide-react';
+import { Code2, FileText, Highlighter, Link2, ListTodo, Lock, LockOpen, Palette, SquareStack, Type, Unlink } from 'lucide-react';
 import { useBoardActions } from './board-context';
 import { HANDLE_SIDES, visualHandleTransform } from '../editor/handles';
 import { isFinalUnmount } from '../editor/cull-edit';
@@ -23,6 +23,9 @@ export type TextNodeData = {
   unlocked: boolean;
   readOnly: boolean;
   sourceFilename?: string;
+  mirror?: boolean;
+  mirrorCount?: number;
+  sourceMissing?: boolean;
 };
 
 const BACKGROUNDS: Array<BackgroundTone | 'default'> = ['default', 'slate', 'sage', 'sand', 'rose'];
@@ -122,9 +125,24 @@ function NoteChrome({
               <button type="button" className="icon-button" aria-label="Text tone" title="Text tone" aria-pressed={menu === 'text'} onClick={() => setMenu(menu === 'text' ? null : 'text')}>
                 <Type size={16} strokeWidth={1.75} />
               </button>
-              {!data.protected ? (
+              {!data.protected && !data.mirror ? (
                 <button type="button" className="icon-button" aria-label="Password protect" title="Password protect" disabled={data.readOnly} onClick={() => actions.requestProtect(id)}>
                   <Lock size={16} strokeWidth={1.75} />
+                </button>
+              ) : null}
+              {!data.protected ? (
+                <button type="button" className="icon-button" aria-label={data.mirror ? 'Create another mirror' : 'Create mirror'} title={data.mirror ? 'Create another mirror' : 'Create mirror'} disabled={data.readOnly || data.sourceMissing} onClick={() => actions.createMirror(id)}>
+                  <SquareStack size={16} strokeWidth={1.75} />
+                </button>
+              ) : null}
+              {data.mirror ? (
+                <button type="button" className="icon-button" aria-label="Jump to original" title="Jump to original" onClick={() => actions.jumpToSource(id)}>
+                  <Link2 size={16} strokeWidth={1.75} />
+                </button>
+              ) : null}
+              {data.mirror ? (
+                <button type="button" className="icon-button" aria-label="Detach mirror" title="Detach mirror" disabled={data.readOnly || data.sourceMissing} onClick={() => actions.detachMirror(id)}>
+                  <Unlink size={16} strokeWidth={1.75} />
                 </button>
               ) : null}
               {data.protected && !data.unlocked ? (
@@ -209,7 +227,7 @@ function TextNoteNodeComponent({ id, data, selected }: NodeProps<Node<TextNodeDa
   }, [data.editing, id]);
 
   return (
-    <article className={`text-note ${tone}${selected ? ' is-selected' : ''}`} onDoubleClick={() => actions.beginEditing(id)}>
+    <article className={`text-note ${tone}${selected ? ' is-selected' : ''}${data.mirror ? ' is-mirror' : ''}`} onDoubleClick={() => actions.beginEditing(id)}>
       <NodeResizer isVisible={selected} minWidth={TEXT_MIN_WIDTH} minHeight={TEXT_RESIZE_MIN_HEIGHT} />
       {showChrome ? <NoteChrome id={id} data={data} editorRef={editorRef} /> : null}
       {HANDLE_SIDES.map((side) => (
@@ -219,6 +237,9 @@ function TextNoteNodeComponent({ id, data, selected }: NodeProps<Node<TextNodeDa
       ))}
       <div className="text-note-content">
         {data.sourceFilename && !data.editing ? <p className="source-filename" title={data.sourceFilename}>{data.sourceFilename}</p> : null}
+        {data.sourceMissing ? <p className="source-filename">Source unavailable</p> : null}
+        {data.mirror && !data.editing ? <p className="mirror-mark" title="Live mirror of this note">Mirror</p> : null}
+        {!data.mirror && data.mirrorCount ? <p className="mirror-mark" title="This note has live mirrors">{data.mirrorCount} {data.mirrorCount === 1 ? 'mirror' : 'mirrors'}</p> : null}
         {data.protected && !data.unlocked ? (
           <div className="protected-placeholder">
             <Lock size={16} strokeWidth={1.75} />

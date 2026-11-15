@@ -1,4 +1,5 @@
-export const SCHEMA_VERSION = 17 as const;
+export const SCHEMA_VERSION = 18 as const;
+export const MIRROR_LIMIT = 200;
 export const MAX_SAVED_VIEWS = 32;
 export const MAX_SAVED_VIEW_NAME = 60;
 export const MAX_EDGE_LABEL = 80;
@@ -158,6 +159,21 @@ export type FileNode = {
   sourcePath?: string;
 };
 
+export type MirrorNode = {
+  id: string;
+  kind: 'mirror';
+  sourceId: string;
+  parentId?: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  backgroundTone?: BackgroundTone;
+  textTone?: TextTone;
+  /** Instance metadata time. Shared note edits stay on the canonical text note. */
+  lastEditedAt: string;
+};
+
 export type SuitcaseNode = {
   id: string;
   kind: 'suitcase';
@@ -232,7 +248,7 @@ export type GroupNode = {
   backgroundTone?: BackgroundTone;
 };
 
-export type ContentNode = TextNode | ImageNode | FileNode | WebsiteNode | DrawingNode | VoiceNode | SuitcaseNode;
+export type ContentNode = TextNode | ImageNode | FileNode | WebsiteNode | DrawingNode | VoiceNode | SuitcaseNode | MirrorNode;
 
 export type BoardNode = ContentNode | GroupNode;
 

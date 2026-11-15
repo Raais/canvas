@@ -1,5 +1,6 @@
 import { countDrawings, excessDrawings } from './drawing';
 import { childrenOf, worldTopLeft } from './geometry';
+import { missingMirrorSource, MIRROR_PASTE_MESSAGE, mirrorFamilyLimit, rebindCopiedMirrors } from './mirrors';
 import { SCHEMA_VERSION, type Board, type BoardEdge, type BoardNode, type Point } from './types';
 import { parseBoard, revise, withInsertedTimestamp } from './board';
 
@@ -73,7 +74,7 @@ export function decodeGraphClipboard(raw: string): GraphClipboard | null {
     edges: record.edges,
     savedViews: [],
     viewport: { x: 0, y: 0, zoom: 1 },
-  });
+  }, 'fragment');
   if (!parsed || parsed.nodes.length !== record.nodes.length || parsed.edges.length !== record.edges.length) return null;
   return { format: GRAPH_CLIPBOARD_FORMAT, version: GRAPH_CLIPBOARD_VERSION, nodes: parsed.nodes, edges: parsed.edges };
 }
@@ -105,6 +106,9 @@ export function pasteGraph(
   const ids = new Set(decoded.nodes.map((node) => node.id));
   const idMap = new Map<string, string>();
   for (const id of ids) idMap.set(id, crypto.randomUUID());
+  if (missingMirrorSource(board, decoded.nodes, idMap)) return { error: MIRROR_PASTE_MESSAGE };
+  const rebound = rebindCopiedMirrors(decoded.nodes, idMap);
+  if (mirrorFamilyLimit(board.nodes, rebound)) return { error: 'This note already has 200 mirrors.' };
   const topLevel = decoded.nodes.filter((node) => node.kind === 'group' || !node.parentId || !ids.has(node.parentId));
   let minX = Infinity;
   let minY = Infinity;
@@ -115,7 +119,7 @@ export function pasteGraph(
   const dx = origin.x - minX + repeat * 32;
   const dy = origin.y - minY + repeat * 32;
   const stampedAt = now ?? new Date().toISOString();
-  const copies: BoardNode[] = decoded.nodes.map((node) => {
+  const copies: BoardNode[] = rebound.map((node) => {
     const id = idMap.get(node.id) ?? crypto.randomUUID();
     const parentInCopy = node.kind !== 'group' && node.parentId && ids.has(node.parentId);
     if (parentInCopy) {

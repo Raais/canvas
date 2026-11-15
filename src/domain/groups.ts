@@ -1,5 +1,6 @@
-import { revise, withInsertedTimestamp } from './board';
+import { deleteNodes, revise, withInsertedTimestamp } from './board';
 import { countDrawings, excessDrawings } from './drawing';
+import { contentRemovalIds, mirrorDeletePlan, mirrorFamilyLimit, rebindCopiedMirrors } from './mirrors';
 import {
   boundsOfNodes,
   childrenOf,
@@ -69,12 +70,9 @@ export function ungroup(board: Board, groupIds: readonly string[], now?: string)
 }
 
 export function deleteGroupContents(board: Board, groupId: string, now?: string): Board {
-  const childIds = childrenOf(board.nodes, groupId).map((node) => node.id);
-  const removed = new Set([groupId, ...childIds]);
-  const nodes = board.nodes.filter((node) => !removed.has(node.id));
-  const edges = board.edges.filter((edge) => !removed.has(edge.sourceId) && !removed.has(edge.targetId));
-  if (nodes.length === board.nodes.length) return board;
-  return revise(board, { nodes, edges }, now);
+  const ids = contentRemovalIds(board, groupId);
+  if (mirrorDeletePlan(board, ids).kind === 'choose') return board;
+  return deleteNodes(board, ids, now).board;
 }
 
 export function deleteSelection(
@@ -88,6 +86,10 @@ export function deleteSelection(
   for (const groupId of groupIds) {
     for (const child of childrenOf(board.nodes, groupId)) preserved.add(child.id);
   }
+  const planned = board.nodes
+    .filter((node) => selected.has(node.id) && node.kind !== 'group' && !preserved.has(node.id))
+    .map((node) => node.id);
+  if (mirrorDeletePlan(board, planned).kind === 'choose') return { board, removedAssetIds: [] };
   const ungrouped = ungroup(board, groupIds, now);
   const removeNotes = ungrouped.nodes
     .filter((node) => selected.has(node.id) && node.kind !== 'group' && !preserved.has(node.id))
@@ -198,6 +200,8 @@ export function duplicateSelection(board: Board, ids: readonly string[], now?: s
     const { parentId: _parent, ...rest } = node;
     copies.push(withInsertedTimestamp({ ...rest, id, x: world.x + DUPLICATE_OFFSET, y: world.y + DUPLICATE_OFFSET }, stampedAt));
   }
+  const rebound = rebindCopiedMirrors(copies, idMap);
+  if (mirrorFamilyLimit(board.nodes, rebound)) return board;
   const edges: BoardEdge[] = [];
   for (const edge of board.edges) {
     const sourceId = idMap.get(edge.sourceId);
@@ -205,7 +209,7 @@ export function duplicateSelection(board: Board, ids: readonly string[], now?: s
     if (!sourceId || !targetId) continue;
     edges.push({ ...edge, id: crypto.randomUUID(), sourceId, targetId });
   }
-  return revise(board, { nodes: [...board.nodes, ...copies], edges: [...board.edges, ...edges] }, stampedAt);
+  return revise(board, { nodes: [...board.nodes, ...rebound], edges: [...board.edges, ...edges] }, stampedAt);
 }
 
 export function restoreGroupLabels(current: Board, original: Board): Board {

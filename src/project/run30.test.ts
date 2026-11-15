@@ -34,7 +34,7 @@ const now = '2026-11-15T09:00:00.000Z';
 
 describe('ZIP suitcase', () => {
   test('stores an ordinary ZIP without unpacking and migrates schema 16', async () => {
-    expect(SCHEMA_VERSION).toBe(17);
+    expect(SCHEMA_VERSION).toBe(18);
     expect(ARCHIVE_VERSION).toBe(2);
     expect(GRAPH_CLIPBOARD_VERSION).toBe(1);
     const packed = zipSync({
@@ -62,12 +62,12 @@ describe('ZIP suitcase', () => {
     expect(suitcaseItem?.type === 'suitcase' ? await suitcaseItem.blob.arrayBuffer() : null).toEqual(packed.buffer);
     const board = addNodes(createEmptyBoard(now), [createSuitcaseNode({ center: { x: 0, y: 0 }, assetId: 'zip-1', filename: 'project-assets.zip', fileCount: 8, now })], now);
     const parsed = parseBoard(JSON.parse(JSON.stringify(board)));
-    expect(parsed?.schemaVersion).toBe(17);
+    expect(parsed?.schemaVersion).toBe(18);
     expect(parsed?.nodes[0]?.kind).toBe('suitcase');
     expect(JSON.stringify(parsed).includes('hello')).toBe(false);
-    expect(parseBoard({ ...createEmptyBoard(now), schemaVersion: 16 })?.schemaVersion).toBe(17);
-    expect(parseBoard({ ...createEmptyBoard(now), schemaVersion: 2 })?.schemaVersion).toBe(17);
-    expect(parseBoard({ ...createEmptyBoard(now), schemaVersion: 18 })).toBeNull();
+    expect(parseBoard({ ...createEmptyBoard(now), schemaVersion: 16 })?.schemaVersion).toBe(18);
+    expect(parseBoard({ ...createEmptyBoard(now), schemaVersion: 2 })?.schemaVersion).toBe(18);
+    expect(parseBoard({ ...createEmptyBoard(now), schemaVersion: 19 })).toBeNull();
     expect(parseBoard({ ...board, schemaVersion: 16 })).toBeNull();
     expect(parseBoard(badSuitcase(board, { filename: '../secret.zip' }))).toBeNull();
     expect(parseBoard(badSuitcase(board, { fileCount: -1 }))).toBeNull();
