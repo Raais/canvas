@@ -1,4 +1,5 @@
 import { worldBounds } from './geometry';
+import { isProtectedTextNode } from './text-protection';
 import type { BoardNode, Rect } from './types';
 
 export const SEARCH_LIMIT = 25;
@@ -48,7 +49,7 @@ export function buildSearchIndex(nodes: readonly BoardNode[]): IndexedNode[] {
   }
   const indexed: IndexedNode[] = [];
   nodes.forEach((node, order) => {
-    if (node.kind === 'image') return;
+    if (node.kind === 'image' || isProtectedTextNode(node)) return;
     if (node.kind === 'group') {
       const title = labels.get(node.id) ?? 'Untitled group';
       indexed.push({ id: node.id, kind: 'group', title, foldedTitle: fold(title), body: '', foldedBody: '', parentLabel: null, order });
@@ -72,7 +73,7 @@ export function buildSearchIndex(nodes: readonly BoardNode[]): IndexedNode[] {
 
 export function contentSignature(nodes: readonly BoardNode[]): string {
   return nodes.map((node) => {
-    if (node.kind === 'text') return `t\t${node.id}\t${node.parentId ?? ''}\t${node.text}`;
+    if (node.kind === 'text') return `t\t${node.id}\t${node.parentId ?? ''}\t${node.protection ? '' : node.text}\t${node.protection ? 'protected' : ''}\t${node.lastEditedAt ?? ''}`;
     if (node.kind === 'group') return `g\t${node.id}\t${node.label}`;
     return `i\t${node.id}\t${node.parentId ?? ''}\t${node.lastEditedAt ?? ''}\t${node.source.type}`;
   }).join('\n');

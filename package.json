@@ -11,12 +11,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@noble/ciphers": "2.4.0",
     "@tanstack/highlight": "^1.2.12",
     "@xyflow/react": "^12.12.1",
     "chrono-node": "^2.10.3",
     "d3-force": "^3.0.1",
     "fflate": "^0.8.3",
     "geist": "^1.9.2",
+    "hash-wasm": "4.13.0",
     "idb": "^8.0.4",
     "lucide-react": "^1.73.0",
     "minisearch": "^7.2.0",

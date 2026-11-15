@@ -41,6 +41,9 @@ import {
   toggleImageFlip,
   staggeredPositions,
   updateText,
+  protectTextNode,
+  replaceProtectedPayload,
+  unprotectTextNode,
 } from '../domain/board';
 import { contentExtent, facingHandles, isContentNode, normalizeRect, worldTopLeft } from '../domain/geometry';
 import { toggleTaskAt } from '../domain/markdown';
@@ -70,6 +73,7 @@ import {
 } from '../domain/groups';
 import { createHistory, pushHistory, redoHistory, retainedAssetIds, undoHistory, type History } from '../domain/history';
 import { lookupEmbeddedByteSize } from '../domain/image-size';
+import { isProtectedTextNode, passwordIsUsable } from '../domain/text-protection';
 import {
   GROUP_MIN_HEIGHT,
   GROUP_MIN_WIDTH,
@@ -115,6 +119,7 @@ import { CONTOURS_V1_DEFAULTS, clampContoursTuning, effectiveContoursTuning, typ
 import { PwaUpdateNotice } from './PwaUpdateNotice';
 import { decidePwaUpdate, shouldActivateWorker } from '../project/pwa-update';
 import { pendingRotationBlocksReplacement } from '../domain/image-rotation';
+import { PasswordDialog } from './PasswordDialog';
 import { ProjectMenu } from './ProjectMenu';
 
 const DitherAtlasLayer = lazy(() => import('../backgrounds/DitherAtlasLayer'));
@@ -173,6 +178,10 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const [estimate, setEstimate] = useState<{ usage?: number; quota?: number } | null>(null);
   const [persisted, setPersisted] = useState<boolean | null>(null);
   const [readOnly, setReadOnly] = useState(false);
+  const [unlockEpoch, setUnlockEpoch] = useState(0);
+  const [passwordPrompt, setPasswordPrompt] = useState<{ mode: 'protect' | 'unlock'; id: string } | null>(null);
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordBusy, setPasswordBusy] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [viewsOpen, setViewsOpen] = useState(false);
@@ -250,7 +259,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
   confirmingRef.current = confirming !== null;
   const writerRef = useRef(false);
   const overlayRef = useRef(false);
-  overlayRef.current = projectOpen || confirming !== null || searchOpen || viewsOpen;
+  overlayRef.current = projectOpen || confirming !== null || searchOpen || viewsOpen || passwordPrompt !== null;
   const foreignRef = useRef(false);
   const exportHold = useRef<{ board: Board; assets: AssetRecord[]; unsaved: boolean; key: string } | null>(null);
   const pasteRepeat = useRef({ key: '', count: 0 });
@@ -284,6 +293,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
       session.database,
       () => boardRef.current,
       (next, message) => {
+        statusRef.current = next;
         setStatus((current) => (current === next ? current : next));
         if (next === 'error' && message) setNotice({ text: message, source: 'save' });
         if (next === 'saved') setNotice((current) => (current?.source === 'save' ? null : current));
@@ -293,6 +303,42 @@ function BoardSurface({ session }: { session: SessionProps }) {
     queueRef.current.adopt(session.board);
   }
   const queue = queueRef.current;
+  const unlockedRef = useRef(new Map<string, { text: string; key: Uint8Array }>());
+  const cryptoApi = useRef<typeof import('../domain/text-crypto') | null>(null);
+  const cryptoLoading = useRef<Promise<typeof import('../domain/text-crypto')> | null>(null);
+  const passwordPromptRef = useRef(passwordPrompt);
+  passwordPromptRef.current = passwordPrompt;
+
+  function forgetUnlocked(ids?: readonly string[]) {
+    if (!ids) unlockedRef.current.clear();
+    else for (const id of ids) unlockedRef.current.delete(id);
+    setUnlockEpoch((value) => value + 1);
+  }
+
+  function loadTextCrypto() {
+    cryptoLoading.current ??= import('../domain/text-crypto');
+    return cryptoLoading.current.then((api) => {
+      cryptoApi.current = api;
+      return api;
+    });
+  }
+
+  async function commitSensitive(next: Board, previous: Board, failure: string): Promise<boolean> {
+    const previousHistory = historyRef.current;
+    replaceBoard(next);
+    historyRef.current = createHistory();
+    setHistoryStamp((value) => value + 1);
+    queue.saveNow();
+    await queue.idle();
+    if (statusRef.current !== 'saved') {
+      replaceBoard(previous);
+      historyRef.current = previousHistory;
+      setHistoryStamp((value) => value + 1);
+      setPasswordError(failure);
+      return false;
+    }
+    return true;
+  }
   const preparePwaUpdate = useCallback(async () => {
     const current = queueRef.current;
     if (!current) return { ok: false as const, message: 'canvas is still opening.' };
@@ -662,6 +708,10 @@ function BoardSurface({ session }: { session: SessionProps }) {
     if (!result) return;
     historyRef.current = result.history;
     setHistoryStamp((value) => value + 1);
+    forgetUnlocked();
+    editingRef.current = null;
+    setEditingId(null);
+    textBefore.current = null;
     replaceBoard(result.board);
     reconcile(current, result.board);
     queue.saveNow();
@@ -685,16 +735,76 @@ function BoardSurface({ session }: { session: SessionProps }) {
   }
 
   function editSelection(): boolean {
-    if (blockedRef.current || editingRef.current) return false;
+    if (editingRef.current) return false;
     if (selectedRef.current.length !== 1) return false;
     const id = selectedRef.current[0];
     if (!id) return false;
     const node = boardRef.current.nodes.find((entry) => entry.id === id);
     if (!node || node.kind !== 'text') return false;
+    if (isProtectedTextNode(node) && !unlockedRef.current.has(node.id)) {
+      setPasswordError('');
+      setPasswordPrompt({ mode: 'unlock', id: node.id });
+      return true;
+    }
+    if (blockedRef.current) return false;
     textBefore.current = structuredClone(boardRef.current);
     editingRef.current = id;
     setEditingId(id);
     return true;
+  }
+
+  async function submitPassword(password: string, confirm: string) {
+    const prompt = passwordPromptRef.current;
+    if (!prompt || passwordBusy) return;
+    if (!passwordIsUsable(password)) {
+      setPasswordError('Enter a password.');
+      return;
+    }
+    const node = boardRef.current.nodes.find((entry) => entry.id === prompt.id);
+    if (!node || node.kind !== 'text') {
+      setPasswordPrompt(null);
+      return;
+    }
+    setPasswordBusy(true);
+    setPasswordError('');
+    try {
+      const api = await loadTextCrypto();
+      if (prompt.mode === 'protect') {
+        if (blockedRef.current) return;
+        if (password !== confirm) {
+          setPasswordError('Those passwords do not match.');
+          return;
+        }
+        if (node.protection) return;
+        const previous = boardRef.current;
+        const payload = await api.protectPlaintext(node.text, password);
+        if (boardRef.current.revision !== previous.revision) {
+          setPasswordError('The note changed. Try again.');
+          return;
+        }
+        const next = protectTextNode(previous, node.id, payload);
+        if (next === previous) return;
+        const saved = await commitSensitive(next, previous, 'Unable to protect because saving failed.');
+        if (!saved) return;
+        unlockedRef.current.delete(node.id);
+        setUnlockEpoch((value) => value + 1);
+        setPasswordPrompt(null);
+        return;
+      }
+      if (!isProtectedTextNode(node)) return;
+      const opened = await api.openProtected(node.protection, password);
+      if (!opened) {
+        setPasswordError('Incorrect password or unreadable note.');
+        return;
+      }
+      unlockedRef.current.set(node.id, opened);
+      setUnlockEpoch((value) => value + 1);
+      setPasswordPrompt(null);
+    } catch {
+      setPasswordError(prompt.mode === 'protect' ? 'Unable to protect because saving failed.' : 'Unable to unlock because note data is damaged.');
+    } finally {
+      setPasswordBusy(false);
+    }
   }
 
   const commands = useRef({
@@ -718,6 +828,12 @@ function BoardSurface({ session }: { session: SessionProps }) {
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      if (passwordPromptRef.current && event.key === 'Escape') {
+        event.preventDefault();
+        setPasswordPrompt(null);
+        setPasswordError('');
+        return;
+      }
       const target = event.target;
       const element = target instanceof HTMLElement ? target : null;
       const editingField = Boolean(element && (element.tagName === 'INPUT' || element.tagName === 'TEXTAREA' || element.isContentEditable));
@@ -833,6 +949,12 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const actions = useMemo<BoardActions>(
     () => ({
       beginEditing(id) {
+        const node = boardRef.current.nodes.find((entry) => entry.id === id);
+        if (node && isProtectedTextNode(node) && !unlockedRef.current.has(id)) {
+          setPasswordError('');
+          setPasswordPrompt({ mode: 'unlock', id });
+          return;
+        }
         if (blockedRef.current) return;
         textBefore.current = structuredClone(boardRef.current);
         editingRef.current = id;
@@ -842,8 +964,30 @@ function BoardSurface({ session }: { session: SessionProps }) {
       },
       updateText(id, text) {
         if (blockedRef.current) return;
-        const next = updateText(boardRef.current, id, text);
-        if (next === boardRef.current) return;
+        const current = boardRef.current;
+        const node = current.nodes.find((entry) => entry.id === id);
+        const session = unlockedRef.current.get(id);
+        if (node && isProtectedTextNode(node)) {
+          const api = cryptoApi.current;
+          if (!session || !api) return;
+          if (session.text === text) return;
+          let protection;
+          try {
+            protection = api.reseal(node.protection, session.key, text);
+          } catch {
+            setNotice({ text: 'The note could not be saved. The previous protected copy is unchanged.', source: 'save' });
+            return;
+          }
+          const next = replaceProtectedPayload(current, id, protection);
+          if (next === current) return;
+          session.text = text;
+          boardRef.current = next;
+          setBoard(next);
+          queue.schedule(500);
+          return;
+        }
+        const next = updateText(current, id, text);
+        if (next === current) return;
         boardRef.current = next;
         setBoard(next);
         queue.schedule(500);
@@ -900,9 +1044,82 @@ function BoardSurface({ session }: { session: SessionProps }) {
         const before = boardRef.current;
         const node = before.nodes.find((entry) => entry.id === id);
         if (!node || node.kind !== 'text') return;
+        if (isProtectedTextNode(node)) {
+          const session = unlockedRef.current.get(id);
+          const api = cryptoApi.current;
+          if (!session || !api) return;
+          const text = toggleTaskAt(session.text, index);
+          if (text === session.text) return;
+          let protection;
+          try {
+            protection = api.reseal(node.protection, session.key, text);
+          } catch {
+            setNotice({ text: 'The note could not be saved. The previous protected copy is unchanged.', source: 'save' });
+            return;
+          }
+          const next = replaceProtectedPayload(before, id, protection);
+          if (next === before) return;
+          session.text = text;
+          publish(next, before, 'save');
+          return;
+        }
         const text = toggleTaskAt(node.text, index);
         if (text === node.text) return;
         publish(updateText(before, id, text), before, 'save');
+      },
+      requestProtect(id) {
+        if (blockedRef.current) return;
+        const node = boardRef.current.nodes.find((entry) => entry.id === id);
+        if (!node || node.kind !== 'text' || node.protection) return;
+        if (editingRef.current === id) {
+          editingRef.current = null;
+          setEditingId(null);
+          textBefore.current = null;
+        }
+        setPasswordError('');
+        setPasswordPrompt({ mode: 'protect', id });
+      },
+      requestUnlock(id) {
+        const node = boardRef.current.nodes.find((entry) => entry.id === id);
+        if (!node || !isProtectedTextNode(node)) return;
+        setPasswordError('');
+        setPasswordPrompt({ mode: 'unlock', id });
+      },
+      lockNote(id) {
+        if (editingRef.current === id) {
+          const before = textBefore.current;
+          textBefore.current = null;
+          editingRef.current = null;
+          setEditingId(null);
+          if (before && JSON.stringify(before.nodes) !== JSON.stringify(boardRef.current.nodes)) {
+            historyRef.current = pushHistory(historyRef.current, before);
+            setHistoryStamp((value) => value + 1);
+          }
+          queue.saveNow();
+        }
+        unlockedRef.current.delete(id);
+        setUnlockEpoch((value) => value + 1);
+      },
+      removeProtection(id) {
+        if (blockedRef.current || passwordBusy) return;
+        const session = unlockedRef.current.get(id);
+        const node = boardRef.current.nodes.find((entry) => entry.id === id);
+        if (!session || !node || !isProtectedTextNode(node)) return;
+        const previous = boardRef.current;
+        const next = unprotectTextNode(previous, id, session.text);
+        if (next === previous) return;
+        if (editingRef.current === id) {
+          editingRef.current = null;
+          setEditingId(null);
+          textBefore.current = null;
+        }
+        setPasswordBusy(true);
+        void commitSensitive(next, previous, 'Unable to protect because saving failed.').then((saved) => {
+          setPasswordBusy(false);
+          if (!saved) return;
+          unlockedRef.current.delete(id);
+          setUnlockEpoch((value) => value + 1);
+        });
       },
       setGroupTone(id, tone) {
         if (blockedRef.current) return;
@@ -1021,6 +1238,11 @@ function BoardSurface({ session }: { session: SessionProps }) {
   );
 
   useEffect(() => {
+    const sessions = unlockedRef.current;
+    return () => sessions.clear();
+  }, []);
+
+  useEffect(() => {
     if (chromeHidden) setViewsOpen(false);
   }, [chromeHidden]);
 
@@ -1088,12 +1310,12 @@ function BoardSurface({ session }: { session: SessionProps }) {
 
   const nodes = useMemo(() => {
     const ordered = [...board.nodes].sort((left, right) => Number(left.kind !== 'group') - Number(right.kind !== 'group'));
-    const projected = ordered.map((node) => toFlowNode(node, board.nodes, selectedIds.includes(node.id), editingId === node.id, registryRef.current, libraryRef.current));
+    const projected = ordered.map((node) => toFlowNode(node, board.nodes, selectedIds.includes(node.id), editingId === node.id, registryRef.current, libraryRef.current, unlockedRef.current, readOnly));
     const nodeKey = JSON.stringify(projected.map((node) => [node.id, node.position, node.width, node.height, node.selected, node.parentId, node.data, node.draggable]));
     if (nodeKey === flowCache.current.nodeKey) return flowCache.current.nodes;
     flowCache.current = { ...flowCache.current, nodeKey, nodes: projected };
     return projected;
-  }, [board.nodes, editingId, selectedIds, urlEpoch]);
+  }, [board.nodes, editingId, selectedIds, urlEpoch, unlockEpoch, readOnly]);
 
   const edges = useMemo<Edge[]>(() => {
     const solo = selectedEdgeIds.length === 1;
@@ -1402,6 +1624,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
       return;
     }
     historyRef.current = createHistory();
+    forgetUnlocked();
     textBefore.current = null;
     renameBefore.current = null;
     gestureRef.current = null;
@@ -1482,6 +1705,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
       const result = deleteSelection(withoutEdges, doomed.map((node) => node.id));
       if (result.board !== before) {
         publish(result.board, before, 'save');
+        forgetUnlocked(doomed.map((node) => node.id));
         const live = new Set(result.board.nodes.map((node) => node.id));
         replaceSelection(selectedRef.current.filter((id) => live.has(id)));
         replaceEdgeSelection(selectedEdgeRef.current.filter((id) => result.board.edges.some((edge) => edge.id === id)));
@@ -1979,6 +2203,21 @@ function BoardSurface({ session }: { session: SessionProps }) {
         )}
         {chromeHidden ? null : <Coordinates ref={coordinatesRef} selection={selectionLabel} />}
         <PwaUpdateNotice prepareUpdate={preparePwaUpdate} />
+        {passwordPrompt ? (
+          <PasswordDialog
+            mode={passwordPrompt.mode}
+            busy={passwordBusy}
+            error={passwordError}
+            onCancel={() => {
+              if (passwordBusy) return;
+              setPasswordPrompt(null);
+              setPasswordError('');
+            }}
+            onSubmit={(password, confirm) => {
+              void submitPassword(password, confirm);
+            }}
+          />
+        ) : null}
         <button
           type="button"
           className="focus-toggle"
@@ -2006,6 +2245,8 @@ function toFlowNode(
   editing: boolean,
   registry: ObjectUrlRegistry | null,
   library: ReadonlyMap<string, AssetRecord>,
+  unlocked: ReadonlyMap<string, { text: string }>,
+  readOnly: boolean,
 ): CanvasFlowNode {
   const base = {
     id: node.id,
@@ -2037,7 +2278,19 @@ function toFlowNode(
     return {
       ...base,
       type: 'text',
-      data: { text: node.text, editing, presentation: node.presentation ?? 'text', language: node.language, codeLanguage: node.codeLanguage, backgroundTone: node.backgroundTone, textTone: node.textTone, lastEditedAt: node.lastEditedAt },
+      data: {
+        text: isProtectedTextNode(node) ? (unlocked.get(node.id)?.text ?? '') : node.text,
+        editing: isProtectedTextNode(node) && !unlocked.has(node.id) ? false : editing,
+        presentation: node.presentation ?? 'text',
+        language: node.language,
+        codeLanguage: node.codeLanguage,
+        backgroundTone: node.backgroundTone,
+        textTone: node.textTone,
+        lastEditedAt: node.lastEditedAt,
+        protected: isProtectedTextNode(node),
+        unlocked: isProtectedTextNode(node) && unlocked.has(node.id),
+        readOnly,
+      },
     };
   }
   const image = node as ImageNode;

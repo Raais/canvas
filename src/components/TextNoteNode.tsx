@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState, type ChangeEvent, type PointerEvent, type RefObject } from 'react';
 import { Handle, NodeResizer, NodeToolbar, Position, useInternalNode, useViewport, type Node, type NodeProps } from '@xyflow/react';
-import { Code2, FileText, Highlighter, ListTodo, Palette, Type } from 'lucide-react';
+import { Code2, FileText, Highlighter, ListTodo, Lock, LockOpen, Palette, Type } from 'lucide-react';
 import { useBoardActions } from './board-context';
 import { HANDLE_SIDES, visualHandleTransform } from '../editor/handles';
 import { highlightCode, resolveHighlightLanguage } from '../domain/highlight';
@@ -18,6 +18,9 @@ export type TextNodeData = {
   backgroundTone?: BackgroundTone;
   textTone?: TextTone;
   lastEditedAt?: string;
+  protected: boolean;
+  unlocked: boolean;
+  readOnly: boolean;
 };
 
 const BACKGROUNDS: Array<BackgroundTone | 'default'> = ['default', 'slate', 'sage', 'sand', 'rose'];
@@ -117,6 +120,26 @@ function NoteChrome({
               <button type="button" className="icon-button" aria-label="Text tone" title="Text tone" aria-pressed={menu === 'text'} onClick={() => setMenu(menu === 'text' ? null : 'text')}>
                 <Type size={16} strokeWidth={1.75} />
               </button>
+              {!data.protected ? (
+                <button type="button" className="icon-button" aria-label="Password protect" title="Password protect" disabled={data.readOnly} onClick={() => actions.requestProtect(id)}>
+                  <Lock size={16} strokeWidth={1.75} />
+                </button>
+              ) : null}
+              {data.protected && !data.unlocked ? (
+                <button type="button" className="icon-button" aria-label="Unlock" title="Unlock" onClick={() => actions.requestUnlock(id)}>
+                  <LockOpen size={16} strokeWidth={1.75} />
+                </button>
+              ) : null}
+              {data.protected && data.unlocked ? (
+                <>
+                  <button type="button" className="icon-button" aria-label="Lock" title="Lock" onClick={() => actions.lockNote(id)}>
+                    <Lock size={16} strokeWidth={1.75} />
+                  </button>
+                  <button type="button" className="icon-button" aria-label="Remove password protection" title="Remove password protection" disabled={data.readOnly} onClick={() => actions.removeProtection(id)}>
+                    <LockOpen size={16} strokeWidth={1.75} />
+                  </button>
+                </>
+              ) : null}
               {data.presentation === 'code' ? (
                 <select
                   className="language-choice"
@@ -173,7 +196,12 @@ function TextNoteNodeComponent({ id, data, selected }: NodeProps<Node<TextNodeDa
         </Handle>
       ))}
       <div className="text-note-content">
-        {data.editing ? (
+        {data.protected && !data.unlocked ? (
+          <div className="protected-placeholder">
+            <Lock size={16} strokeWidth={1.75} />
+            <span>Password protected</span>
+          </div>
+        ) : data.editing ? (
           <textarea
             ref={editorRef}
             className="text-editor nodrag nopan"

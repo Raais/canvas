@@ -1,6 +1,7 @@
 import { seedFromProjectName } from '../backgrounds/atlas-seed';
 import { normalizeRotation } from './image-rotation';
 import { parseStoredTimestamp } from './node-date';
+import { isProtectedTextNode, parseProtectedPayload } from './text-protection';
 import { contentExtent } from './geometry';
 import { classifyPlainText } from './code';
 import {
@@ -31,6 +32,7 @@ import {
   type ImageDisplayMode,
   type ImageNode,
   type Point,
+  type ProtectedTextPayload,
   type TextNode,
   type Viewport,
   type Appearance,
@@ -180,7 +182,7 @@ export function renameBoard(board: Board, title: string, now?: string): Board {
 
 export function updateText(board: Board, id: string, text: string, now?: string): Board {
   return mapNode(board, id, (node) => {
-    if (node.kind !== 'text' || node.text === text) return node;
+    if (node.kind !== 'text' || node.protection || node.text === text) return node;
     return { ...node, text, lastEditedAt: now ?? new Date().toISOString() };
   }, now);
 }
@@ -352,7 +354,7 @@ export function migrateStoredAppearance(
   storedAppearance: Appearance | null,
   legacy: Appearance,
 ): Board {
-  if (storedAppearance && (storedSchema === 5 || storedSchema === 6 || storedSchema === 7 || storedSchema === 8 || storedSchema === 9 || storedSchema === SCHEMA_VERSION)) return board;
+  if (storedAppearance && (storedSchema === 5 || storedSchema === 6 || storedSchema === 7 || storedSchema === 8 || storedSchema === 9 || storedSchema === 10 || storedSchema === SCHEMA_VERSION)) return board;
   return { ...board, appearance: storedAppearance ?? legacy };
 }
 
@@ -378,6 +380,39 @@ export function setPhysicsEnabled(board: Board, enabled: boolean, now?: string):
 export function applyPhysicsPreference(readOnly: boolean, board: Board, enabled: boolean, now?: string): Board {
   if (readOnly) return board;
   return setPhysicsEnabled(board, enabled, now);
+}
+
+export function protectTextNode(board: Board, id: string, protection: ProtectedTextPayload, now?: string): Board {
+  const parsed = parseProtectedPayload(protection);
+  if (!parsed) return board;
+  return mapNode(board, id, (node) => {
+    if (node.kind !== 'text' || node.protection) return node;
+    return { ...node, text: '', protection: parsed };
+  }, now);
+}
+
+export function unprotectTextNode(board: Board, id: string, text: string, now?: string): Board {
+  return mapNode(board, id, (node) => {
+    if (!isProtectedTextNode(node)) return node;
+    const { protection, ...rest } = node;
+    void protection;
+    return { ...rest, text };
+  }, now);
+}
+
+export function replaceProtectedPayload(board: Board, id: string, protection: ProtectedTextPayload, now?: string): Board {
+  const parsed = parseProtectedPayload(protection);
+  if (!parsed) return board;
+  return mapNode(board, id, (node) => {
+    if (!isProtectedTextNode(node)) return node;
+    if (samePayload(node.protection, parsed)) return node;
+    return { ...node, text: '', protection: parsed, lastEditedAt: now ?? new Date().toISOString() };
+  }, now);
+}
+
+function samePayload(left: ProtectedTextPayload, right: ProtectedTextPayload): boolean {
+  return left.salt === right.salt && left.nonce === right.nonce && left.ciphertext === right.ciphertext
+    && left.iterations === right.iterations && left.memoryKiB === right.memoryKiB && left.parallelism === right.parallelism;
 }
 
 export function setImageRotation(board: Board, id: string, rotation: number, now?: string): Board {
@@ -458,8 +493,8 @@ export function parseBoard(value: unknown): Board | null {
   if (!isRecord(value)) return null;
   if (value.schemaVersion === 1) return migrateVersion1(value);
   const version = value.schemaVersion;
-  if (version !== 2 && version !== 3 && version !== 4 && version !== 5 && version !== 6 && version !== 7 && version !== 8 && version !== 9 && version !== SCHEMA_VERSION) return null;
-  const relationshipStrict = version === 6 || version === 7 || version === 8 || version === 9 || version === SCHEMA_VERSION;
+  if (version !== 2 && version !== 3 && version !== 4 && version !== 5 && version !== 6 && version !== 7 && version !== 8 && version !== 9 && version !== 10 && version !== SCHEMA_VERSION) return null;
+  const relationshipStrict = version === 6 || version === 7 || version === 8 || version === 9 || version === 10 || version === SCHEMA_VERSION;
   if (!isNonEmptyString(value.id) || typeof value.title !== 'string') return null;
   if (typeof value.createdAt !== 'string' || typeof value.updatedAt !== 'string') return null;
   if (!isFiniteNumber(value.revision)) return null;
@@ -524,15 +559,19 @@ export function isSafeHttpUrl(value: string): boolean {
 }
 
 function strictDocument(schemaVersion: unknown): boolean {
-  return schemaVersion === 5 || schemaVersion === 6 || schemaVersion === 7 || schemaVersion === 8 || schemaVersion === 9 || schemaVersion === SCHEMA_VERSION;
+  return schemaVersion === 5 || schemaVersion === 6 || schemaVersion === 7 || schemaVersion === 8 || schemaVersion === 9 || schemaVersion === 10 || schemaVersion === SCHEMA_VERSION;
 }
 
 function supportsContours(schemaVersion: unknown): boolean {
-  return schemaVersion === 7 || schemaVersion === 8 || schemaVersion === 9 || schemaVersion === SCHEMA_VERSION;
+  return schemaVersion === 7 || schemaVersion === 8 || schemaVersion === 9 || schemaVersion === 10 || schemaVersion === SCHEMA_VERSION;
+}
+
+function supportsPhysics(schemaVersion: unknown): boolean {
+  return schemaVersion === 10 || schemaVersion === SCHEMA_VERSION;
 }
 
 function parsePhysics(schemaVersion: unknown, value: Record<string, unknown>): false | undefined | null {
-  if (schemaVersion !== SCHEMA_VERSION) return undefined;
+  if (!supportsPhysics(schemaVersion)) return undefined;
   if (!Object.prototype.hasOwnProperty.call(value, 'physicsEnabled')) return undefined;
   if (value.physicsEnabled === true) return undefined;
   if (value.physicsEnabled === false) return false;
@@ -652,6 +691,9 @@ function parseNode(value: unknown): BoardNode | null {
     if (codeLanguage === null || backgroundTone === null || textTone === null) return null;
     const stamped = timestampFields(value.lastEditedAt);
     if (stamped === null) return null;
+    const protection = parseProtectedPayload(value.protection);
+    if (protection === null) return null;
+    if (protection && value.text !== '') return null;
     return {
       id: value.id,
       kind: 'text',
@@ -660,12 +702,13 @@ function parseNode(value: unknown): BoardNode | null {
       y: value.y,
       width: value.width,
       height: value.height,
-      text: value.text,
+      text: protection ? '' : value.text,
       ...(presentation === 'text' ? {} : { presentation }),
       ...(presentation === 'code' && language ? { language } : {}),
       ...(presentation === 'code' && codeLanguage ? { codeLanguage } : {}),
       ...(backgroundTone ? { backgroundTone } : {}),
       ...(textTone ? { textTone } : {}),
+      ...(protection ? { protection } : {}),
       ...stamped,
     };
   }

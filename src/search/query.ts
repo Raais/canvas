@@ -11,6 +11,7 @@ import {
   type SearchOutcome,
   type SearchResult,
 } from '../domain/search';
+import { isProtectedTextNode } from '../domain/text-protection';
 import type { BoardNode } from '../domain/types';
 import { interpretDateQuery } from './date-query';
 
@@ -99,7 +100,7 @@ function dateHits(nodes: readonly BoardNode[], start: number, end: number, now: 
     hits.push({
       id: node.id,
       kind: 'text',
-      title: noteTitle(node.text),
+      title: isProtectedTextNode(node) ? 'Password protected' : noteTitle(node.text),
       snippet: formatted.label,
       parentLabel,
       score: time,

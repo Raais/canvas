@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 10 as const;
+export const SCHEMA_VERSION = 11 as const;
 export const MAX_SAVED_VIEWS = 32;
 export const MAX_SAVED_VIEW_NAME = 60;
 export const MAX_EDGE_LABEL = 80;
@@ -50,6 +50,18 @@ export type SavedView = {
   viewport: Viewport;
 };
 
+export type ProtectedTextPayload = {
+  version: 1;
+  cipher: 'xchacha20poly1305';
+  kdf: 'argon2id';
+  salt: string;
+  nonce: string;
+  ciphertext: string;
+  iterations: number;
+  memoryKiB: number;
+  parallelism: number;
+};
+
 export type TextNode = {
   id: string;
   kind: 'text';
@@ -64,6 +76,8 @@ export type TextNode = {
   codeLanguage?: CodeLanguage;
   backgroundTone?: BackgroundTone;
   textTone?: TextTone;
+  /** Present only while the note is password protected. `text` is empty in that case. */
+  protection?: ProtectedTextPayload;
   /** ISO timestamp of the last genuine text change. Omitted on legacy notes. */
   lastEditedAt?: string;
 };

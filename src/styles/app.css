@@ -392,6 +392,51 @@ button:focus-visible, .title-input:focus-visible, select:focus-visible {
   overflow: hidden;
   border-radius: inherit;
 }
+.protected-placeholder {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  pointer-events: none;
+}
+.password-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: color-mix(in srgb, #000 40%, transparent);
+}
+.password-dialog {
+  width: min(22rem, calc(100vw - 32px));
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
+}
+.password-dialog label {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}
+.password-dialog input {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--text);
+  padding: 8px 10px;
+}
+.password-actions { display: flex; gap: 8px; }
+.password-error { margin: 0; color: var(--danger); font-size: 13px; }
 
 .text-note.is-selected, .text-note.is-editing, .image-note.is-selected, .group-node.is-selected {
   border-color: var(--accent);

@@ -1,3 +1,4 @@
+import { preferProtectedBoard } from '../domain/text-protection';
 import type { CanvasDatabase } from './db';
 import { planAssetWrite, RevisionConflictError, writeBoardSnapshot, type StoredExpectation } from './db';
 import type { AssetRecord, Board } from '../domain/types';
@@ -151,7 +152,7 @@ export class SaveQueue {
     try {
       while (!this.suspended && (this.dirty || this.upserts.size > 0 || this.deleteIds.size > 0)) {
         this.dirty = false;
-        const board = this.getBoard();
+        const board = preferProtectedBoard(this.getBoard(), this.getBoard());
         const plan = planAssetWrite(board, [...this.upserts.values()], [...this.deleteIds]);
         this.upserts.clear();
         this.deleteIds.clear();
@@ -162,6 +163,8 @@ export class SaveQueue {
           await writeBoardSnapshot(this.database, board, plan.upserts, plan.deleteIds, expected);
           this.inflight = null;
           this.expected = { id: board.id, revision: board.revision };
+          const follow = this.getBoard();
+          if (follow !== board && preferProtectedBoard(board, follow) === follow) this.dirty = true;
           this.onPersisted?.(board);
         } catch (error) {
           this.restoreUncommitted(plan);

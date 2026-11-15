@@ -3,6 +3,10 @@ import type { EdgeStyle, ImageDisplayMode } from '../domain/types';
 
 export type BoardActions = {
   beginEditing: (id: string) => void;
+  requestProtect: (id: string) => void;
+  requestUnlock: (id: string) => void;
+  lockNote: (id: string) => void;
+  removeProtection: (id: string) => void;
   updateText: (id: string, text: string) => void;
   endEditing: () => void;
   setMode: (id: string, mode: ImageDisplayMode) => void;
