@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { beginStroke, cancelStroke, DRAWING_THEME_COLORS, drawingHits, eraserWorldRadius, extendStroke, finishStroke, pathFromPairs, type StrokeDraft } from '../domain/drawing';
+import { onInkPointerDown, onInkPointerFinish } from '../editor/ink-gesture';
 import { MAX_ZOOM, MIN_ZOOM, type BoardNode, type DrawingColor, type DrawingNode, type Point, type Viewport } from '../domain/types';
 
 type DrawingOverlayProps = {
@@ -165,11 +166,15 @@ export function DrawingOverlay(props: DrawingOverlayProps) {
       ref={rootRef}
       className={mode === 'eraser' ? 'ink-overlay is-eraser' : 'ink-overlay'}
       onPointerDown={(event) => {
-        if (props.readOnly || spaceRef.current || event.button !== 0 || !event.isPrimary) return;
-        if (pointerRef.current !== null) {
+        const decision = onInkPointerDown(
+          { open: pointerRef.current !== null },
+          { isPrimary: event.isPrimary, button: event.button, readOnly: props.readOnly, spaceHeld: spaceRef.current },
+        );
+        if (decision.effect === 'cancel') {
           finish(false);
           return;
         }
+        if (decision.effect === 'ignore') return;
         const viewport = props.getViewport();
         viewportRef.current = { ...viewport };
         tokenRef.current = props.generation;
@@ -215,12 +220,16 @@ export function DrawingOverlay(props: DrawingOverlayProps) {
         }
       }}
       onPointerUp={(event) => {
-        if (pointerRef.current !== event.pointerId) return;
-        finish(true);
+        const decision = onInkPointerFinish({ open: pointerRef.current === event.pointerId && !closedRef.current }, true, 'up');
+        if (decision.effect === 'commit') finish(true);
       }}
-      onPointerCancel={() => finish(false)}
+      onPointerCancel={() => {
+        const decision = onInkPointerFinish({ open: pointerRef.current !== null && !closedRef.current }, true, 'cancel');
+        if (decision.effect === 'cancel') finish(false);
+      }}
       onLostPointerCapture={() => {
-        if (!closedRef.current) finish(false);
+        const decision = onInkPointerFinish({ open: pointerRef.current !== null && !closedRef.current }, true, 'cancel');
+        if (decision.effect === 'cancel') finish(false);
       }}
       onContextMenu={(event) => event.preventDefault()}
     >

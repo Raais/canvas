@@ -26,6 +26,7 @@ import { createHistory, pushHistory, redoHistory, undoHistory } from '../domain/
 import { relaxBoard } from '../domain/physics';
 import { buildSearchIndex, contentSignature, searchNodes } from '../domain/search';
 import { MAX_DRAWING_NODES, SCHEMA_VERSION, type DrawingNode, type Point } from '../domain/types';
+import { onInkPointerDown, onInkPointerFinish } from '../editor/ink-gesture';
 import { dragBodyUpdates } from '../editor/pulling';
 import { createNodeProjection } from '../components/flow-projection';
 import { SaveQueue } from '../persistence/save-queue';
@@ -263,6 +264,72 @@ describe('drawing nodes', () => {
       hasRecovery: false,
       expectationMatches: true,
     }).action).toBe('block');
+  });
+
+  test('refuses duplicate and paste operations that would pass 2,000 drawings', () => {
+    const dot = (id: string): DrawingNode => ({ id, kind: 'drawing', x: 0, y: 0, width: 4, height: 4, points: [2, 2], color: 'ink', strokeWidth: 4, lastEditedAt: now });
+    const almost = addNodes(createEmptyBoard(now), Array.from({ length: 1999 }, (_, index) => dot(`d${index}`)), now);
+    const room = duplicateSelection(almost, ['d0'], later);
+    expect(countDrawings(room.nodes)).toBe(2000);
+    expect(parseBoard(room)?.nodes.filter((node) => node.kind === 'drawing')).toHaveLength(2000);
+    const full = addNodes(createEmptyBoard(now), Array.from({ length: 2000 }, (_, index) => dot(`f${index}`)), now);
+    expect(duplicateSelection(full, ['f0'], later)).toBe(full);
+    expect(parseBoard(full)?.schemaVersion).toBe(14);
+    const note = { ...createTextNode({ x: 40, y: 40 }, 'plain', now), id: 'note' };
+    const mixed = addNodes(full, [note], now);
+    const notesOnly = duplicateSelection(mixed, ['note'], later);
+    expect(countDrawings(notesOnly.nodes)).toBe(2000);
+    expect(notesOnly.nodes.filter((node) => node.kind === 'text')).toHaveLength(2);
+    expect(parseBoard(notesOnly)?.schemaVersion).toBe(14);
+    expect(duplicateSelection(mixed, ['note', 'f0'], later)).toBe(mixed);
+    const pair = addNodes(createEmptyBoard(now), [dot('a'), dot('b')], now);
+    const grouped = groupSelection(pair, ['a', 'b']);
+    if ('error' in grouped) throw new Error(grouped.error);
+    const crowded = addNodes(grouped.board, Array.from({ length: 1997 }, (_, index) => dot(`g${index}`)), now);
+    expect(countDrawings(crowded.nodes)).toBe(1999);
+    const group = crowded.nodes.find((node) => node.kind === 'group');
+    expect(group ? duplicateSelection(crowded, [group.id], later) : crowded).toBe(crowded);
+    expect(parseBoard(crowded)?.nodes.filter((node) => node.kind === 'drawing')).toHaveLength(1999);
+    const freed = eraseDrawings(crowded, ['g0', 'g1'], later);
+    const duplicatedGroup = group ? duplicateSelection(freed, [group.id], later) : freed;
+    expect(countDrawings(duplicatedGroup.nodes)).toBe(1999);
+    expect(parseBoard(duplicatedGroup)?.schemaVersion).toBe(14);
+    const payload = selectionClosure(pair, ['a']);
+    const decoded = payload ? decodeGraphClipboard(encodeGraphClipboard(payload)) : null;
+    const blocked = decoded ? pasteGraph(full, decoded, { x: 8, y: 8 }, new Set(), 0, later) : null;
+    expect(blocked && 'error' in blocked ? blocked.error : '').toContain('2,000');
+    expect(parseBoard(full)?.nodes).toHaveLength(2000);
+    const groupPayload = group ? selectionClosure(crowded, [group.id]) : null;
+    const groupPaste = groupPayload ? pasteGraph(crowded, groupPayload, { x: 12, y: 12 }, new Set(), 0, later) : null;
+    expect(groupPaste && 'error' in groupPaste ? groupPaste.error : '').toContain('2,000');
+    expect(parseBoard(crowded)?.nodes.filter((node) => node.kind === 'drawing')).toHaveLength(1999);
+    const textPayload = selectionClosure(mixed, ['note']);
+    const textPaste = textPayload ? pasteGraph(full, textPayload, { x: 16, y: 16 }, new Set(), 0, later) : null;
+    expect(textPaste && !('error' in textPaste) ? countDrawings(textPaste.nodes) : 0).toBe(2000);
+    expect(textPaste && !('error' in textPaste) ? parseBoard(textPaste)?.nodes.some((node) => node.kind === 'text') : false).toBe(true);
+    const openPaste = decoded ? pasteGraph(almost, decoded, { x: 4, y: 4 }, new Set(), 0, later) : null;
+    expect(openPaste && !('error' in openPaste) ? countDrawings(openPaste.nodes) : 0).toBe(2000);
+    expect(openPaste && !('error' in openPaste) ? parseBoard(openPaste)?.schemaVersion : 0).toBe(14);
+  });
+
+  test('cancels an open pen or eraser gesture when a second pointer arrives', () => {
+    const primary = { isPrimary: true, button: 0, readOnly: false, spaceHeld: false };
+    const secondFinger = { isPrimary: false, button: 0, readOnly: false, spaceHeld: false };
+    const started = onInkPointerDown({ open: false }, primary);
+    expect(started.effect).toBe('start');
+    const cancelled = onInkPointerDown(started.state, secondFinger);
+    expect(cancelled.effect).toBe('cancel');
+    expect(cancelled.state.open).toBe(false);
+    expect(onInkPointerFinish(cancelled.state, true, 'up').effect).toBe('ignore');
+    expect(onInkPointerFinish(cancelled.state, true, 'cancel').effect).toBe('ignore');
+    const ignored = onInkPointerDown({ open: false }, secondFinger);
+    expect(ignored.effect).toBe('ignore');
+    expect(ignored.state.open).toBe(false);
+    const finished = onInkPointerFinish(started.state, true, 'up');
+    expect(finished.effect).toBe('commit');
+    expect(onInkPointerFinish(finished.state, true, 'up').effect).toBe('ignore');
+    expect(onInkPointerDown({ open: false }, { ...primary, button: 2 }).effect).toBe('ignore');
+    expect(onInkPointerDown({ open: true }, { ...primary, readOnly: true }).effect).toBe('cancel');
   });
 
   test('measures drawing history, hit testing, and projection', () => {

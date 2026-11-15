@@ -1,3 +1,4 @@
+import { countDrawings, excessDrawings } from './drawing';
 import { childrenOf, worldTopLeft } from './geometry';
 import { SCHEMA_VERSION, type Board, type BoardEdge, type BoardNode, type Point } from './types';
 import { parseBoard, revise, withInsertedTimestamp } from './board';
@@ -95,6 +96,8 @@ export function pasteGraph(
   if (missingFile) return { error: 'That copy refers to a file that is not on this board.' };
   const missingImage = decoded.nodes.some((node) => node.kind === 'image' && node.source.type === 'embedded' && !availableAssets.has(node.source.assetId));
   if (missingImage) return { error: 'That copy refers to an image that is not on this board.' };
+  const limit = excessDrawings(countDrawings(board.nodes), countDrawings(decoded.nodes));
+  if (limit) return { error: limit };
   const ids = new Set(decoded.nodes.map((node) => node.id));
   const idMap = new Map<string, string>();
   for (const id of ids) idMap.set(id, crypto.randomUUID());

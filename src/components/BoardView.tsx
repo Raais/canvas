@@ -132,7 +132,7 @@ const TopographicContoursLayer = lazy(() => import('../backgrounds/TopographicCo
 import { Toolbar, type CanvasTool } from './Toolbar';
 import { DrawingNode } from './DrawingNode';
 import { DrawingOverlay } from './DrawingOverlay';
-import { penScreenPx, type PenSizeId } from '../domain/drawing';
+import { countDrawings, excessDrawings, penScreenPx, selectedDrawingCount, type PenSizeId } from '../domain/drawing';
 import { FileNode } from './FileNode';
 import { WebsiteDialog } from './WebsiteDialog';
 import { WebsiteNode } from './WebsiteNode';
@@ -725,6 +725,11 @@ function BoardSurface({ session }: { session: SessionProps }) {
 
   function duplicateSelected() {
     const before = boardRef.current;
+    const limit = excessDrawings(countDrawings(before.nodes), selectedDrawingCount(before.nodes, selectedRef.current));
+    if (limit) {
+      setNotice({ text: limit, source: 'ingest', ephemeral: true });
+      return;
+    }
     const next = duplicateSelection(before, selectedRef.current);
     if (next === before) return;
     publish(next, before, 'save');

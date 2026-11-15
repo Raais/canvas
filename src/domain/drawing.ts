@@ -2,6 +2,7 @@ import {
   DRAWING_STROKE_MAX,
   DRAWING_STROKE_MIN,
   ERASER_RADIUS_PX,
+  MAX_DRAWING_NODES,
   MAX_DRAWING_POINTS,
   MAX_ZOOM,
   MIN_ZOOM,
@@ -50,6 +51,30 @@ export function isDrawingColor(value: unknown): value is DrawingColor {
 export function countDrawings(nodes: readonly { kind: string }[]): number {
   let count = 0;
   for (const node of nodes) if (node.kind === 'drawing') count += 1;
+  return count;
+}
+
+export function excessDrawings(existing: number, incoming: number): string | null {
+  if (incoming <= 0 || existing + incoming <= MAX_DRAWING_NODES) return null;
+  return 'This board can hold 2,000 drawings. Erase some before adding more.';
+}
+
+export function selectedDrawingCount(nodes: readonly BoardNode[], ids: readonly string[]): number {
+  const chosen = new Set(ids);
+  const seen = new Set<string>();
+  let count = 0;
+  for (const node of nodes) {
+    if (!chosen.has(node.id) || seen.has(node.id)) continue;
+    seen.add(node.id);
+    if (node.kind === 'drawing') count += 1;
+    if (node.kind !== 'group') continue;
+    for (const child of nodes) {
+      if (child.kind === 'drawing' && child.parentId === node.id && !seen.has(child.id)) {
+        seen.add(child.id);
+        count += 1;
+      }
+    }
+  }
   return count;
 }
 

@@ -1,4 +1,5 @@
 import { revise, withInsertedTimestamp } from './board';
+import { countDrawings, excessDrawings } from './drawing';
 import {
   boundsOfNodes,
   childrenOf,
@@ -175,6 +176,8 @@ export function duplicateSelection(board: Board, ids: readonly string[], now?: s
     }
   }
   if (included.size === 0) return board;
+  const incoming = [...included.values()].filter((node) => node.kind === 'drawing').length;
+  if (excessDrawings(countDrawings(board.nodes), incoming)) return board;
   const stampedAt = now ?? new Date().toISOString();
   const idMap = new Map<string, string>();
   for (const id of included.keys()) idMap.set(id, crypto.randomUUID());
