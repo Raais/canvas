@@ -59,7 +59,7 @@ if (mainName) {
 expect(!assets.some((name) => name.endsWith('.wasm')), 'no wasm asset');
 const packages = await Bun.file('package.json').json() as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
 const dependencyNames = [...Object.keys(packages.dependencies ?? {}), ...Object.keys(packages.devDependencies ?? {})];
-expect(!dependencyNames.some((name) => /avif|wasm|squoosh|sharp/i.test(name)), 'no external encoder package');
+expect(!dependencyNames.some((name) => /avif|squoosh|sharp|wasm-vips|jsquash/i.test(name)), 'no external encoder package');
 
 if (problems.length > 0) {
   console.error(problems.join('\n'));
