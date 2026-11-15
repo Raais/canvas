@@ -11,7 +11,7 @@ import { createHistory, pushHistory, redoHistory, undoHistory } from '../domain/
 import { relaxBoard } from '../domain/physics';
 import { buildSearchIndex, searchNodes } from '../domain/search';
 import { SCHEMA_VERSION } from '../domain/types';
-import { classifyLinkDrop, standaloneHtmlBookmark, websiteEditsAllowed, websiteFromExplicit, websiteFromStandalone } from '../domain/websites';
+import { classifyLinkDrop, resolveLinkDrop, standaloneHtmlBookmark, websiteEditsAllowed, websiteFromExplicit, websiteFromStandalone } from '../domain/websites';
 import { interpretClipboard } from '../ingest/clipboard';
 import { createNodeProjection } from '../components/flow-projection';
 import { buildContentIndex, queryBoard } from '../search/query';
@@ -128,7 +128,65 @@ describe('website nodes', () => {
     expect(classifyLinkDrop({ uriList: '# comment\nhttps://example.com/docs\n', plain: 'Docs', html: null })).toEqual({ url: 'https://example.com/docs', title: 'Docs' });
     expect(classifyLinkDrop({ uriList: 'https://one.example\nhttps://two.example\n', plain: null, html: null })).toBeNull();
     expect(classifyLinkDrop({ uriList: 'javascript:alert(1)\n', plain: null, html: null })).toBeNull();
+    expect(classifyLinkDrop({ uriList: null, plain: 'https://example.com/plain', html: null })).toEqual({ url: 'https://example.com/plain', title: 'example.com' });
     expect(classifyLinkDrop({ uriList: null, plain: 'just words', html: null })).toBeNull();
+    expect(classifyLinkDrop({
+      uriList: null,
+      plain: null,
+      html: '<a href="https://github.com/Raais/canvas">Canvas</a>',
+    })).toEqual({ url: 'https://github.com/Raais/canvas', title: 'Canvas' });
+    expect(classifyLinkDrop({
+      uriList: null,
+      plain: 'see the notes',
+      html: '<a href="https://github.com/Raais/canvas">Canvas</a>',
+    })).toEqual({ url: 'https://github.com/Raais/canvas', title: 'Canvas' });
+    expect(classifyLinkDrop({
+      uriList: null,
+      plain: null,
+      html: '<p>See <a href="https://example.com">Example</a></p>',
+    })).toBeNull();
+    expect(resolveLinkDrop({
+      types: ['text/uri-list', 'text/plain'],
+      uriList: 'https://example.com/docs',
+      plain: 'Docs',
+      html: null,
+    })).toEqual({ preventDefault: true, website: { url: 'https://example.com/docs', title: 'Docs' } });
+    expect(resolveLinkDrop({
+      types: ['text/uri-list'],
+      uriList: 'javascript:alert(1)',
+      plain: null,
+      html: '<a href="https://example.com">Example</a>',
+    })).toEqual({ preventDefault: true, website: null });
+    expect(resolveLinkDrop({
+      types: ['text/uri-list', 'text/plain'],
+      uriList: 'https://one.example\nhttps://two.example',
+      plain: 'https://one.example',
+      html: null,
+    })).toEqual({ preventDefault: true, website: null });
+    expect(resolveLinkDrop({
+      types: ['text/html'],
+      uriList: null,
+      plain: null,
+      html: '<a href="https://example.com/only">Only</a>',
+    })).toEqual({ preventDefault: true, website: { url: 'https://example.com/only', title: 'Only' } });
+    expect(resolveLinkDrop({
+      types: ['text/plain'],
+      uriList: null,
+      plain: 'not a url',
+      html: null,
+    })).toEqual({ preventDefault: true, website: null });
+    expect(resolveLinkDrop({
+      types: ['Files', 'text/uri-list'],
+      uriList: 'https://example.com',
+      plain: null,
+      html: null,
+    })).toEqual({ preventDefault: true, website: null });
+    expect(resolveLinkDrop({
+      types: ['application/reactflow'],
+      uriList: null,
+      plain: null,
+      html: null,
+    }).preventDefault).toBe(false);
     expect(websiteEditsAllowed(false)).toBe(true);
     expect(websiteEditsAllowed(true)).toBe(false);
   });

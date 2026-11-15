@@ -31,6 +31,8 @@ export function websiteFromStandalone(value: string): WebsiteFields | null {
   return { url, title: websiteHostname(url) };
 }
 
+const LINK_DRAG_TYPES = ['text/uri-list', 'text/plain', 'text/html'] as const;
+
 export function classifyLinkDrop(input: {
   uriList: string | null;
   plain: string | null;
@@ -38,16 +40,29 @@ export function classifyLinkDrop(input: {
 }): WebsiteFields | null {
   const listed = uriListEntries(input.uriList);
   if (listed === 'many') return null;
-  if (typeof listed === 'string') {
+  if (listed !== 'none') {
     const url = canonicalWebsiteUrl(listed, 'absolute');
     if (!url) return null;
     return { url, title: dropTitle(input.plain, input.html, url) };
   }
   const plain = input.plain?.trim() ?? '';
-  if (!plain || /[\r\n]/.test(plain)) return null;
-  const url = canonicalWebsiteUrl(plain, 'absolute');
-  if (!url) return null;
-  return { url, title: websiteHostname(url) };
+  if (plain && !/[\r\n]/.test(plain)) {
+    const url = canonicalWebsiteUrl(plain, 'absolute');
+    if (url) return { url, title: websiteHostname(url) };
+  }
+  return input.html ? standaloneHtmlBookmark(input.html) : null;
+}
+
+export function resolveLinkDrop(input: {
+  types: readonly string[];
+  uriList: string | null;
+  plain: string | null;
+  html: string | null;
+}): { preventDefault: boolean; website: WebsiteFields | null } {
+  const files = input.types.includes('Files');
+  const link = !files && input.types.some((type) => (LINK_DRAG_TYPES as readonly string[]).includes(type));
+  if (!files && !link) return { preventDefault: false, website: null };
+  return { preventDefault: true, website: link ? classifyLinkDrop(input) : null };
 }
 
 export function standaloneHtmlBookmark(html: string): WebsiteFields | null {

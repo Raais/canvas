@@ -90,7 +90,7 @@ import { ingestClipboard, ingestFileList, type IngestBundle, type PreparedItem }
 import { createImageOptimizer, type ImageOptimizer } from '../ingest/image-optimizer';
 import { createBatchGuard, mayPlaceImages, mayReplaceBoard, readOptimizeImages, writeOptimizeImages } from '../ingest/image-optimizer-config';
 import { captureClipboardData } from '../ingest/clipboard';
-import { classifyLinkDrop, websiteEditsAllowed } from '../domain/websites';
+import { resolveLinkDrop, websiteEditsAllowed } from '../domain/websites';
 import { archiveFilename } from '../archive/format';
 import { buildArchive, readArchive } from '../archive/zip';
 import { downloadBytes } from '../project/download';
@@ -1898,14 +1898,15 @@ function BoardSurface({ session }: { session: SessionProps }) {
         ref={boardEl}
         className={`${tool === 'frame' ? 'board is-framing' : 'board'}${atlasActive ? ' has-dither-atlas' : ''}${contoursActive ? ' has-topographic-contours' : ''}`}
         onDragEnter={(event) => {
-          if (hasExternalLink(event.dataTransfer)) event.preventDefault();
+          const types = dragTypes(event.dataTransfer);
+          if (resolveLinkDrop({ types, uriList: null, plain: null, html: null }).preventDefault) event.preventDefault();
           if (!hasFiles(event.dataTransfer)) return;
-          event.preventDefault();
           dragDepth.current += 1;
           setFileDrag(true);
         }}
         onDragOver={(event) => {
-          if (!hasFiles(event.dataTransfer) && !hasExternalLink(event.dataTransfer)) return;
+          const decision = resolveLinkDrop({ types: dragTypes(event.dataTransfer), uriList: null, plain: null, html: null });
+          if (!decision.preventDefault) return;
           event.preventDefault();
           event.dataTransfer.dropEffect = 'copy';
         }}
@@ -1914,22 +1915,24 @@ function BoardSurface({ session }: { session: SessionProps }) {
           if (dragDepth.current === 0) setFileDrag(false);
         }}
         onDrop={(event) => {
-          const files = hasFiles(event.dataTransfer);
-          const link = files ? null : classifyLinkDrop({
+          const types = dragTypes(event.dataTransfer);
+          const decision = resolveLinkDrop({
+            types,
             uriList: event.dataTransfer.getData('text/uri-list'),
             plain: event.dataTransfer.getData('text/plain'),
             html: event.dataTransfer.getData('text/html'),
           });
-          if (!files && !link) return;
+          if (!decision.preventDefault) return;
           event.preventDefault();
           dragDepth.current = 0;
           setFileDrag(false);
           if (blockedRef.current) return;
           const origin = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-          if (files) {
+          if (types.includes('Files')) {
             void runIngest(origin, () => ingestFileList(event.dataTransfer.files, ingestOptions()));
             return;
           }
+          const link = decision.website;
           if (!link || !websiteEditsAllowed(blockedRef.current)) return;
           const before = boardRef.current;
           const node = createWebsiteNode({ center: origin, url: link.url, title: link.title });
@@ -2413,14 +2416,12 @@ function missingAssetMessage(board: Board, missing: readonly string[]): string {
     : 'An embedded image is missing, so the archive was not created.';
 }
 
-function hasFiles(data: DataTransfer | null): boolean {
-  return Boolean(data && Array.from(data.types).includes('Files'));
+function dragTypes(data: DataTransfer | null): string[] {
+  return data ? Array.from(data.types) : [];
 }
 
-function hasExternalLink(data: DataTransfer | null): boolean {
-  if (!data || hasFiles(data)) return false;
-  const types = Array.from(data.types);
-  return types.includes('text/uri-list') || types.includes('text/plain') || types.includes('text/html');
+function hasFiles(data: DataTransfer | null): boolean {
+  return dragTypes(data).includes('Files');
 }
 
 function browserStorage(): Storage | null {
