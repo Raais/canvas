@@ -1046,6 +1046,23 @@ html[data-theme='light'] .note-ink-warm { color: #8a5a32; }
 .markdown-body { height: 100%; overflow: auto; padding: 12px 14px; font-size: 14px; }
 .markdown-body h1, .markdown-body h2, .markdown-body h3 { margin: 0 0 6px; font-size: 15px; }
 .markdown-body p, .markdown-body ul, .markdown-body ol { margin: 0 0 8px; }
+.markdown-body a:link,
+.markdown-body a:visited {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 70%, transparent);
+  text-underline-offset: 2px;
+}
+.markdown-body a:hover {
+  color: var(--accent-ink);
+  text-decoration-color: var(--accent-ink);
+}
+.markdown-body a:focus-visible {
+  color: var(--accent-ink);
+  text-decoration-color: var(--accent-ink);
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
 .md-mark { background: color-mix(in srgb, #e2b15a 45%, transparent); color: inherit; border-radius: 4px; padding: 0 2px; }
 .code-body {
   margin: 0;
