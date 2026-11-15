@@ -8,7 +8,8 @@ export type BoardActions = {
   lockNote: (id: string) => void;
   removeProtection: (id: string) => void;
   updateText: (id: string, text: string) => void;
-  endEditing: () => void;
+  editingToken: (id: string) => number | null;
+  endEditing: (token: number) => void;
   setMode: (id: string, mode: ImageDisplayMode) => void;
   setPresentation: (id: string, presentation: 'text' | 'markdown' | 'code') => void;
   setNoteTone: (id: string, kind: 'background' | 'text', tone: string) => void;
@@ -30,7 +31,9 @@ export type BoardActions = {
   setRelationshipStyle: (id: string, style: EdgeStyle) => void;
   downloadFile: (id: string) => void;
   deleteRelationship: (id: string) => void;
-  setEdgeEditor: (open: boolean) => void;
+  claimEdgeEditor: (id: string) => number;
+  ownsEdgeEditor: (id: string, token: number) => boolean;
+  releaseEdgeEditor: (id: string, token: number) => boolean;
 };
 
 const BoardActionsContext = createContext<BoardActions | null>(null);

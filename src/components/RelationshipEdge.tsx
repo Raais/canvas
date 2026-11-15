@@ -40,6 +40,7 @@ export function RelationshipEdge({
   const closedRef = useRef(false);
   const draftRef = useRef(draft);
   const generation = useRef(0);
+  const editorToken = useRef<number | null>(null);
   const actionsRef = useRef(actions);
   draftRef.current = draft;
   actionsRef.current = actions;
@@ -51,8 +52,8 @@ export function RelationshipEdge({
     closedRef.current = false;
     draftRef.current = data?.label ?? '';
     setDraft(draftRef.current);
+    editorToken.current = actions.claimEdgeEditor(id);
     setEditing(true);
-    actions.setEdgeEditor(true);
   }
 
   function finish(gesture: 'enter' | 'blur' | 'escape') {
@@ -60,7 +61,8 @@ export function RelationshipEdge({
     const action = nextLabelAction(false, cancelRef.current, gesture);
     closedRef.current = action.closed;
     setEditing(false);
-    actions.setEdgeEditor(false);
+    const token = editorToken.current;
+    if (token !== null) actions.releaseEdgeEditor(id, token);
     if (action.commit) actions.commitEdgeLabel(id, draftRef.current);
   }
 
@@ -70,6 +72,7 @@ export function RelationshipEdge({
     return () => {
       const snapshot = {
         id,
+        token: editorToken.current,
         draft: draftRef.current,
         closed: closedRef.current,
         cancelled: cancelRef.current,
@@ -79,11 +82,14 @@ export function RelationshipEdge({
           finalUnmount: isFinalUnmount(mountedGeneration, generation.current),
           closed: snapshot.closed,
           cancelled: snapshot.cancelled,
+          owns: snapshot.token !== null && actionsRef.current.ownsEdgeEditor(snapshot.id, snapshot.token),
         });
         if (action === 'ignore') return;
         closedRef.current = true;
-        actionsRef.current.setEdgeEditor(false);
-        if (action === 'commit') actionsRef.current.commitEdgeLabel(snapshot.id, snapshot.draft);
+        if ((action === 'commit' || action === 'clear') && snapshot.token !== null) {
+          actionsRef.current.releaseEdgeEditor(snapshot.id, snapshot.token);
+        }
+        if (action === 'commit' || action === 'commit-only') actionsRef.current.commitEdgeLabel(snapshot.id, snapshot.draft);
       });
     };
   }, [editing, id]);

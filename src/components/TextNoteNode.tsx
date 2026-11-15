@@ -177,7 +177,12 @@ function TextNoteNodeComponent({ id, data, selected }: NodeProps<Node<TextNodeDa
   const actions = useBoardActions();
   const actionsRef = useRef(actions);
   const generation = useRef(0);
+  const ownedToken = useRef<number | null>(null);
   actionsRef.current = actions;
+  if (data.editing) {
+    const token = actions.editingToken(id);
+    if (token !== null) ownedToken.current = token;
+  }
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const tone = `note-bg-${data.backgroundTone ?? 'default'} note-ink-${data.textTone ?? 'default'}`;
   const showChrome = selected || (data.editing && data.presentation === 'markdown');
@@ -195,9 +200,10 @@ function TextNoteNodeComponent({ id, data, selected }: NodeProps<Node<TextNodeDa
     if (!data.editing) return;
     const mountedGeneration = ++generation.current;
     return () => {
+      const token = ownedToken.current;
       queueMicrotask(() => {
-        if (!isFinalUnmount(mountedGeneration, generation.current)) return;
-        actionsRef.current.endEditing();
+        if (!isFinalUnmount(mountedGeneration, generation.current) || token === null) return;
+        actionsRef.current.endEditing(token);
       });
     };
   }, [data.editing, id]);
@@ -225,7 +231,11 @@ function TextNoteNodeComponent({ id, data, selected }: NodeProps<Node<TextNodeDa
             value={data.text}
             aria-label="Note text"
             onChange={(event) => actions.updateText(id, event.target.value)}
-            onBlur={() => actions.endEditing()}
+            onBlur={() => {
+              const token = ownedToken.current;
+              if (token === null) return;
+              actions.endEditing(token);
+            }}
             onKeyDown={(event) => {
               const finish = event.key === 'Escape' || (event.key === 'Enter' && (event.metaKey || event.ctrlKey));
               if (!finish) return;

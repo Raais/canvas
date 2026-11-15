@@ -8,7 +8,7 @@ import { GRAPH_CLIPBOARD_VERSION, selectionClosure } from '../domain/graph-clipb
 import { groupSelection } from '../domain/groups';
 import { relaxBoard } from '../domain/physics';
 import { buildSearchIndex, searchNodes } from '../domain/search';
-import { finalizeCulledEdgeLabel, isFinalUnmount } from '../editor/cull-edit';
+import { finalizeCulledEdgeLabel, isFinalUnmount, nextOwnedSession, textCleanupAction, type OwnedSession } from '../editor/cull-edit';
 import { relaxDrag } from '../editor/pulling';
 import { readRasterDimensions } from '../ingest/image-optimizer-config';
 import { SYNTHETIC_PNG } from './synthetic-png';
@@ -118,15 +118,20 @@ describe('culled editing', () => {
   test('commits a culled edge draft once and finishes a culled text edit once', async () => {
     expect(isFinalUnmount(1, 1)).toBe(true);
     expect(isFinalUnmount(1, 2)).toBe(false);
-    expect(finalizeCulledEdgeLabel({ finalUnmount: false, closed: false, cancelled: false })).toBe('ignore');
-    expect(finalizeCulledEdgeLabel({ finalUnmount: true, closed: true, cancelled: false })).toBe('ignore');
-    expect(finalizeCulledEdgeLabel({ finalUnmount: true, closed: false, cancelled: true })).toBe('clear');
-    expect(finalizeCulledEdgeLabel({ finalUnmount: true, closed: false, cancelled: false })).toBe('commit');
-    const edge = await Bun.file(new URL('../components/RelationshipEdge.tsx', import.meta.url)).text();
-    const note = await Bun.file(new URL('../components/TextNoteNode.tsx', import.meta.url)).text();
-    expect(edge.includes('finalizeCulledEdgeLabel')).toBe(true);
-    expect(note.includes('actionsRef.current.endEditing()')).toBe(true);
-    expect(note.includes("onBlur={() => actions.endEditing()}")).toBe(true);
+    expect(finalizeCulledEdgeLabel({ finalUnmount: false, closed: false, cancelled: false, owns: true })).toBe('ignore');
+    expect(finalizeCulledEdgeLabel({ finalUnmount: true, closed: true, cancelled: false, owns: true })).toBe('ignore');
+    expect(finalizeCulledEdgeLabel({ finalUnmount: true, closed: false, cancelled: true, owns: true })).toBe('clear');
+    expect(finalizeCulledEdgeLabel({ finalUnmount: true, closed: false, cancelled: false, owns: true })).toBe('commit');
+    expect(finalizeCulledEdgeLabel({ finalUnmount: true, closed: false, cancelled: false, owns: false })).toBe('commit-only');
+    expect(finalizeCulledEdgeLabel({ finalUnmount: true, closed: false, cancelled: true, owns: false })).toBe('ignore');
+    const switched = switchEditingSessions();
+    expect(switched.duringNextSession.textBefore).toBe('b');
+    expect(switched.duringNextSession.saves).toEqual([]);
+    expect(switched.afterClose.saves).toEqual(['b']);
+    expect(switched.afterClose.history).toEqual(['b']);
+    expect(switched.edgeOpen).toBe(true);
+    expect(switched.edgeOwner).toBe('edge-b');
+    expect(switched.committed).toEqual(['edge-a']);
   });
 
   test('uses a decodable png in the performance fixture', async () => {
@@ -270,6 +275,69 @@ function close(actual: number, expected: number) {
 
 function asset(id: string, mimeType: string, size: number): AssetRecord {
   return { id, mimeType, byteSize: size, createdAt: now, blob: new Blob([new Uint8Array(size)]) };
+}
+
+function switchEditingSessions() {
+  let serial = 0;
+  let session: OwnedSession | null = null;
+  let textBefore: string | null = null;
+  const saves: string[] = [];
+  const history: string[] = [];
+  function begin(id: string) {
+    const opened = nextOwnedSession(serial, id);
+    serial = opened.token;
+    session = opened.session;
+    textBefore = id;
+    return opened.token;
+  }
+  function end(token: number) {
+    if (textCleanupAction(session, token) === 'ignore') return;
+    const snapshot = textBefore;
+    textBefore = null;
+    const id = session?.id ?? '';
+    session = null;
+    if (snapshot) history.push(snapshot);
+    saves.push(id);
+  }
+  const first = begin('a');
+  const second = begin('b');
+  end(first);
+  const duringNextSession = { textBefore, saves: [...saves], history: [...history] };
+  end(second);
+  end(second);
+  const afterClose = { saves: [...saves], history: [...history] };
+
+  let edgeSerial = 0;
+  let edge: OwnedSession | null = null as OwnedSession | null;
+  let edgeOpen = false;
+  const committed: string[] = [];
+  function claim(id: string) {
+    const opened = nextOwnedSession(edgeSerial, id);
+    edgeSerial = opened.token;
+    edge = opened.session;
+    edgeOpen = true;
+    return opened.token;
+  }
+  function cleanup(id: string, token: number, cancelled: boolean) {
+    const owner = edge;
+    const action = finalizeCulledEdgeLabel({
+      finalUnmount: true,
+      closed: false,
+      cancelled,
+      owns: owner?.id === id && owner.token === token,
+    });
+    if (action === 'ignore') return;
+    if ((action === 'commit' || action === 'clear') && owner?.id === id && owner.token === token) {
+      edge = null;
+      edgeOpen = false;
+    }
+    if (action === 'commit' || action === 'commit-only') committed.push(id);
+  }
+  const edgeA = claim('edge-a');
+  claim('edge-b');
+  cleanup('edge-a', edgeA, false);
+  const owner = edge;
+  return { duringNextSession, afterClose, edgeOpen, edgeOwner: owner ? owner.id : '', committed };
 }
 
 function pngChunk(bytes: Uint8Array, type: string): Uint8Array {

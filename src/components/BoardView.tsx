@@ -114,6 +114,7 @@ import { ATLAS_LAB_ENABLED, clampAtlasTuning, defaultsForAtlasVersion, effective
 import { CONTOURS_V1_DEFAULTS, clampContoursTuning, effectiveContoursTuning, type ContoursPreview, type ContoursTuning } from '../backgrounds/contours-tuning';
 import { PwaUpdateNotice } from './PwaUpdateNotice';
 import { decidePwaUpdate, shouldActivateWorker } from '../project/pwa-update';
+import { nextOwnedSession, textCleanupAction, type OwnedSession } from '../editor/cull-edit';
 import { pendingRotationBlocksReplacement } from '../domain/image-rotation';
 import { PasswordDialog } from './PasswordDialog';
 import { ProjectMenu } from './ProjectMenu';
@@ -233,6 +234,10 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const shiftRef = useRef(false);
   const rebalanceRef = useRef<() => void>(() => {});
   const textBefore = useRef<Board | null>(null);
+  const textSerial = useRef(0);
+  const textSession = useRef<OwnedSession | null>(null);
+  const edgeSerial = useRef(0);
+  const edgeSession = useRef<OwnedSession | null>(null);
   const renameBefore = useRef<Board | null>(null);
   const historyRef = useRef<History>(createHistory());
   const libraryRef = useRef(new Map<string, AssetRecord>());
@@ -585,11 +590,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
     const only = nodes.length === 1 ? nodes[0] : undefined;
     publish(addNodes(before, nodes), before, 'save');
     replaceSelection(nodes.map((node) => node.id));
-    if (only?.kind === 'text') {
-      editingRef.current = only.id;
-      textBefore.current = structuredClone(boardRef.current);
-      setEditingId(only.id);
-    }
+    if (only?.kind === 'text') beginTextSession(only.id);
     setUrlEpoch((value) => value + 1);
   }
 
@@ -713,9 +714,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
     historyRef.current = result.history;
     setHistoryStamp((value) => value + 1);
     forgetUnlocked();
-    editingRef.current = null;
-    setEditingId(null);
-    textBefore.current = null;
+    dropTextSession();
     replaceBoard(result.board);
     reconcile(current, result.board);
     queue.saveNow();
@@ -751,9 +750,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
       return true;
     }
     if (blockedRef.current) return false;
-    textBefore.current = structuredClone(boardRef.current);
-    editingRef.current = id;
-    setEditingId(id);
+    beginTextSession(id);
     return true;
   }
 
@@ -950,6 +947,23 @@ function BoardSurface({ session }: { session: SessionProps }) {
     };
   }, []);
 
+  function beginTextSession(id: string) {
+    const opened = nextOwnedSession(textSerial.current, id);
+    textSerial.current = opened.token;
+    textSession.current = opened.session;
+    textBefore.current = structuredClone(boardRef.current);
+    editingRef.current = id;
+    setEditingId(id);
+  }
+
+  function dropTextSession() {
+    textSerial.current += 1;
+    textSession.current = null;
+    textBefore.current = null;
+    editingRef.current = null;
+    setEditingId(null);
+  }
+
   const actions = useMemo<BoardActions>(
     () => ({
       beginEditing(id) {
@@ -960,11 +974,25 @@ function BoardSurface({ session }: { session: SessionProps }) {
           return;
         }
         if (blockedRef.current) return;
-        textBefore.current = structuredClone(boardRef.current);
-        editingRef.current = id;
-        setEditingId(id);
+        beginTextSession(id);
         selectedRef.current = [id];
         setSelectedIds([id]);
+      },
+      editingToken(id) {
+        const session = textSession.current;
+        return session?.id === id ? session.token : null;
+      },
+      endEditing(token) {
+        if (textCleanupAction(textSession.current, token) === 'ignore') return;
+        const before = textBefore.current;
+        textBefore.current = null;
+        textSession.current = null;
+        editingRef.current = null;
+        setEditingId(null);
+        if (before && JSON.stringify(before.nodes) !== JSON.stringify(boardRef.current.nodes)) {
+          historyRef.current = pushHistory(historyRef.current, before);
+        }
+        queue.saveNow();
       },
       updateText(id, text) {
         if (blockedRef.current) return;
@@ -995,17 +1023,6 @@ function BoardSurface({ session }: { session: SessionProps }) {
         boardRef.current = next;
         setBoard(next);
         queue.schedule(500);
-      },
-      endEditing() {
-        const before = textBefore.current;
-        textBefore.current = null;
-        if (editingRef.current === null && !before) return;
-        editingRef.current = null;
-        setEditingId(null);
-        if (before && JSON.stringify(before.nodes) !== JSON.stringify(boardRef.current.nodes)) {
-          historyRef.current = pushHistory(historyRef.current, before);
-        }
-        queue.saveNow();
       },
       setMode(id, mode) {
         if (blockedRef.current) return;
@@ -1075,11 +1092,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
         if (blockedRef.current) return;
         const node = boardRef.current.nodes.find((entry) => entry.id === id);
         if (!node || node.kind !== 'text' || node.protection) return;
-        if (editingRef.current === id) {
-          editingRef.current = null;
-          setEditingId(null);
-          textBefore.current = null;
-        }
+        if (editingRef.current === id) dropTextSession();
         setPasswordError('');
         setPasswordPrompt({ mode: 'protect', id });
       },
@@ -1090,9 +1103,11 @@ function BoardSurface({ session }: { session: SessionProps }) {
         setPasswordPrompt({ mode: 'unlock', id });
       },
       lockNote(id) {
-        if (editingRef.current === id) {
+        const open = textSession.current;
+        if (open?.id === id) {
           const before = textBefore.current;
           textBefore.current = null;
+          textSession.current = null;
           editingRef.current = null;
           setEditingId(null);
           if (before && JSON.stringify(before.nodes) !== JSON.stringify(boardRef.current.nodes)) {
@@ -1112,11 +1127,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
         const previous = boardRef.current;
         const next = unprotectTextNode(previous, id, session.text);
         if (next === previous) return;
-        if (editingRef.current === id) {
-          editingRef.current = null;
-          setEditingId(null);
-          textBefore.current = null;
-        }
+        if (editingRef.current === id) dropTextSession();
         setPasswordBusy(true);
         void commitSensitive(next, previous, 'Unable to remove password protection because saving failed.').then((saved) => {
           setPasswordBusy(false);
@@ -1192,9 +1203,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
         if (next === before) return;
         publish(next, before, 'save');
         replaceSelection([note.id]);
-        textBefore.current = structuredClone(boardRef.current);
-        editingRef.current = note.id;
-        setEditingId(note.id);
+        beginTextSession(note.id);
       },
       requestDeleteContents(groupId) {
         if (blockedRef.current) return;
@@ -1244,8 +1253,23 @@ function BoardSurface({ session }: { session: SessionProps }) {
         publish(next, before, 'save');
         replaceEdgeSelection(selectedEdgeRef.current.filter((edgeId) => edgeId !== id));
       },
-      setEdgeEditor(open) {
-        edgeEditorRef.current = open;
+      claimEdgeEditor(id) {
+        const opened = nextOwnedSession(edgeSerial.current, id);
+        edgeSerial.current = opened.token;
+        edgeSession.current = opened.session;
+        edgeEditorRef.current = true;
+        return opened.token;
+      },
+      ownsEdgeEditor(id, token) {
+        const session = edgeSession.current;
+        return session?.id === id && session.token === token;
+      },
+      releaseEdgeEditor(id, token) {
+        const session = edgeSession.current;
+        if (!session || session.id !== id || session.token !== token) return false;
+        edgeSession.current = null;
+        edgeEditorRef.current = false;
+        return true;
       },
     }),
     [queue],
@@ -1446,9 +1470,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
     const node = createTextNode(origin);
     publish(addNodes(before, [node]), before, 'save');
     replaceSelection([node.id]);
-    textBefore.current = structuredClone(boardRef.current);
-    editingRef.current = node.id;
-    setEditingId(node.id);
+    beginTextSession(node.id);
   }
 
   function finishFrame(point: Point) {
@@ -1479,8 +1501,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
       blockedRef.current = true;
       writerRef.current = false;
       queue.pauseForConflict();
-      editingRef.current = null;
-      setEditingId(null);
+      dropTextSession();
       setReadOnly(true);
       setNotice({ text, source: 'save' });
     };
@@ -1625,7 +1646,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
     }
     historyRef.current = createHistory();
     forgetUnlocked();
-    textBefore.current = null;
+    dropTextSession();
     renameBefore.current = null;
     gestureRef.current = null;
     libraryRef.current = new Map(assets.map((asset) => [asset.id, asset]));
@@ -1636,8 +1657,6 @@ function BoardSurface({ session }: { session: SessionProps }) {
     replaceBoard(nextBoard);
     replaceSelection([]);
     replaceEdgeSelection([]);
-    editingRef.current = null;
-    setEditingId(null);
     setUrlEpoch((value) => value + 1);
     setStatus('saved');
     setConfirming(null);
