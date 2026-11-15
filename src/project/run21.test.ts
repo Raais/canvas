@@ -58,8 +58,8 @@ function xOf(board: Board, id: string): number {
 describe('project pulling force', () => {
   test('defaults on for new boards and legacy documents', () => {
     const created = createEmptyBoard(now);
-    expect(SCHEMA_VERSION).toBe(16);
-    expect(created.schemaVersion).toBe(16);
+    expect(SCHEMA_VERSION).toBe(17);
+    expect(created.schemaVersion).toBe(17);
     expect(created.physicsEnabled).toBe(undefined);
     expect(physicsIsEnabled(created)).toBe(true);
     const legacy = parseBoard({
@@ -73,11 +73,11 @@ describe('project pulling force', () => {
       nodes: [text('n', 0)],
       edges: [],
     });
-    expect(legacy?.schemaVersion).toBe(16);
+    expect(legacy?.schemaVersion).toBe(17);
     expect(physicsIsEnabled(legacy ?? created)).toBe(true);
     for (const schemaVersion of [2, 3, 4, 5, 6, 7, 8, 9, 10, 11]) {
       const parsed = parseBoard({ ...created, schemaVersion });
-      expect(parsed?.schemaVersion).toBe(16);
+      expect(parsed?.schemaVersion).toBe(17);
       expect(parsed?.physicsEnabled).toBe(undefined);
       expect(physicsIsEnabled(parsed ?? created)).toBe(true);
     }

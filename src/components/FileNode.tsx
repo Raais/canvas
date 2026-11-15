@@ -10,6 +10,7 @@ import { PortHandles } from './PortHandles';
 
 export type FileNodeData = {
   filename: string;
+  sourcePath?: string;
   byteSize?: number;
   missing: boolean;
   lastEditedAt?: string;

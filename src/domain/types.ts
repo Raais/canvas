@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 16 as const;
+export const SCHEMA_VERSION = 17 as const;
 export const MAX_SAVED_VIEWS = 32;
 export const MAX_SAVED_VIEW_NAME = 60;
 export const MAX_EDGE_LABEL = 80;
@@ -104,6 +104,8 @@ export type TextNode = {
   lastEditedAt?: string;
   /** Original filename when this note was imported from a text file. */
   sourceFilename?: string;
+  /** Relative path inside a ZIP suitcase. Omitted for ordinary notes. */
+  sourcePath?: string;
 };
 
 export type EmbeddedImageSource = {
@@ -136,6 +138,8 @@ export type ImageNode = {
   rotation?: number;
   /** ISO timestamp from when this image node was added. Omitted on legacy images. */
   lastEditedAt?: string;
+  /** Relative path inside a ZIP suitcase. */
+  sourcePath?: string;
 };
 
 export type FileNode = {
@@ -150,6 +154,22 @@ export type FileNode = {
   filename: string;
   /** ISO timestamp from when this file node was added. */
   lastEditedAt?: string;
+  /** Relative path inside a ZIP suitcase. Distinguishes identical names in different folders. */
+  sourcePath?: string;
+};
+
+export type SuitcaseNode = {
+  id: string;
+  kind: 'suitcase';
+  parentId?: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  assetId: string;
+  filename: string;
+  fileCount: number;
+  lastEditedAt: string;
 };
 
 export type DrawingColor = 'ink' | 'blue' | 'sage' | 'rose' | 'sand';
@@ -212,7 +232,7 @@ export type GroupNode = {
   backgroundTone?: BackgroundTone;
 };
 
-export type ContentNode = TextNode | ImageNode | FileNode | WebsiteNode | DrawingNode | VoiceNode;
+export type ContentNode = TextNode | ImageNode | FileNode | WebsiteNode | DrawingNode | VoiceNode | SuitcaseNode;
 
 export type BoardNode = ContentNode | GroupNode;
 

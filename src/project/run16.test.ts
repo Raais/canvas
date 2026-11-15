@@ -40,7 +40,7 @@ function document(schemaVersion: number, extra: Record<string, unknown> = {}) {
 describe('schema v7', () => {
   test('new boards stay on atlas v3 until contours are chosen', () => {
     const board = createEmptyBoard(now);
-    expect(board.schemaVersion).toBe(16);
+    expect(board.schemaVersion).toBe(17);
     expect(board.backgroundPattern).toBe('dither-atlas');
     expect(board.ditherAtlas).toEqual({ seed: seedFromProjectName('Untitled board'), rendererVersion: 3 });
     expect(board.topographicContours).toBe(undefined);
@@ -68,7 +68,7 @@ describe('schema v7', () => {
         ? { schemaVersion, id: 'board', title: 'Kept', createdAt: now, updatedAt: now, revision: 2, viewport: { x: 3, y: 4, zoom: 1.25 }, nodes: [note('a')], edges: [] }
         : document(schemaVersion);
       const parsed = parseBoard(raw);
-      expect(parsed?.schemaVersion).toBe(16);
+      expect(parsed?.schemaVersion).toBe(17);
       expect(parsed?.title).toBe('Kept');
       expect(parsed?.backgroundPattern).toBe(schemaVersion === 1 ? 'dots' : 'dots');
       expect(parsed?.topographicContours).toBe(undefined);
@@ -88,15 +88,16 @@ describe('schema v7', () => {
     void savedViews;
     expect(parseBoard(missingViews)).toBeNull();
     expect(parseBoard(document(6, { savedViews: [{ id: 'v', name: '   ', viewport: { x: 0, y: 0, zoom: 1 } }] }))).toBeNull();
-    expect(parseBoard(document(8))?.schemaVersion).toBe(16);
-    expect(parseBoard(document(9))?.schemaVersion).toBe(16);
-    expect(parseBoard(document(10))?.schemaVersion).toBe(16);
-    expect(parseBoard(document(11))?.schemaVersion).toBe(16);
-    expect(parseBoard(document(12))?.schemaVersion).toBe(16);
-    expect(parseBoard(document(13))?.schemaVersion).toBe(16);
-    expect(parseBoard(document(14))?.schemaVersion).toBe(16);
-    expect(parseBoard(document(15))?.schemaVersion).toBe(16);
-    expect(parseBoard(document(17))).toBeNull();
+    expect(parseBoard(document(8))?.schemaVersion).toBe(17);
+    expect(parseBoard(document(9))?.schemaVersion).toBe(17);
+    expect(parseBoard(document(10))?.schemaVersion).toBe(17);
+    expect(parseBoard(document(11))?.schemaVersion).toBe(17);
+    expect(parseBoard(document(12))?.schemaVersion).toBe(17);
+    expect(parseBoard(document(13))?.schemaVersion).toBe(17);
+    expect(parseBoard(document(14))?.schemaVersion).toBe(17);
+    expect(parseBoard(document(15))?.schemaVersion).toBe(17);
+    expect(parseBoard(document(16))?.schemaVersion).toBe(17);
+    expect(parseBoard(document(18))).toBeNull();
     expect(parseBoard({ schemaVersion: 15, id: 'x', nodes: [], edges: [] })).toBeNull();
   });
 });

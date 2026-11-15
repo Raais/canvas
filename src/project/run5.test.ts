@@ -64,7 +64,7 @@ describe('project appearance', () => {
     expect(light.edges).toEqual(board.edges);
     const parsed = parseBoard(JSON.parse(JSON.stringify(light)));
     expect(parsed?.appearance).toBe('light');
-    expect(parsed?.schemaVersion).toBe(16);
+    expect(parsed?.schemaVersion).toBe(17);
   });
 
   test('migrates an older board without letting a site preference override a saved theme', () => {

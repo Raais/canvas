@@ -37,6 +37,7 @@ export type ArchiveSummary = {
   embedded: number;
   files: number;
   voices: number;
+  suitcases: number;
   external: number;
   payloadBytes: number;
 };

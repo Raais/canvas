@@ -1,4 +1,4 @@
-import { File, Frame, Globe, Image, Mic, StickyNote } from 'lucide-react';
+import { Archive, File, Frame, Globe, Image, Mic, StickyNote } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { SearchResult } from '../domain/search';
 import { xrayQueryLabel } from '../domain/xray';
@@ -108,7 +108,7 @@ export function SearchPalette({
                 onMouseEnter={() => setActive(index)}
                 onClick={() => onJump(result.id)}
               >
-                {result.kind === 'group' ? <Frame size={15} strokeWidth={1.75} /> : result.kind === 'image' ? <Image size={15} strokeWidth={1.75} /> : result.kind === 'file' ? <File size={15} strokeWidth={1.75} /> : result.kind === 'website' ? <Globe size={15} strokeWidth={1.75} /> : result.kind === 'voice' ? <Mic size={15} strokeWidth={1.75} /> : <StickyNote size={15} strokeWidth={1.75} />}
+                {result.kind === 'group' ? <Frame size={15} strokeWidth={1.75} /> : result.kind === 'image' ? <Image size={15} strokeWidth={1.75} /> : result.kind === 'file' ? <File size={15} strokeWidth={1.75} /> : result.kind === 'website' ? <Globe size={15} strokeWidth={1.75} /> : result.kind === 'voice' ? <Mic size={15} strokeWidth={1.75} /> : result.kind === 'suitcase' ? <Archive size={15} strokeWidth={1.75} /> : <StickyNote size={15} strokeWidth={1.75} />}
                 <span>
                   <strong>{result.title}</strong>
                   {result.parentLabel ? <em>{result.parentLabel}</em> : null}

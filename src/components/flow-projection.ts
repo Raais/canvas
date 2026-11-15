@@ -15,10 +15,11 @@ import type { FileFlowNode } from './FileNode';
 import type { GroupFlowNode } from './GroupNode';
 import type { ImageFlowNode } from './ImageNoteNode';
 import type { TextFlowNode } from './TextNoteNode';
+import type { SuitcaseFlowNode } from './SuitcaseNode';
 import type { VoiceFlowNode } from './VoiceNoteNode';
 import type { WebsiteFlowNode } from './WebsiteNode';
 
-export type CanvasFlowNode = TextFlowNode | ImageFlowNode | FileFlowNode | WebsiteFlowNode | DrawingFlowNode | VoiceFlowNode | GroupFlowNode;
+export type CanvasFlowNode = TextFlowNode | ImageFlowNode | FileFlowNode | WebsiteFlowNode | DrawingFlowNode | VoiceFlowNode | SuitcaseFlowNode | GroupFlowNode;
 
 export type NodeProjectionInput = {
   selected: ReadonlySet<string>;
@@ -178,6 +179,10 @@ function assetStamp(
     const asset = library.get(node.assetId);
     return asset ? `file:${asset.byteSize}` : 'file:missing';
   }
+  if (node.kind === 'suitcase') {
+    const asset = library.get(node.assetId);
+    return asset ? `suitcase:${asset.byteSize}` : 'suitcase:missing';
+  }
   if (node.kind === 'voice') {
     const asset = library.get(node.assetId);
     return asset ? `voice:${asset.byteSize}:${asset.mimeType}` : 'voice:missing';
@@ -290,9 +295,25 @@ function toFlowNode(
       ...base,
       type: 'file',
       data: {
-        filename: node.filename,
+        filename: node.sourcePath ?? node.filename,
+        sourcePath: node.sourcePath,
         byteSize: asset?.byteSize,
         missing: !asset,
+        lastEditedAt: node.lastEditedAt,
+      },
+    };
+  }
+  if (node.kind === 'suitcase') {
+    const asset = input.library.get(node.assetId);
+    return {
+      ...base,
+      type: 'suitcase',
+      data: {
+        filename: node.filename,
+        fileCount: node.fileCount,
+        byteSize: asset?.byteSize,
+        missing: !asset,
+        readOnly: input.readOnly,
         lastEditedAt: node.lastEditedAt,
       },
     };

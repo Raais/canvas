@@ -472,7 +472,7 @@ button:focus-visible, .title-input:focus-visible, select:focus-visible {
 .drop-overlay { position: absolute; z-index: 15; inset: 8px; }
 .frame-draft { position: absolute; background: var(--group); }
 
-.text-note, .image-note, .file-note, .website-note, .voice-note, .group-node { width: 100%; height: 100%; }
+.text-note, .image-note, .file-note, .website-note, .voice-note, .suitcase-note, .group-node { width: 100%; height: 100%; }
 
 .text-note {
   position: relative;
@@ -568,6 +568,43 @@ button:focus-visible, .title-input:focus-visible, select:focus-visible {
 .voice-transport input[type='range'] { flex: 1; min-width: 0; accent-color: var(--accent); }
 .voice-time { flex: none; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 .voice-note.is-missing .voice-time { color: var(--danger); }
+.suitcase-note {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  box-sizing: border-box;
+  padding: 12px 12px 18px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+.suitcase-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.suitcase-icon { flex: none; color: var(--muted); }
+.suitcase-name { margin: 0; min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 560; }
+.suitcase-note.is-missing .file-meta { color: var(--danger); }
+.suitcase-browse {
+  appearance: none;
+  justify-self: start;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 12px;
+}
+.suitcase-browse:disabled { color: var(--muted); }
+.suitcase-explorer { width: min(440px, calc(100vw - 32px)); max-height: min(640px, calc(100vh - 48px)); display: grid; align-content: start; }
+.suitcase-tree { max-height: 320px; overflow: auto; display: grid; gap: 2px; }
+.suitcase-folder, .suitcase-file { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 13px; }
+.suitcase-folder { appearance: none; border: 0; background: transparent; color: var(--text); text-align: left; padding: 4px 0; }
+.suitcase-folder svg.is-open { transform: rotate(90deg); }
+.suitcase-children { padding-left: 14px; }
+.suitcase-file span:nth-child(3) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.suitcase-size { margin-left: auto; color: var(--muted); font-size: 11px; }
+.suitcase-group { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .voice-privacy, .voice-live, .voice-error { margin: 0; font-size: 13px; }
 .voice-privacy, .voice-live { color: var(--muted); }
 .voice-error { color: var(--danger); }
@@ -716,7 +753,7 @@ button:focus-visible, .title-input:focus-visible, select:focus-visible {
 .password-dialog button[type='submit']:disabled:hover { background: var(--pressed); }
 .password-error { margin: 0; color: var(--danger); font-size: 13px; }
 
-.text-note.is-selected, .text-note.is-editing, .image-note.is-selected, .file-note.is-selected, .website-note.is-selected, .voice-note.is-selected, .group-node.is-selected {
+.text-note.is-selected, .text-note.is-editing, .image-note.is-selected, .file-note.is-selected, .website-note.is-selected, .voice-note.is-selected, .suitcase-note.is-selected, .group-node.is-selected {
   border-color: var(--accent);
   outline: 1px solid var(--accent);
 }
@@ -1222,21 +1259,25 @@ button:focus-visible, .title-input:focus-visible, select:focus-visible {
 .file-note:hover > .node-date,
 .website-note:hover > .node-date,
 .voice-note:hover > .node-date,
+.suitcase-note:hover > .node-date,
 .text-note.is-selected > .node-date,
 .image-note.is-selected > .node-date,
 .file-note.is-selected > .node-date,
 .website-note.is-selected > .node-date,
 .voice-note.is-selected > .node-date,
+.suitcase-note.is-selected > .node-date,
 .react-flow__node:focus-within > .text-note > .node-date,
 .react-flow__node:focus-within > .image-note > .node-date,
 .react-flow__node:focus-within > .file-note > .node-date,
 .react-flow__node:focus-within > .website-note > .node-date,
 .react-flow__node:focus-within > .voice-note > .node-date,
+.react-flow__node:focus-within > .suitcase-note > .node-date,
 .react-flow__node.selected > .text-note > .node-date,
 .react-flow__node.selected > .image-note > .node-date,
 .react-flow__node.selected > .file-note > .node-date,
 .react-flow__node.selected > .website-note > .node-date,
-.react-flow__node.selected > .voice-note > .node-date {
+.react-flow__node.selected > .voice-note > .node-date,
+.react-flow__node.selected > .suitcase-note > .node-date {
   opacity: 1;
 }
 @media (prefers-reduced-motion: reduce) {

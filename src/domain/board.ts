@@ -6,6 +6,8 @@ import { contentExtent } from './geometry';
 import { classifyPlainText } from './code';
 import { sanitizeFilename } from './files';
 import { canonicalWebsiteUrl } from './websites';
+import { suitcaseCountProblem, SUITCASE_MIN_HEIGHT, SUITCASE_MIN_WIDTH, SUITCASE_NOTE_HEIGHT, SUITCASE_NOTE_WIDTH } from './suitcase';
+import { zipPathProblem } from './zip-paths';
 import { voiceDurationProblem, voiceTitleProblem } from './voice';
 import { countDrawings, parseDrawingNode } from './drawing';
 import {
@@ -23,6 +25,7 @@ import {
   VOICE_MIN_WIDTH,
   VOICE_NOTE_HEIGHT,
   VOICE_NOTE_WIDTH,
+  type SuitcaseNode,
   FALLBACK_IMAGE_HEIGHT,
   FALLBACK_IMAGE_WIDTH,
   GROUP_MIN_HEIGHT,
@@ -159,6 +162,21 @@ export function renameVoice(board: Board, id: string, title: string, now = new D
   }, now);
 }
 
+export function createSuitcaseNode(input: { center: Point; assetId: string; filename: string; fileCount: number; now?: string }): SuitcaseNode {
+  return {
+    id: crypto.randomUUID(),
+    kind: 'suitcase',
+    x: Math.round(input.center.x - SUITCASE_NOTE_WIDTH / 2),
+    y: Math.round(input.center.y - SUITCASE_NOTE_HEIGHT / 2),
+    width: SUITCASE_NOTE_WIDTH,
+    height: SUITCASE_NOTE_HEIGHT,
+    assetId: input.assetId,
+    filename: input.filename,
+    fileCount: input.fileCount,
+    lastEditedAt: input.now ?? new Date().toISOString(),
+  };
+}
+
 export function createFileNode(input: { center: Point; assetId: string; filename: string; now?: string }): FileNode {
   return {
     id: crypto.randomUUID(),
@@ -251,7 +269,7 @@ export function staggeredPositions(origin: Point, count: number): Point[] {
 }
 
 export function nodeAssetId(node: BoardNode): string | null {
-  if (node.kind === 'file' || node.kind === 'voice') return node.assetId;
+  if (node.kind === 'file' || node.kind === 'voice' || node.kind === 'suitcase') return node.assetId;
   if (node.kind === 'image' && node.source.type === 'embedded') return node.source.assetId;
   return null;
 }
@@ -331,6 +349,7 @@ export function collapsedSize(nodes: readonly BoardNode[], node: BoardNode): { w
   if (node.kind === 'text') return { width: TEXT_MIN_WIDTH, height: TEXT_RESIZE_MIN_HEIGHT };
   if (node.kind === 'file') return { width: FILE_MIN_WIDTH, height: FILE_MIN_HEIGHT };
   if (node.kind === 'voice') return { width: VOICE_MIN_WIDTH, height: VOICE_MIN_HEIGHT };
+  if (node.kind === 'suitcase') return { width: SUITCASE_MIN_WIDTH, height: SUITCASE_MIN_HEIGHT };
   if (node.kind === 'website') return { width: WEBSITE_MIN_WIDTH, height: WEBSITE_MIN_HEIGHT };
   if (node.kind === 'drawing') return { width: node.width, height: node.height };
   if (node.kind === 'group') {
@@ -808,6 +827,7 @@ function minWidth(node: BoardNode): number {
   if (node.kind === 'text') return TEXT_MIN_WIDTH;
   if (node.kind === 'file') return FILE_MIN_WIDTH;
   if (node.kind === 'voice') return VOICE_MIN_WIDTH;
+  if (node.kind === 'suitcase') return SUITCASE_MIN_WIDTH;
   if (node.kind === 'website') return WEBSITE_MIN_WIDTH;
   if (node.kind === 'group') return GROUP_MIN_WIDTH;
   if (node.mode === 'aspect') return ASPECT_MIN_SIZE;
@@ -819,6 +839,7 @@ function minHeight(node: BoardNode): number {
   if (node.kind === 'text') return TEXT_MIN_HEIGHT;
   if (node.kind === 'file') return FILE_MIN_HEIGHT;
   if (node.kind === 'voice') return VOICE_MIN_HEIGHT;
+  if (node.kind === 'suitcase') return SUITCASE_MIN_HEIGHT;
   if (node.kind === 'website') return WEBSITE_MIN_HEIGHT;
   if (node.kind === 'group') return GROUP_MIN_HEIGHT;
   if (node.mode === 'aspect') return ASPECT_MIN_SIZE;
@@ -861,6 +882,8 @@ function parseNode(value: unknown, schemaVersion: number): BoardNode | null {
     if (stamped === null) return null;
     const sourceFilename = parseFilename(value.sourceFilename);
     if (sourceFilename === null) return null;
+    const sourcePath = parseSourcePath(value.sourcePath);
+    if (sourcePath === null) return null;
     const protection = parseProtectedPayload(value.protection);
     if (protection === null) return null;
     if (protection && value.text !== '') return null;
@@ -880,6 +903,7 @@ function parseNode(value: unknown, schemaVersion: number): BoardNode | null {
       ...(textTone ? { textTone } : {}),
       ...(protection ? { protection } : {}),
       ...(sourceFilename ? { sourceFilename } : {}),
+      ...(sourcePath ? { sourcePath } : {}),
       ...stamped,
     };
   }
@@ -905,10 +929,35 @@ function parseNode(value: unknown, schemaVersion: number): BoardNode | null {
       lastEditedAt: stamped.lastEditedAt,
     };
   }
+  if (value.kind === 'suitcase') {
+    if (!schemaAtLeast(schemaVersion, 17)) return null;
+    if (typeof value.assetId !== 'string' || !isNonEmptyString(value.assetId) || value.assetId.length > 80) return null;
+    const filename = parseFilename(value.filename);
+    if (!filename || filename !== value.filename) return null;
+    if (typeof value.fileCount !== 'number' || suitcaseCountProblem(value.fileCount)) return null;
+    if (value.width < SUITCASE_MIN_WIDTH || value.height < SUITCASE_MIN_HEIGHT) return null;
+    const stamped = timestampFields(value.lastEditedAt);
+    if (!stamped || !('lastEditedAt' in stamped)) return null;
+    return {
+      id: value.id,
+      kind: 'suitcase',
+      ...(parentId ? { parentId } : {}),
+      x: value.x,
+      y: value.y,
+      width: value.width,
+      height: value.height,
+      assetId: value.assetId,
+      filename,
+      fileCount: value.fileCount,
+      lastEditedAt: stamped.lastEditedAt,
+    };
+  }
   if (value.kind === 'file') {
     if (typeof value.assetId !== 'string' || !isNonEmptyString(value.assetId) || value.assetId.length > 80) return null;
     const filename = parseFilename(value.filename);
     if (!filename) return null;
+    const sourcePath = parseSourcePath(value.sourcePath);
+    if (sourcePath === null) return null;
     const stamped = timestampFields(value.lastEditedAt);
     if (stamped === null) return null;
     return {
@@ -921,6 +970,7 @@ function parseNode(value: unknown, schemaVersion: number): BoardNode | null {
       height: value.height,
       assetId: value.assetId,
       filename,
+      ...(sourcePath ? { sourcePath } : {}),
       ...stamped,
     };
   }
@@ -966,6 +1016,8 @@ function parseNode(value: unknown, schemaVersion: number): BoardNode | null {
     if (rotation === null) return null;
     const source = parseImageSource(value.source);
     if (!source) return null;
+    const sourcePath = parseSourcePath(value.sourcePath);
+    if (sourcePath === null) return null;
     const stamped = timestampFields(value.lastEditedAt);
     if (stamped === null) return null;
     return {
@@ -985,10 +1037,17 @@ function parseNode(value: unknown, schemaVersion: number): BoardNode | null {
       ...(value.flipY === true ? { flipY: true } : {}),
       ...(cornerStyle === 'square' ? { cornerStyle } : {}),
       ...(rotation ? { rotation } : {}),
+      ...(sourcePath ? { sourcePath } : {}),
       ...stamped,
     };
   }
   return null;
+}
+
+function parseSourcePath(value: unknown): string | undefined | null {
+  if (value == null) return undefined;
+  if (typeof value !== 'string' || value.endsWith('/') || zipPathProblem(value)) return null;
+  return value.normalize('NFC') === value ? value : null;
 }
 
 function parseFilename(value: unknown): string | undefined | null {

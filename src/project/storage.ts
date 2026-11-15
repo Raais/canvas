@@ -9,6 +9,7 @@ export type LogicalUsage = {
   embeddedImages: number;
   fileAttachments: number;
   voiceNotes: number;
+  suitcases: number;
   externalImages: number;
   notes: number;
   groups: number;
@@ -23,6 +24,7 @@ export function logicalUsage(board: Board, assets: readonly { id: string; byteSi
   let embeddedImages = 0;
   let fileAttachments = 0;
   let voiceNotes = 0;
+  let suitcases = 0;
   let notes = 0;
   let groups = 0;
   for (const node of board.nodes) {
@@ -30,6 +32,7 @@ export function logicalUsage(board: Board, assets: readonly { id: string; byteSi
     else notes += 1;
     if (node.kind === 'file') fileAttachments += 1;
     if (node.kind === 'voice') voiceNotes += 1;
+    if (node.kind === 'suitcase') suitcases += 1;
     if (node.kind === 'image' && node.source.type === 'embedded') embeddedImages += 1;
     if (node.kind === 'image' && node.source.type === 'external') externalImages += 1;
   }
@@ -42,6 +45,7 @@ export function logicalUsage(board: Board, assets: readonly { id: string; byteSi
     embeddedImages,
     fileAttachments,
     voiceNotes,
+    suitcases,
     externalImages,
     notes,
     groups,

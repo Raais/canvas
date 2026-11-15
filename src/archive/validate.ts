@@ -21,14 +21,16 @@ export function summarizeArchive(board: Board, assetBytes: number): ArchiveSumma
   let embedded = 0;
   let files = 0;
   let voices = 0;
+  let suitcases = 0;
   let external = 0;
   for (const node of board.nodes) {
     if (node.kind === 'file') files += 1;
     if (node.kind === 'voice') voices += 1;
+    if (node.kind === 'suitcase') suitcases += 1;
     if (node.kind === 'image' && node.source.type === 'embedded') embedded += 1;
     if (node.kind === 'image' && node.source.type === 'external') external += 1;
   }
-  return { embedded, files, voices, external, payloadBytes: assetBytes };
+  return { embedded, files, voices, suitcases, external, payloadBytes: assetBytes };
 }
 
 export function validateArchiveEntries(
@@ -110,6 +112,12 @@ export function validateArchiveEntries(
       const asset = assets.find((entry) => entry.id === node.assetId);
       if (!asset || !asset.path.endsWith('.bin') || !canonicalAudioMime(asset.mimeType)) {
         return { error: 'A voice note does not match its recording.' };
+      }
+    }
+    if (node.kind === 'suitcase') {
+      const asset = assets.find((entry) => entry.id === node.assetId);
+      if (!asset || !asset.path.endsWith('.bin') || asset.mimeType !== 'application/zip') {
+        return { error: 'A ZIP suitcase does not match its archive.' };
       }
     }
     if (node.kind === 'image' && node.source.type === 'embedded') {

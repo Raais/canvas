@@ -24,6 +24,7 @@ import {
   createFileNode,
   createExternalImageNode,
   createTextNode,
+  createSuitcaseNode,
   createVoiceNode,
   createWebsiteNode,
   renameVoice,
@@ -99,7 +100,10 @@ import { createImageOptimizer, type ImageOptimizer } from '../ingest/image-optim
 import { createBatchGuard, mayPlaceImages, mayReplaceBoard, readOptimizeImages, writeOptimizeImages } from '../ingest/image-optimizer-config';
 import { captureClipboardData } from '../ingest/clipboard';
 import { resolveLinkDrop, websiteEditsAllowed } from '../domain/websites';
+import { createSuitcaseClient } from '../archive/suitcase-client';
+import type { ZipListing } from '../archive/zip-directory';
 import { audioFilename, voiceSaveProblem } from '../domain/voice';
+import { commitUnpacked, materializeUnpacked } from '../ingest/unpack-board';
 import { archiveFilename } from '../archive/format';
 import { buildArchive, readArchive } from '../archive/zip';
 import { downloadBytes } from '../project/download';
@@ -141,6 +145,8 @@ import { DrawingOverlay } from './DrawingOverlay';
 import { countDrawings, excessDrawings, penScreenPx, selectedDrawingCount } from '../domain/drawing';
 import type { OrganicBrush } from '../domain/organic-ink';
 import { FileNode } from './FileNode';
+import { SuitcaseNode } from './SuitcaseNode';
+import { SuitcaseExplorer } from './SuitcaseExplorer';
 import { VoiceNoteNode } from './VoiceNoteNode';
 import { VoiceRecorderDialog, type SavedVoice } from './VoiceRecorderDialog';
 import { playVoice as startVoicePlayback, stopVoice } from './voice-playback';
@@ -156,6 +162,7 @@ const nodeTypes = {
   image: ImageNoteNode,
   file: FileNode,
   voice: VoiceNoteNode,
+  suitcase: SuitcaseNode,
   website: WebsiteNode,
   drawing: DrawingNode,
   group: GroupNode,
@@ -211,6 +218,11 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const [passwordPrompt, setPasswordPrompt] = useState<{ mode: 'protect' | 'unlock'; id: string } | null>(null);
   const [websiteDialog, setWebsiteDialog] = useState<{ mode: 'create' | 'edit'; id: string | null; url: string; title: string } | null>(null);
   const [voiceOpen, setVoiceOpen] = useState(false);
+  const [suitcaseId, setSuitcaseId] = useState<string | null>(null);
+  const [suitcaseListing, setSuitcaseListing] = useState<ZipListing | null>(null);
+  const [suitcaseError, setSuitcaseError] = useState<string | null>(null);
+  const [suitcaseBusy, setSuitcaseBusy] = useState(false);
+  const [suitcaseLoading, setSuitcaseLoading] = useState(false);
   const websiteReturn = useRef<HTMLElement | null>(null);
   const [passwordError, setPasswordError] = useState('');
   const [passwordBusy, setPasswordBusy] = useState(false);
@@ -250,6 +262,8 @@ function BoardSurface({ session }: { session: SessionProps }) {
     setSearchQuery(cleared.query);
     setSearchOpen(false);
     setVoiceOpen(false);
+    setSuitcaseId(null);
+    suitcaseClient.current.cancel();
     stopVoice();
   }, [board.id]);
   const [confirming, setConfirming] = useState<
@@ -304,7 +318,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
   confirmingRef.current = confirming !== null;
   const writerRef = useRef(false);
   const overlayRef = useRef(false);
-  overlayRef.current = projectOpen || confirming !== null || searchOpen || viewsOpen || passwordPrompt !== null || voiceOpen;
+  overlayRef.current = projectOpen || confirming !== null || searchOpen || viewsOpen || passwordPrompt !== null || voiceOpen || suitcaseId !== null;
   const foreignRef = useRef(false);
   const exportHold = useRef<{ board: Board; assets: AssetRecord[]; unsaved: boolean; key: string } | null>(null);
   const pasteRepeat = useRef({ key: '', count: 0 });
@@ -315,11 +329,16 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const xrayLensRef = useRef(false);
   const websiteDialogRef = useRef(false);
   const voiceDialogRef = useRef(false);
+  const suitcaseDialogRef = useRef(false);
+  const suitcaseClient = useRef(createSuitcaseClient());
+  const suitcaseToken = useRef(0);
+  const unpackToken = useRef(0);
   const audioUrls = useRef(createAudioUrlKeeper());
   const voiceUrlByNode = useRef(new Map<string, { assetId: string; url: string }>());
   const draftRef = useRef(false);
   websiteDialogRef.current = websiteDialog !== null;
   voiceDialogRef.current = voiceOpen;
+  suitcaseDialogRef.current = suitcaseId !== null;
   draftRef.current = draft !== null;
   toWorldRef.current = screenToFlowPosition;
   flowRef.current = flow;
@@ -543,6 +562,96 @@ function BoardSurface({ session }: { session: SessionProps }) {
     return null;
   }
 
+  function closeSuitcase() {
+    suitcaseToken.current += 1;
+    unpackToken.current += 1;
+    suitcaseClient.current.cancel();
+    setSuitcaseId(null);
+    setSuitcaseListing(null);
+    setSuitcaseError(null);
+    setSuitcaseBusy(false);
+    setSuitcaseLoading(false);
+  }
+
+  async function openSuitcase(id: string) {
+    const node = boardRef.current.nodes.find((entry) => entry.id === id);
+    if (!node || node.kind !== 'suitcase') return;
+    const asset = libraryRef.current.get(node.assetId);
+    if (!asset) return;
+    const token = suitcaseToken.current + 1;
+    suitcaseToken.current = token;
+    setSuitcaseId(id);
+    setSuitcaseListing(null);
+    setSuitcaseError(null);
+    setSuitcaseLoading(true);
+    try {
+      const result = await suitcaseClient.current.inspect(await asset.blob.arrayBuffer());
+      if (token !== suitcaseToken.current) return;
+      if ('error' in result) setSuitcaseError(result.error);
+      else setSuitcaseListing(result.listing);
+    } catch (error) {
+      if (token !== suitcaseToken.current) return;
+      setSuitcaseError(error instanceof Error ? error.message : 'The ZIP could not be read.');
+    } finally {
+      if (token === suitcaseToken.current) setSuitcaseLoading(false);
+    }
+  }
+
+  async function unpackSuitcase(paths: string[], group: boolean) {
+    if (blockedRef.current || suitcaseBusy || !suitcaseId || paths.length === 0) return;
+    const before = boardRef.current;
+    const node = before.nodes.find((entry) => entry.id === suitcaseId);
+    if (!node || node.kind !== 'suitcase') return;
+    const asset = libraryRef.current.get(node.assetId);
+    if (!asset) return;
+    const token = unpackToken.current + 1;
+    unpackToken.current = token;
+    const boardId = before.id;
+    const assetId = node.assetId;
+    setSuitcaseBusy(true);
+    setSuitcaseError(null);
+    try {
+      const extracted = await suitcaseClient.current.extract(await asset.blob.arrayBuffer(), paths);
+      if (token !== unpackToken.current || boardRef.current.id !== boardId || boardRef.current !== before || blockedRef.current) return;
+      const current = boardRef.current.nodes.find((entry) => entry.id === suitcaseId && entry.kind === 'suitcase' && entry.assetId === assetId);
+      if (!current) return;
+      if ('error' in extracted) {
+        setSuitcaseError(extracted.error);
+        return;
+      }
+      const pieces = materializeUnpacked(extracted.entries);
+      if ('error' in pieces) {
+        setSuitcaseError(pieces.error);
+        return;
+      }
+      const committed = commitUnpacked({
+        board: before,
+        suitcaseId,
+        pieces: pieces.pieces,
+        group,
+        now: new Date().toISOString(),
+        assets: [...libraryRef.current.values()],
+      });
+      if ('error' in committed) {
+        setSuitcaseError(committed.error);
+        return;
+      }
+      if (token !== unpackToken.current || boardRef.current !== before) return;
+      const registry = registryRef.current;
+      for (const created of committed.assets) {
+        libraryRef.current.set(created.id, created);
+        registry?.remember(created);
+      }
+      publish(committed.board, before, 'save');
+      replaceSelection(committed.nodeIds);
+      setUrlEpoch((value) => value + 1);
+    } catch (error) {
+      if (token === unpackToken.current) setSuitcaseError(error instanceof Error ? error.message : 'The ZIP could not be unpacked.');
+    } finally {
+      if (token === unpackToken.current) setSuitcaseBusy(false);
+    }
+  }
+
   function viewportCenter(): Point {
     const pane = document.querySelector('.react-flow__pane');
     if (!(pane instanceof HTMLElement)) {
@@ -609,7 +718,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
     const referenced = referencedAssetIds(boardRef.current);
     const incoming = items.flatMap((item, index) => {
       if (item.type === 'image') return [{ key: String(index), name: 'image', bytes: item.blob.size }];
-      if (item.type === 'file') return [{ key: String(index), name: item.filename, bytes: item.blob.size }];
+      if (item.type === 'file' || item.type === 'suitcase') return [{ key: String(index), name: item.filename, bytes: item.blob.size }];
       if (item.type === 'text') return [{ key: String(index), name: item.sourceFilename ?? 'note', bytes: new TextEncoder().encode(item.text).length }];
       if (item.type === 'website') return [];
       return [];
@@ -639,6 +748,12 @@ function BoardSurface({ session }: { session: SessionProps }) {
           ...(item.language ? { language: item.language } : {}),
           ...(item.sourceFilename ? { sourceFilename: item.sourceFilename } : {}),
         }));
+        return;
+      }
+      if (item.type === 'suitcase') {
+        const asset = createAssetRecord(item.blob, 'application/zip');
+        libraryRef.current.set(asset.id, asset);
+        nodes.push(createSuitcaseNode({ center, assetId: asset.id, filename: item.filename, fileCount: item.fileCount }));
         return;
       }
       if (item.type === 'file') {
@@ -930,7 +1045,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
           viewsOpen: viewsOpenRef.current,
           editingField,
           editing: editingRef.current !== null,
-          inDialog: confirmingRef.current || websiteDialogRef.current || voiceDialogRef.current || edgeEditorRef.current || Boolean(element?.closest('[role="dialog"], [role="alertdialog"], [role="menu"]')),
+          inDialog: confirmingRef.current || websiteDialogRef.current || voiceDialogRef.current || suitcaseDialogRef.current || edgeEditorRef.current || Boolean(element?.closest('[role="dialog"], [role="alertdialog"], [role="menu"]')),
           inkGesture: inkGestureRef.current,
           framing: frameRef.current !== null || draftRef.current,
           tool: toolRef.current,
@@ -1430,6 +1545,19 @@ function BoardSurface({ session }: { session: SessionProps }) {
         voiceUrlByNode.current.delete(id);
         audioUrls.current.release(held.assetId);
         stopVoice(id);
+      },
+      browseSuitcase(id) {
+        void openSuitcase(id);
+      },
+      downloadSuitcase(id) {
+        const node = boardRef.current.nodes.find((entry) => entry.id === id);
+        if (!node || node.kind !== 'suitcase') return;
+        const asset = libraryRef.current.get(node.assetId);
+        if (!asset) {
+          setNotice({ text: 'That ZIP is missing from this browser, so it cannot be downloaded.', source: 'ingest' });
+          return;
+        }
+        downloadBlob(asset.blob, node.filename);
       },
       downloadFile(id) {
         const node = boardRef.current.nodes.find((entry) => entry.id === id);
@@ -2571,6 +2699,26 @@ function BoardSurface({ session }: { session: SessionProps }) {
         )}
         {chromeHidden ? null : <Coordinates ref={coordinatesRef} selection={selectionLabel} />}
         <PwaUpdateNotice prepareUpdate={preparePwaUpdate} />
+        {suitcaseId ? (
+          <SuitcaseExplorer
+            filename={(() => {
+              const node = board.nodes.find((entry) => entry.id === suitcaseId);
+              return node?.kind === 'suitcase' ? node.filename : 'ZIP';
+            })()}
+            byteSize={(() => {
+              const node = board.nodes.find((entry) => entry.id === suitcaseId);
+              return node?.kind === 'suitcase' ? libraryRef.current.get(node.assetId)?.byteSize : undefined;
+            })()}
+            listing={suitcaseListing}
+            loading={suitcaseLoading}
+            readOnly={readOnly}
+            busy={suitcaseBusy}
+            error={suitcaseError}
+            onClose={closeSuitcase}
+            onDownload={() => actions.downloadSuitcase(suitcaseId)}
+            onUnpack={(paths, group) => { void unpackSuitcase(paths, group); }}
+          />
+        ) : null}
         {voiceOpen ? (
           <VoiceRecorderDialog
             onCancel={() => setVoiceOpen(false)}
@@ -2660,6 +2808,9 @@ function asHandle(value: string | null | undefined): HandleSide {
 function missingAssetMessage(board: Board, missing: readonly string[]): string {
   if (board.nodes.some((node) => node.kind === 'voice' && missing.includes(node.assetId))) {
     return 'A voice note recording is missing, so the archive was not created.';
+  }
+  if (board.nodes.some((node) => node.kind === 'suitcase' && missing.includes(node.assetId))) {
+    return 'A ZIP suitcase is missing, so the archive was not created.';
   }
   const file = board.nodes.some((node) => node.kind === 'file' && missing.includes(node.assetId));
   return file

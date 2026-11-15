@@ -28,7 +28,7 @@ function fields(url: string, title = 'Docs') {
 
 describe('website nodes', () => {
   test('stores schema 13 and still opens a schema 12 board', () => {
-    expect(SCHEMA_VERSION).toBe(16);
+    expect(SCHEMA_VERSION).toBe(17);
     expect(ARCHIVE_VERSION).toBe(2);
     expect(GRAPH_CLIPBOARD_VERSION).toBe(1);
     const created = createWebsiteNode({ center: { x: 260, y: 140 }, ...fields('https://example.com', 'Example'), now });
@@ -38,10 +38,10 @@ describe('website nodes', () => {
     expect(created.width).toBe(260);
     expect(created.height).toBe(140);
     const legacy = parseBoard({ ...createEmptyBoard(now), schemaVersion: 12 });
-    expect(legacy?.schemaVersion).toBe(16);
+    expect(legacy?.schemaVersion).toBe(17);
     expect(legacy?.nodes).toHaveLength(0);
-    expect(parseBoard({ ...createEmptyBoard(now), schemaVersion: 2, appearance: undefined, backgroundPattern: undefined, ditherAtlas: undefined })?.schemaVersion).toBe(16);
-    expect(parseBoard({ ...createEmptyBoard(now), schemaVersion: 17 })).toBeNull();
+    expect(parseBoard({ ...createEmptyBoard(now), schemaVersion: 2, appearance: undefined, backgroundPattern: undefined, ditherAtlas: undefined })?.schemaVersion).toBe(17);
+    expect(parseBoard({ ...createEmptyBoard(now), schemaVersion: 18 })).toBeNull();
     const stored = parseBoard(addNodes(createEmptyBoard(now), [created], now));
     expect(stored?.nodes.some((node) => node.kind === 'website' && node.url === 'https://example.com/' && node.title === 'Example')).toBe(true);
   });
@@ -240,7 +240,7 @@ describe('website nodes', () => {
     manifest.archiveVersion = 1;
     files['manifest.json'] = strToU8(JSON.stringify(manifest));
     const legacy = await readArchive(zipSync(files));
-    expect('error' in legacy ? legacy.error : legacy.board.schemaVersion).toBe(16);
+    expect('error' in legacy ? legacy.error : legacy.board.schemaVersion).toBe(17);
     const oldBoard = parseBoard({ ...createEmptyBoard(now), schemaVersion: 11, nodes: [note], physicsEnabled: false });
     expect(oldBoard?.nodes.some((node) => node.kind === 'text')).toBe(true);
     expect(oldBoard?.nodes.some((node) => node.kind === 'website')).toBe(false);

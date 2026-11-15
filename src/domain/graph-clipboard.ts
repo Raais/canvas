@@ -96,6 +96,8 @@ export function pasteGraph(
   if (missingFile) return { error: 'That copy refers to a file that is not on this board.' };
   const missingVoice = decoded.nodes.some((node) => node.kind === 'voice' && !availableAssets.has(node.assetId));
   if (missingVoice) return { error: 'That copy refers to a recording that is not on this board.' };
+  const missingSuitcase = decoded.nodes.some((node) => node.kind === 'suitcase' && !availableAssets.has(node.assetId));
+  if (missingSuitcase) return { error: 'That copy refers to a ZIP that is not on this board.' };
   const missingImage = decoded.nodes.some((node) => node.kind === 'image' && node.source.type === 'embedded' && !availableAssets.has(node.source.assetId));
   if (missingImage) return { error: 'That copy refers to an image that is not on this board.' };
   const limit = excessDrawings(countDrawings(board.nodes), countDrawings(decoded.nodes));

@@ -26,13 +26,16 @@ import {
   type PngAnimation,
 } from './image-optimizer-config';
 import type { ImageOptimizer } from './image-optimizer';
+import { inspectZip } from '../archive/zip-directory';
 import { attachmentMime, classifyIncomingFile, decodeTextFile, rejectedFileMessage } from '../domain/files';
+import { CANVAS_BACKUP_MESSAGE, isCanvasBackupName, looksLikeZipName, SUITCASE_MIME, suitcaseFilename } from '../domain/suitcase';
 import type { CodeLanguage, NotePresentation } from '../domain/types';
 
 export type PreparedItem =
   | { type: 'text'; text: string; presentation?: NotePresentation; codeLanguage?: CodeLanguage; language?: string; sourceFilename?: string }
   | { type: 'website'; url: string; title: string }
   | { type: 'file'; blob: Blob; mimeType: string; filename: string }
+  | { type: 'suitcase'; blob: Blob; filename: string; fileCount: number }
   | {
       type: 'image';
       blob: Blob;
@@ -92,6 +95,33 @@ export async function ingestFileList(list: FileList | readonly File[], options: 
   const warnings: string[] = [];
   let summary: string | null = null;
   for (const file of Array.from(list)) {
+    if (looksLikeZipName(file.name) || file.type === 'application/zip' || file.type === 'application/x-zip-compressed') {
+      if (isCanvasBackupName(file.name)) {
+        warnings.push(CANVAS_BACKUP_MESSAGE);
+        continue;
+      }
+      const filename = suitcaseFilename(file.name);
+      if (!filename) {
+        warnings.push(CANVAS_BACKUP_MESSAGE);
+        continue;
+      }
+      const inspected = inspectZip(new Uint8Array(await file.arrayBuffer()));
+      if ('error' in inspected) {
+        warnings.push(inspected.error);
+        continue;
+      }
+      if (inspected.listing.identity === 'canvas-board') {
+        warnings.push(CANVAS_BACKUP_MESSAGE);
+        continue;
+      }
+      items.push({
+        type: 'suitcase',
+        blob: file.type === SUITCASE_MIME ? file : new Blob([file], { type: SUITCASE_MIME }),
+        filename,
+        fileCount: inspected.listing.fileCount,
+      });
+      continue;
+    }
     const decision = classifyIncomingFile(file);
     if (decision.kind === 'reject') {
       warnings.push(rejectedFileMessage(decision.filename, decision.reason));

@@ -6,7 +6,7 @@ export const SEARCH_LIMIT = 25;
 
 export type SearchHit = {
   id: string;
-  kind: 'text' | 'group' | 'file' | 'website' | 'voice';
+  kind: 'text' | 'group' | 'file' | 'website' | 'voice' | 'suitcase';
   title: string;
   snippet: string;
   parentLabel: string | null;
@@ -15,7 +15,7 @@ export type SearchHit = {
 
 export type SearchResult = {
   id: string;
-  kind: 'text' | 'group' | 'image' | 'file' | 'website' | 'voice';
+  kind: 'text' | 'group' | 'image' | 'file' | 'website' | 'voice' | 'suitcase';
   title: string;
   snippet: string;
   parentLabel: string | null;
@@ -34,7 +34,7 @@ type RankedHit = SearchHit & { order: number };
 
 type IndexedNode = {
   id: string;
-  kind: 'text' | 'group' | 'file' | 'website' | 'voice';
+  kind: 'text' | 'group' | 'file' | 'website' | 'voice' | 'suitcase';
   title: string;
   foldedTitle: string;
   body: string;
@@ -53,7 +53,13 @@ export function buildSearchIndex(nodes: readonly BoardNode[]): IndexedNode[] {
     if (node.kind === 'image' || node.kind === 'drawing' || isProtectedTextNode(node)) return;
     if (node.kind === 'file') {
       const parentLabel = node.parentId ? labels.get(node.parentId) ?? null : null;
-      indexed.push({ id: node.id, kind: 'file', title: node.filename, foldedTitle: fold(node.filename), body: '', foldedBody: '', parentLabel, order });
+      const fileTitle = node.sourcePath ?? node.filename;
+      indexed.push({ id: node.id, kind: 'file', title: fileTitle, foldedTitle: fold(fileTitle), body: '', foldedBody: '', parentLabel, order });
+      return;
+    }
+    if (node.kind === 'suitcase') {
+      const parentLabel = node.parentId ? labels.get(node.parentId) ?? null : null;
+      indexed.push({ id: node.id, kind: 'suitcase', title: node.filename, foldedTitle: fold(node.filename), body: '', foldedBody: '', parentLabel, order });
       return;
     }
     if (node.kind === 'voice') {
@@ -91,7 +97,8 @@ export function buildSearchIndex(nodes: readonly BoardNode[]): IndexedNode[] {
 export function contentSignature(nodes: readonly BoardNode[]): string {
   return nodes.map((node) => {
     if (node.kind === 'text') return `t\t${node.id}\t${node.parentId ?? ''}\t${node.protection ? '' : node.text}\t${node.protection ? 'protected' : ''}\t${node.sourceFilename ?? ''}\t${node.lastEditedAt ?? ''}`;
-    if (node.kind === 'file') return `f\t${node.id}\t${node.parentId ?? ''}\t${node.filename}\t${node.lastEditedAt ?? ''}`;
+    if (node.kind === 'file') return `f\t${node.id}\t${node.parentId ?? ''}\t${node.sourcePath ?? node.filename}\t${node.lastEditedAt ?? ''}`;
+    if (node.kind === 'suitcase') return `s\t${node.id}\t${node.parentId ?? ''}\t${node.filename}\t${node.lastEditedAt}`;
     if (node.kind === 'website') return `w\t${node.id}\t${node.parentId ?? ''}\t${node.title}\t${node.url}\t${node.lastEditedAt}`;
     if (node.kind === 'group') return `g\t${node.id}\t${node.label}`;
     if (node.kind === 'drawing') return `d\t${node.id}`;

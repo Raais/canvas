@@ -1,5 +1,6 @@
 import { referencedAssetIds } from '../domain/board';
 import type { AssetRecord, Board } from '../domain/types';
+import { SUITCASE_MIME } from '../domain/suitcase';
 import { canonicalAudioMime } from '../domain/voice';
 import {
   ARCHIVE_FORMAT,
@@ -26,15 +27,17 @@ export async function buildArchive(board: Board, assets: readonly AssetRecord[],
     if (!asset) throw new Error('An embedded file is missing, so the archive was not created.');
     const usedByFile = board.nodes.some((node) => node.kind === 'file' && node.assetId === id);
     const usedByVoice = board.nodes.some((node) => node.kind === 'voice' && node.assetId === id);
+    const usedBySuitcase = board.nodes.some((node) => node.kind === 'suitcase' && node.assetId === id);
     const usedByImage = board.nodes.some((node) => node.kind === 'image' && node.source.type === 'embedded' && node.source.assetId === id);
-    const roles = Number(usedByFile) + Number(usedByVoice) + Number(usedByImage);
+    const roles = Number(usedByFile) + Number(usedByVoice) + Number(usedBySuitcase) + Number(usedByImage);
     if (roles > 1) throw new Error('An attachment is stored in an inconsistent way.');
     if (usedByVoice && !canonicalAudioMime(asset.mimeType)) throw new Error('A voice note uses an unsupported audio type.');
-    const extension = usedByFile || usedByVoice ? 'bin' : assetExtension(asset.mimeType);
+    if (usedBySuitcase && asset.mimeType !== SUITCASE_MIME) throw new Error('A ZIP suitcase uses an unsupported type.');
+    const extension = usedByFile || usedByVoice || usedBySuitcase ? 'bin' : assetExtension(asset.mimeType);
     if (!extension) throw new Error('An embedded image uses an unsupported type.');
     const bytes = new Uint8Array(await asset.blob.arrayBuffer());
     if (bytes.byteLength > ARCHIVE_LIMITS.maxFileBytes) {
-      throw new Error(usedByVoice ? 'A recording is too large to export.' : usedByFile ? 'A file is too large to export.' : 'An image is too large to export.');
+      throw new Error(usedBySuitcase ? 'A ZIP suitcase is too large to export.' : usedByVoice ? 'A recording is too large to export.' : usedByFile ? 'A file is too large to export.' : 'An image is too large to export.');
     }
     payload += bytes.byteLength;
     const path = `assets/${id}.${extension}`;

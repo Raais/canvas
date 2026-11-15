@@ -9,7 +9,7 @@ export function findNode(board: Board, id: string): BoardNode | undefined {
 }
 
 export function isContentNode(node: BoardNode): node is ContentNode {
-  return node.kind === 'text' || node.kind === 'image' || node.kind === 'file' || node.kind === 'website' || node.kind === 'drawing' || node.kind === 'voice';
+  return node.kind === 'text' || node.kind === 'image' || node.kind === 'file' || node.kind === 'website' || node.kind === 'drawing' || node.kind === 'voice' || node.kind === 'suitcase';
 }
 
 export function worldTopLeft(nodes: readonly BoardNode[], node: BoardNode): Point {
