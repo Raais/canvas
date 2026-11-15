@@ -8,7 +8,10 @@ import { GRAPH_CLIPBOARD_VERSION, selectionClosure } from '../domain/graph-clipb
 import { groupSelection } from '../domain/groups';
 import { relaxBoard } from '../domain/physics';
 import { buildSearchIndex, searchNodes } from '../domain/search';
+import { finalizeCulledEdgeLabel, isFinalUnmount } from '../editor/cull-edit';
 import { relaxDrag } from '../editor/pulling';
+import { readRasterDimensions } from '../ingest/image-optimizer-config';
+import { SYNTHETIC_PNG } from './synthetic-png';
 import { createObjectUrlRegistry, isDisplayAsset } from '../persistence/object-urls';
 import { SCHEMA_VERSION, type AssetRecord, type BoardNode, type TextNode } from '../domain/types';
 
@@ -108,6 +111,47 @@ describe('viewport projection', () => {
     expect(SCHEMA_VERSION).toBe(12);
     expect(ARCHIVE_VERSION).toBe(2);
     expect(GRAPH_CLIPBOARD_VERSION).toBe(1);
+  });
+});
+
+describe('culled editing', () => {
+  test('commits a culled edge draft once and finishes a culled text edit once', async () => {
+    expect(isFinalUnmount(1, 1)).toBe(true);
+    expect(isFinalUnmount(1, 2)).toBe(false);
+    expect(finalizeCulledEdgeLabel({ finalUnmount: false, closed: false, cancelled: false })).toBe('ignore');
+    expect(finalizeCulledEdgeLabel({ finalUnmount: true, closed: true, cancelled: false })).toBe('ignore');
+    expect(finalizeCulledEdgeLabel({ finalUnmount: true, closed: false, cancelled: true })).toBe('clear');
+    expect(finalizeCulledEdgeLabel({ finalUnmount: true, closed: false, cancelled: false })).toBe('commit');
+    const edge = await Bun.file(new URL('../components/RelationshipEdge.tsx', import.meta.url)).text();
+    const note = await Bun.file(new URL('../components/TextNoteNode.tsx', import.meta.url)).text();
+    expect(edge.includes('finalizeCulledEdgeLabel')).toBe(true);
+    expect(note.includes('actionsRef.current.endEditing()')).toBe(true);
+    expect(note.includes("onBlur={() => actions.endEditing()}")).toBe(true);
+  });
+
+  test('uses a decodable png in the performance fixture', async () => {
+    expect(readRasterDimensions(SYNTHETIC_PNG, 'image/png')).toEqual({ width: 1, height: 1 });
+    const stream = new DecompressionStream('deflate');
+    const writer = stream.writable.getWriter();
+    const reader = stream.readable.getReader();
+    const read = reader.read().then(async (first) => {
+      const bytes = first.value ? [...first.value] : [];
+      while (true) {
+        const next = await reader.read();
+        if (next.done) break;
+        if (next.value) bytes.push(...next.value);
+      }
+      return bytes;
+    });
+    const idat = pngChunk(SYNTHETIC_PNG, 'IDAT');
+    const copy = new Uint8Array(idat.byteLength);
+    copy.set(idat);
+    await writer.write(copy);
+    await writer.close();
+    expect(await read).toEqual([0, 255, 0, 0]);
+    const fixture = await Bun.file(new URL('../../scripts/make-perf-board.ts', import.meta.url)).text();
+    expect(fixture.includes('SYNTHETIC_PNG')).toBe(true);
+    expect(fixture.includes('intrinsicWidth: 1, intrinsicHeight: 1')).toBe(true);
   });
 });
 
@@ -226,6 +270,18 @@ function close(actual: number, expected: number) {
 
 function asset(id: string, mimeType: string, size: number): AssetRecord {
   return { id, mimeType, byteSize: size, createdAt: now, blob: new Blob([new Uint8Array(size)]) };
+}
+
+function pngChunk(bytes: Uint8Array, type: string): Uint8Array {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let offset = 8;
+  while (offset + 8 <= bytes.length) {
+    const length = view.getUint32(offset);
+    const name = String.fromCharCode(bytes[offset + 4] ?? 0, bytes[offset + 5] ?? 0, bytes[offset + 6] ?? 0, bytes[offset + 7] ?? 0);
+    if (name === type) return bytes.slice(offset + 8, offset + 8 + length);
+    offset += 12 + length;
+  }
+  return new Uint8Array();
 }
 
 function installUrlStub() {

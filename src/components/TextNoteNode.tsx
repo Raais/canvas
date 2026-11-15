@@ -3,6 +3,7 @@ import { Handle, NodeResizer, NodeToolbar, Position, useInternalNode, useViewpor
 import { Code2, FileText, Highlighter, ListTodo, Lock, LockOpen, Palette, Type } from 'lucide-react';
 import { useBoardActions } from './board-context';
 import { HANDLE_SIDES, visualHandleTransform } from '../editor/handles';
+import { isFinalUnmount } from '../editor/cull-edit';
 import { highlightCode, resolveHighlightLanguage } from '../domain/highlight';
 import { toggleHighlight } from '../domain/markdown';
 import { MarkdownView } from './MarkdownView';
@@ -174,6 +175,9 @@ function NoteChrome({
 
 function TextNoteNodeComponent({ id, data, selected }: NodeProps<Node<TextNodeData, 'text'>>) {
   const actions = useBoardActions();
+  const actionsRef = useRef(actions);
+  const generation = useRef(0);
+  actionsRef.current = actions;
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const tone = `note-bg-${data.backgroundTone ?? 'default'} note-ink-${data.textTone ?? 'default'}`;
   const showChrome = selected || (data.editing && data.presentation === 'markdown');
@@ -186,6 +190,17 @@ function TextNoteNodeComponent({ id, data, selected }: NodeProps<Node<TextNodeDa
     const end = editor.value.length;
     editor.setSelectionRange(end, end);
   }, [data.editing]);
+
+  useEffect(() => {
+    if (!data.editing) return;
+    const mountedGeneration = ++generation.current;
+    return () => {
+      queueMicrotask(() => {
+        if (!isFinalUnmount(mountedGeneration, generation.current)) return;
+        actionsRef.current.endEditing();
+      });
+    };
+  }, [data.editing, id]);
 
   return (
     <article className={`text-note ${tone}${selected ? ' is-selected' : ''}`} onDoubleClick={() => actions.beginEditing(id)}>

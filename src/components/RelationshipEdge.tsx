@@ -1,6 +1,7 @@
 import { BaseEdge, EdgeLabelRenderer, EdgeToolbar, getBezierPath, useStore, type EdgeProps } from '@xyflow/react';
 import { Trash2, Type } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { finalizeCulledEdgeLabel, isFinalUnmount } from '../editor/cull-edit';
 import { nextLabelAction } from '../domain/relationships';
 import type { EdgeStyle } from '../domain/types';
 import { useBoardActions } from './board-context';
@@ -37,13 +38,19 @@ export function RelationshipEdge({
   const [draft, setDraft] = useState(data?.label ?? '');
   const cancelRef = useRef(false);
   const closedRef = useRef(false);
+  const draftRef = useRef(draft);
+  const generation = useRef(0);
+  const actionsRef = useRef(actions);
+  draftRef.current = draft;
+  actionsRef.current = actions;
   const style = data?.style === 'dashed' || data?.style === 'red-string' ? data.style : 'solid';
   const showTools = Boolean(selected && data?.solo);
 
   function beginEdit() {
     cancelRef.current = false;
     closedRef.current = false;
-    setDraft(data?.label ?? '');
+    draftRef.current = data?.label ?? '';
+    setDraft(draftRef.current);
     setEditing(true);
     actions.setEdgeEditor(true);
   }
@@ -54,8 +61,32 @@ export function RelationshipEdge({
     closedRef.current = action.closed;
     setEditing(false);
     actions.setEdgeEditor(false);
-    if (action.commit) actions.commitEdgeLabel(id, draft);
+    if (action.commit) actions.commitEdgeLabel(id, draftRef.current);
   }
+
+  useEffect(() => {
+    if (!editing) return;
+    const mountedGeneration = ++generation.current;
+    return () => {
+      const snapshot = {
+        id,
+        draft: draftRef.current,
+        closed: closedRef.current,
+        cancelled: cancelRef.current,
+      };
+      queueMicrotask(() => {
+        const action = finalizeCulledEdgeLabel({
+          finalUnmount: isFinalUnmount(mountedGeneration, generation.current),
+          closed: snapshot.closed,
+          cancelled: snapshot.cancelled,
+        });
+        if (action === 'ignore') return;
+        closedRef.current = true;
+        actionsRef.current.setEdgeEditor(false);
+        if (action === 'commit') actionsRef.current.commitEdgeLabel(snapshot.id, snapshot.draft);
+      });
+    };
+  }, [editing, id]);
 
   return (
     <>
@@ -78,7 +109,10 @@ export function RelationshipEdge({
             value={draft}
             maxLength={80}
             autoFocus
-            onChange={(event) => setDraft(event.target.value.replace(/[\u0000-\u001F\u007F]/g, ''))}
+            onChange={(event) => {
+              draftRef.current = event.target.value.replace(/[\u0000-\u001F\u007F]/g, '');
+              setDraft(draftRef.current);
+            }}
             onKeyDown={(event) => {
               if (event.key === 'Enter') {
                 event.preventDefault();

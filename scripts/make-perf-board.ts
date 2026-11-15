@@ -4,6 +4,7 @@ import { buildArchive } from '../src/archive/zip';
 import { addNodes, createEmbeddedImageNode, createEmptyBoard, createFileNode, createTextNode } from '../src/domain/board';
 import { connectNodes } from '../src/domain/graph';
 import { groupSelection } from '../src/domain/groups';
+import { SYNTHETIC_PNG } from '../src/project/synthetic-png';
 import type { AssetRecord, BoardNode } from '../src/domain/types';
 
 const count = Number(process.argv[2] ?? '100');
@@ -24,7 +25,7 @@ for (let index = 0; index < count; index += 1) {
   const center = { x: distant ? 8000 + column * 40 : column * 280, y: distant ? -6000 - row * 30 : row * 200 };
   const kind = index % 11;
   if (kind === 0) {
-    const image = createEmbeddedImageNode({ center, assetId: `img-${index}`, intrinsicWidth: 24, intrinsicHeight: 16, now });
+    const image = createEmbeddedImageNode({ center, assetId: `img-${index}`, intrinsicWidth: 1, intrinsicHeight: 1, now });
     image.id = `node-${index}`;
     nodes.push(image);
     assets.push(asset(`img-${index}`, 'image/png'));
@@ -69,5 +70,8 @@ function text(id: string, center: { x: number; y: number }, body: string, presen
 }
 
 function asset(id: string, mimeType: string): AssetRecord {
-  return { id, mimeType, byteSize: 8, createdAt: now, blob: new Blob([Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8])]) };
+  const bytes = mimeType === 'image/png' ? SYNTHETIC_PNG : Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8]);
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return { id, mimeType, byteSize: copy.byteLength, createdAt: now, blob: new Blob([copy]) };
 }
