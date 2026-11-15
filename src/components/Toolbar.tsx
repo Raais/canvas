@@ -129,44 +129,48 @@ export function Toolbar({
           <button type="button" className="icon-button" aria-pressed={tool === 'select'} aria-label="Select" title="Select" onClick={() => onTool('select')}>
             <MousePointer2 size={17} strokeWidth={1.75} />
           </button>
-          <button type="button" className="icon-button" aria-label="New note" title="New note" onClick={onNewNote}>
-            <StickyNote size={17} strokeWidth={1.75} />
-          </button>
-          <button type="button" className="icon-button" aria-label="Add image" title="Add image" onClick={() => fileRef.current?.click()}>
-            <ImageIcon size={17} strokeWidth={1.75} />
-          </button>
-          <input
-            ref={fileRef}
-            className="file-input"
-            type="file"
-            accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
-            multiple
-            onChange={(event) => {
-              const files = event.target.files;
-              if (files && files.length > 0) onAddImages(files);
-              event.target.value = '';
-            }}
-          />
-          <button type="button" className="icon-button" aria-label="Add file" title="Add file" disabled={readOnly} onClick={() => attachmentRef.current?.click()}>
-            <FilePlus2 size={17} strokeWidth={1.75} />
-          </button>
-          <input
-            ref={attachmentRef}
-            className="file-input"
-            type="file"
-            multiple
-            onChange={(event) => {
-              const files = event.target.files;
-              if (files && files.length > 0) onAddFiles(files);
-              event.target.value = '';
-            }}
-          />
-          <button type="button" className="icon-button" aria-label="Add website" title="Add website" disabled={readOnly} onClick={onAddWebsite}>
-            <Globe size={17} strokeWidth={1.75} />
-          </button>
-          <button type="button" className="icon-button" aria-pressed={tool === 'frame'} aria-label="Frame" title="Frame" onClick={() => onTool(tool === 'frame' ? 'select' : 'frame')}>
-            <Frame size={17} strokeWidth={1.75} />
-          </button>
+          {tool === 'pen' ? null : (
+            <>
+              <button type="button" className="icon-button" aria-label="New note" title="New note" onClick={onNewNote}>
+                <StickyNote size={17} strokeWidth={1.75} />
+              </button>
+              <button type="button" className="icon-button" aria-label="Add image" title="Add image" onClick={() => fileRef.current?.click()}>
+                <ImageIcon size={17} strokeWidth={1.75} />
+              </button>
+              <input
+                ref={fileRef}
+                className="file-input"
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
+                multiple
+                onChange={(event) => {
+                  const files = event.target.files;
+                  if (files && files.length > 0) onAddImages(files);
+                  event.target.value = '';
+                }}
+              />
+              <button type="button" className="icon-button" aria-label="Add file" title="Add file" disabled={readOnly} onClick={() => attachmentRef.current?.click()}>
+                <FilePlus2 size={17} strokeWidth={1.75} />
+              </button>
+              <input
+                ref={attachmentRef}
+                className="file-input"
+                type="file"
+                multiple
+                onChange={(event) => {
+                  const files = event.target.files;
+                  if (files && files.length > 0) onAddFiles(files);
+                  event.target.value = '';
+                }}
+              />
+              <button type="button" className="icon-button" aria-label="Add website" title="Add website" disabled={readOnly} onClick={onAddWebsite}>
+                <Globe size={17} strokeWidth={1.75} />
+              </button>
+              <button type="button" className="icon-button" aria-pressed={tool === 'frame'} aria-label="Frame" title="Frame" onClick={() => onTool(tool === 'frame' ? 'select' : 'frame')}>
+                <Frame size={17} strokeWidth={1.75} />
+              </button>
+            </>
+          )}
           <button type="button" className="icon-button" aria-pressed={tool === 'pen'} aria-label="Pen" title="Pen" disabled={readOnly} onClick={() => onTool('pen')}>
             <Pencil size={17} strokeWidth={1.75} />
           </button>
