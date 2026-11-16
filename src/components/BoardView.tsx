@@ -58,10 +58,10 @@ import { facingHandles, isContentNode, normalizeRect, worldTopLeft } from '../do
 import { toggleTaskAt } from '../domain/markdown';
 import { gesturePhase, sameSelection } from '../editor/interaction';
 import { dragBodyUpdates, FLOW_MULTI_SELECTION_KEYS, FLOW_SELECTION_KEY, nextShiftHeld, relaxDrag, shouldRelaxDrag, syncDragLedger } from '../editor/pulling';
-import { collapseSelectionKey, eraserToolKey, penToolKey, plainShortcutBlocked, searchShortcut, zoomSelectionKey } from '../editor/shortcuts';
+import { collapseSelectionKey, eraserToolKey, penToolKey, plainShortcutBlocked, searchShortcut, zoomOutKey, zoomSelectionKey } from '../editor/shortcuts';
 import { decideEscape } from '../editor/xray-escape';
 import { connectNodes, deleteEdges, hasUndirectedLink } from '../domain/graph';
-import { cameraDuration, frameViewport, noteJumpZoom } from '../domain/camera';
+import { cameraDuration, farthestZoom, frameViewport, noteJumpZoom } from '../domain/camera';
 import { setEdgeLabel, setEdgeStyle } from '../domain/relationships';
 import { editSavedView, recallViewport } from '../domain/saved-views';
 import { centerOf, contentSignature, resultBounds, type SearchOutcome } from '../domain/search';
@@ -1188,6 +1188,24 @@ function BoardSurface({ session }: { session: SessionProps }) {
         }
         return;
       }
+      if (zoomOutKey(event.key, selectedRef.current.length) && !plainShortcutBlocked({
+        defaultPrevented: event.defaultPrevented,
+        composing: event.isComposing,
+        repeat: event.repeat,
+        meta: event.metaKey,
+        ctrl: event.ctrlKey,
+        alt: event.altKey,
+        shift: event.shiftKey,
+        tag: element?.tagName ?? null,
+        editable: element?.isContentEditable ?? false,
+        inOverlay: overlayRef.current || edgeEditorRef.current || Boolean(element?.closest('[role="dialog"], [role="alertdialog"], [role="menu"]')),
+        editing: editingRef.current !== null,
+        blocked: false,
+      })) {
+        event.preventDefault();
+        zoomOutFromHere();
+        return;
+      }
       if (blockedRef.current) return;
       if (!event.metaKey && !event.ctrlKey) return;
       const key = event.key.toLowerCase();
@@ -1772,6 +1790,14 @@ function BoardSurface({ session }: { session: SessionProps }) {
     const next = placeNode(before, id, collapsedSize(before.nodes, node));
     if (next === before) return;
     publish(commitInteraction(next), before, 'save');
+  }
+
+  function zoomOutFromHere() {
+    const viewport = flowRef.current.getViewport();
+    const pane = document.querySelector('.react-flow');
+    const width = pane instanceof HTMLElement ? pane.clientWidth : window.innerWidth;
+    const height = pane instanceof HTMLElement ? pane.clientHeight : window.innerHeight;
+    void flowRef.current.setViewport(farthestZoom(viewport, width, height), { duration: cameraDuration(250) });
   }
 
   function frameNode(id: string) {

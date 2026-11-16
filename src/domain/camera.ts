@@ -22,6 +22,17 @@ export function frameViewport(bounds: Rect, width: number, height: number, paddi
   };
 }
 
+export function farthestZoom(viewport: Viewport, width: number, height: number): Viewport {
+  const current = viewport.zoom || 1;
+  const worldX = (width / 2 - viewport.x) / current;
+  const worldY = (height / 2 - viewport.y) / current;
+  return {
+    x: width / 2 - worldX * MIN_ZOOM,
+    y: height / 2 - worldY * MIN_ZOOM,
+    zoom: MIN_ZOOM,
+  };
+}
+
 export function clampCamera(viewport: Viewport): Viewport {
   return {
     x: viewport.x,

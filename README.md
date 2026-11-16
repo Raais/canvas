@@ -20,7 +20,7 @@ A new board starts dark. Project → Canvas background can switch it to light, a
 - Group notes from a selection or with the Frame tool. Groups stay flat, move as one body, and keep their children at the same world position when grouped or ungrouped.
 - Undo and redo recent edits until the page reloads. History is not stored in IndexedDB.
 - Read the cursor and the selected object in world coordinates.
-- Press G with one node selected to bring that node into view. Press U to shrink that node to its smallest allowed size. Cmd+G or Ctrl+G still groups the selection, and Shift with that shortcut ungroups it.
+- Press G with one node selected to bring that node into view. Press Z with nothing selected to zoom out as far as the canvas allows, keeping the current center in place. Press U to shrink that node to its smallest allowed size. Cmd+G or Ctrl+G still groups the selection, and Shift with that shortcut ungroups it.
 - Press P for the pen and E for the eraser. A pen stroke becomes one drawing. The eraser removes each stroke it touches, and one sweep is one undo.
 - Add a website from the toolbar, or paste or drop a single http or https address. The card stores the address and a title. It does not load the page.
 - Record a voice note from the toolbar. The recording stays in this browser as a blob next to the board. The canvas does not transcribe it or upload it.

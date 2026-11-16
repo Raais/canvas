@@ -26,6 +26,10 @@ export function zoomSelectionKey(key: string, selectedCount: number): boolean {
   return key.toLowerCase() === 'g' && selectedCount === 1;
 }
 
+export function zoomOutKey(key: string, selectedCount: number): boolean {
+  return key.toLowerCase() === 'z' && selectedCount === 0;
+}
+
 export function penToolKey(key: string): boolean {
   return key.toLowerCase() === 'p';
 }
