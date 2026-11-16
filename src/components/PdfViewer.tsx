@@ -29,6 +29,7 @@ import {
   type PdfSearchResult,
   type PdfZoomMode,
 } from '../domain/pdf-preview';
+import { PdfPageFrame } from './PdfPageFrame';
 import { usePdfReadingScroll } from './pdf-reading-scroll';
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
@@ -431,6 +432,7 @@ export function PdfViewer({
                   file={url}
                   options={options}
                   renderMode="canvas"
+                  suspense={false}
                   externalLinkTarget="_blank"
                   loading={<p className="pdf-note">Reading PDF…</p>}
                   onPassword={(callback) => {
@@ -456,17 +458,21 @@ export function PdfViewer({
                   onLoadError={(error) => setFailure(pdfFailureMessage(error))}
                 >
                   {readingMode === 'paged' && pageCount > 0 && pagedWidth > 1 ? (
-                    <Page
-                      pageNumber={page}
-                      width={pagedWidth}
-                      devicePixelRatio={pagedRatio}
-                      renderTextLayer
-                      renderAnnotationLayer={PDF_VIEWER_GUARDS.renderAnnotationLayer}
-                      renderForms={PDF_VIEWER_GUARDS.renderForms}
-                      customTextRenderer={highlight}
-                      onLoadSuccess={(loaded) => remember(page, loaded.originalWidth, loaded.originalHeight)}
-                      loading={<p className="pdf-note">Rendering page…</p>}
-                    />
+                    <PdfPageFrame width={pagedWidth} height={activeDisplay.height}>
+                      <Page
+                        pageNumber={page}
+                        width={pagedWidth}
+                        devicePixelRatio={pagedRatio}
+                        suspense={false}
+                        canvasBackground="#fff"
+                        renderTextLayer
+                        renderAnnotationLayer={PDF_VIEWER_GUARDS.renderAnnotationLayer}
+                        renderForms={PDF_VIEWER_GUARDS.renderForms}
+                        customTextRenderer={highlight}
+                        onLoadSuccess={(loaded) => remember(page, loaded.originalWidth, loaded.originalHeight)}
+                        loading={null}
+                      />
+                    </PdfPageFrame>
                   ) : null}
                   {readingMode === 'scroll' && pageCount > 0 ? (
                     <div className="pdf-scroll" style={{ height: layout.total }}>
@@ -478,17 +484,21 @@ export function PdfViewer({
                         return (
                           <div key={pageNumber} className="pdf-sheet" data-pdf-page={pageNumber} style={{ top, height }}>
                             {width > 1 ? (
-                              <Page
-                                pageNumber={pageNumber}
-                                width={width}
-                                devicePixelRatio={ratio}
-                                renderTextLayer
-                                renderAnnotationLayer={PDF_VIEWER_GUARDS.renderAnnotationLayer}
-                                renderForms={PDF_VIEWER_GUARDS.renderForms}
-                                customTextRenderer={highlight}
-                                onLoadSuccess={(loaded) => remember(pageNumber, loaded.originalWidth, loaded.originalHeight)}
-                                loading={<p className="pdf-note">Rendering page…</p>}
-                              />
+                              <PdfPageFrame width={width} height={height}>
+                                <Page
+                                  pageNumber={pageNumber}
+                                  width={width}
+                                  devicePixelRatio={ratio}
+                                  suspense={false}
+                                  canvasBackground="#fff"
+                                  renderTextLayer
+                                  renderAnnotationLayer={PDF_VIEWER_GUARDS.renderAnnotationLayer}
+                                  renderForms={PDF_VIEWER_GUARDS.renderForms}
+                                  customTextRenderer={highlight}
+                                  onLoadSuccess={(loaded) => remember(pageNumber, loaded.originalWidth, loaded.originalHeight)}
+                                  loading={null}
+                                />
+                              </PdfPageFrame>
                             ) : null}
                           </div>
                         );
