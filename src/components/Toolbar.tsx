@@ -180,9 +180,11 @@ export function Toolbar({
           <button type="button" className="icon-button" aria-pressed={tool === 'eraser'} aria-label="Eraser" title="Eraser" disabled={readOnly} onClick={() => onTool('eraser')}>
             <Eraser size={17} strokeWidth={1.75} />
           </button>
-          <button type="button" className="icon-button" aria-label="Record voice note" title="Record voice note" disabled={readOnly} onClick={onRecordVoice}>
-            <Mic size={17} strokeWidth={1.75} />
-          </button>
+          {tool === 'pen' ? null : (
+            <button type="button" className="icon-button" aria-label="Record voice note" title="Record voice note" disabled={readOnly} onClick={onRecordVoice}>
+              <Mic size={17} strokeWidth={1.75} />
+            </button>
+          )}
           {tool === 'pen' ? (
             <div className="pen-palette" role="group" aria-label="Pen settings">
               {DRAWING_COLORS.map((entry) => (
