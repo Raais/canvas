@@ -228,7 +228,7 @@ describe('protected session cleanup', () => {
     expect(noteNode != null && isProtectedTextNode(noteNode)).toBe(true);
     expect(sessions.has('note')).toBe(false);
     const source = await Bun.file(new URL('../components/BoardView.tsx', import.meta.url)).text();
-    expect(source.includes("deleteKeyCode={['Backspace', 'Delete']}")).toBe(true);
+    expect(source.includes("deleteKeyCode={pdfNodeId ? null : ['Backspace', 'Delete']}")).toBe(true);
     expect(source.includes('forgetRemovedSessions(unlockedRef.current, liveIds)')).toBe(true);
   });
 

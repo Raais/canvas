@@ -7,6 +7,7 @@ export type PwaUpdateInput = {
   ingesting: boolean;
   adjustingRotation: boolean;
   drawing?: boolean;
+  pdfViewing?: boolean;
   focusedField: boolean;
   readOnly: boolean;
   saveStatus: PwaSaveStatus;
@@ -27,6 +28,7 @@ export function decidePwaUpdate(input: PwaUpdateInput): PwaUpdateDecision {
   if (input.ingesting) return { action: 'block', reason: 'Wait for the image to finish before updating.' };
   if (input.adjustingRotation) return { action: 'block', reason: 'Finish the image rotation before updating.' };
   if (input.drawing) return { action: 'block', reason: 'Finish the pen stroke before updating.' };
+  if (input.pdfViewing) return { action: 'block', reason: 'Close the PDF viewer before updating.' };
   if (input.saveStatus === 'error' || input.hasRecovery) {
     return { action: 'block', reason: 'A save still needs attention. Keep this board, or download a recovery ZIP, before updating.' };
   }

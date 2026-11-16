@@ -151,6 +151,7 @@ import { pendingRotationBlocksReplacement } from '../domain/image-rotation';
 import { PasswordDialog } from './PasswordDialog';
 import { ProjectMenu } from './ProjectMenu';
 
+const PdfViewer = lazy(() => import('./PdfViewer').then((module) => ({ default: module.PdfViewer })));
 const DitherAtlasLayer = lazy(() => import('../backgrounds/DitherAtlasLayer'));
 const TopographicContoursLayer = lazy(() => import('../backgrounds/TopographicContoursLayer'));
 import { Toolbar, type CanvasTool } from './Toolbar';
@@ -160,6 +161,7 @@ import { countDrawings, excessDrawings, penScreenPx, selectedDrawingCount } from
 import type { OrganicBrush } from '../domain/organic-ink';
 import { FileNode } from './FileNode';
 import { SuitcaseNode } from './SuitcaseNode';
+import { isPdfAttachment, PDF_MISSING_MESSAGE } from '../domain/pdf-preview';
 import { SuitcaseExplorer } from './SuitcaseExplorer';
 import { VoiceNoteNode } from './VoiceNoteNode';
 import { VoiceRecorderDialog, type SavedVoice } from './VoiceRecorderDialog';
@@ -231,6 +233,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const [unlockEpoch, setUnlockEpoch] = useState(0);
   const [passwordPrompt, setPasswordPrompt] = useState<{ mode: 'protect' | 'unlock'; id: string } | null>(null);
   const [websiteDialog, setWebsiteDialog] = useState<{ mode: 'create' | 'edit'; id: string | null; url: string; title: string } | null>(null);
+  const [pdfNodeId, setPdfNodeId] = useState<string | null>(null);
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [suitcaseId, setSuitcaseId] = useState<string | null>(null);
   const [suitcaseListing, setSuitcaseListing] = useState<ZipListing | null>(null);
@@ -333,7 +336,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
   confirmingRef.current = confirming !== null;
   const writerRef = useRef(false);
   const overlayRef = useRef(false);
-  overlayRef.current = projectOpen || confirming !== null || searchOpen || viewsOpen || passwordPrompt !== null || voiceOpen || suitcaseId !== null;
+  overlayRef.current = projectOpen || confirming !== null || searchOpen || viewsOpen || passwordPrompt !== null || voiceOpen || suitcaseId !== null || pdfNodeId !== null;
   const foreignRef = useRef(false);
   const exportHold = useRef<{ board: Board; assets: AssetRecord[]; unsaved: boolean; key: string } | null>(null);
   const pasteRepeat = useRef({ key: '', count: 0 });
@@ -345,6 +348,8 @@ function BoardSurface({ session }: { session: SessionProps }) {
   const websiteDialogRef = useRef(false);
   const voiceDialogRef = useRef(false);
   const suitcaseDialogRef = useRef(false);
+  const pdfOpenRef = useRef(false);
+  const pdfReturnFocus = useRef<HTMLElement | null>(null);
   const suitcaseClient = useRef(createSuitcaseClient());
   const suitcaseToken = useRef(0);
   const unpackToken = useRef(0);
@@ -354,6 +359,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
   websiteDialogRef.current = websiteDialog !== null;
   voiceDialogRef.current = voiceOpen;
   suitcaseDialogRef.current = suitcaseId !== null;
+  pdfOpenRef.current = pdfNodeId !== null;
   draftRef.current = draft !== null;
   toWorldRef.current = screenToFlowPosition;
   flowRef.current = flow;
@@ -445,6 +451,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
         ingesting: ingestRef.current > 0,
         adjustingRotation: rotationAdjustRef.current,
         drawing: inkGestureRef.current,
+        pdfViewing: pdfOpenRef.current,
         focusedField,
         readOnly: blockedRef.current,
         saveStatus: statusRef.current,
@@ -1649,6 +1656,18 @@ function BoardSurface({ session }: { session: SessionProps }) {
         }
         downloadBlob(asset.blob, node.filename);
       },
+      openPdf(id) {
+        const node = boardRef.current.nodes.find((entry) => entry.id === id);
+        if (!node || node.kind !== 'file') return;
+        const asset = libraryRef.current.get(node.assetId);
+        if (!asset) {
+          setNotice({ text: PDF_MISSING_MESSAGE, source: 'ingest' });
+          return;
+        }
+        if (!isPdfAttachment(node.filename, asset.mimeType) && !isPdfAttachment(node.sourcePath ?? '')) return;
+        pdfReturnFocus.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        setPdfNodeId(id);
+      },
       deleteRelationship(id) {
         if (blockedRef.current) return;
         const before = boardRef.current;
@@ -1691,6 +1710,17 @@ function BoardSurface({ session }: { session: SessionProps }) {
   useEffect(() => {
     if (readOnly) setVoiceOpen(false);
   }, [readOnly]);
+
+  useEffect(() => {
+    if (!pdfNodeId) return;
+    const node = board.nodes.find((entry) => entry.id === pdfNodeId);
+    if (!node || node.kind !== 'file') {
+      setPdfNodeId(null);
+      const back = pdfReturnFocus.current;
+      pdfReturnFocus.current = null;
+      requestAnimationFrame(() => back?.focus());
+    }
+  }, [board.nodes, pdfNodeId]);
 
   useEffect(() => {
     if (!websiteDialog) return;
@@ -2775,7 +2805,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
           selectionKeyCode={FLOW_SELECTION_KEY}
           multiSelectionKeyCode={[...FLOW_MULTI_SELECTION_KEYS]}
           panActivationKeyCode="Space"
-          deleteKeyCode={['Backspace', 'Delete']}
+          deleteKeyCode={pdfNodeId ? null : ['Backspace', 'Delete']}
           connectOnClick={false}
           connectionMode={ConnectionMode.Loose}
           elementsSelectable
@@ -2826,6 +2856,29 @@ function BoardSurface({ session }: { session: SessionProps }) {
         )}
         {chromeHidden ? null : <Coordinates ref={coordinatesRef} selection={selectionLabel} />}
         <PwaUpdateNotice prepareUpdate={preparePwaUpdate} />
+        {pdfNodeId ? (
+          <Suspense fallback={<div className="pdf-layer"><div className="pdf-viewer" role="dialog" aria-label="Opening PDF"><p className="pdf-note">Opening PDF…</p></div></div>}>
+            <PdfViewer
+              memoryKey={pdfNodeId}
+              filename={(() => {
+                const node = board.nodes.find((entry) => entry.id === pdfNodeId);
+                return node?.kind === 'file' ? node.filename : 'PDF';
+              })()}
+              blob={(() => {
+                const node = board.nodes.find((entry) => entry.id === pdfNodeId);
+                if (!node || node.kind !== 'file') return null;
+                return libraryRef.current.get(node.assetId)?.blob ?? null;
+              })()}
+              onClose={() => {
+                setPdfNodeId(null);
+                const back = pdfReturnFocus.current;
+                pdfReturnFocus.current = null;
+                requestAnimationFrame(() => back?.focus());
+              }}
+              onDownload={() => actions.downloadFile(pdfNodeId)}
+            />
+          </Suspense>
+        ) : null}
         {suitcaseId ? (
           <SuitcaseExplorer
             filename={(() => {

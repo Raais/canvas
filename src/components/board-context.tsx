@@ -30,6 +30,7 @@ export type BoardActions = {
   commitEdgeLabel: (id: string, label: string) => void;
   setRelationshipStyle: (id: string, style: EdgeStyle) => void;
   downloadFile: (id: string) => void;
+  openPdf: (id: string) => void;
   browseSuitcase: (id: string) => void;
   downloadSuitcase: (id: string) => void;
   createMirror: (id: string) => void;

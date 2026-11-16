@@ -1,6 +1,7 @@
 import type { Edge } from '@xyflow/react';
 import { lookupEmbeddedByteSize } from '../domain/image-size';
 import { isContentNode } from '../domain/geometry';
+import { isPdfAttachment } from '../domain/pdf-preview';
 import { isProtectedTextNode } from '../domain/text-protection';
 import {
   GROUP_MIN_HEIGHT,
@@ -190,7 +191,7 @@ function assetStamp(
 ): string {
   if (node.kind === 'file') {
     const asset = library.get(node.assetId);
-    return asset ? `file:${asset.byteSize}` : 'file:missing';
+    return asset ? `file:${asset.byteSize}:${asset.mimeType}` : 'file:missing';
   }
   if (node.kind === 'suitcase') {
     const asset = library.get(node.assetId);
@@ -340,6 +341,7 @@ function toFlowNode(
         sourcePath: node.sourcePath,
         byteSize: asset?.byteSize,
         missing: !asset,
+        previewable: isPdfAttachment(node.filename, asset?.mimeType ?? '') || isPdfAttachment(node.sourcePath ?? ''),
         lastEditedAt: node.lastEditedAt,
       },
     };

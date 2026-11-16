@@ -56,7 +56,24 @@ if (mainName) {
   const main = await Bun.file(mainName).text();
   expect(!main.includes('convertToBlob'), 'webp encoder stays out of the main bundle');
 }
-expect(!assets.some((name) => name.endsWith('.wasm')), 'no wasm asset');
+expect(!assets.some((name) => name.endsWith('.wasm')), 'no wasm asset in the vite asset folder');
+expect(await Bun.file('dist/pdfjs/wasm/jbig2.wasm').exists(), 'pdf.js jbig2 wasm copied');
+expect(await Bun.file('dist/pdfjs/wasm/openjpeg.wasm').exists(), 'pdf.js openjpeg wasm copied');
+expect(await Bun.file('dist/pdfjs/wasm/qcms_bg.wasm').exists(), 'pdf.js qcms wasm copied');
+expect(!await Bun.file('dist/pdfjs/wasm/quickjs-eval.wasm').exists(), 'pdf.js eval wasm is not shipped');
+const pdfWorker = assets.find((name) => name.includes('pdf.worker') && (name.endsWith('.mjs') || name.endsWith('.js')));
+expect(Boolean(pdfWorker), 'pdf.js worker emitted');
+if (pdfWorker) expect(worker.includes(pdfWorker.slice(pdfWorker.lastIndexOf('/') + 1)), 'pdf.js worker precached');
+expect(worker.includes('.bcmap'), 'pdf.js cmaps precached');
+expect(worker.includes('.wasm'), 'pdf.js wasm precached');
+const viewerName = assets.find((name) => name.includes('PdfViewer-') && name.endsWith('.js'));
+expect(Boolean(viewerName), 'pdf viewer chunk emitted');
+if (viewerName) expect(worker.includes(viewerName.slice(viewerName.lastIndexOf('/') + 1)), 'pdf viewer chunk precached');
+if (mainName) {
+  const mainJs = await Bun.file(mainName).text();
+  expect(!mainJs.includes('pdf.worker.min.mjs'), 'pdf.js worker stays out of the main bundle');
+  expect(!mainJs.includes('quickjs-eval'), 'pdf eval runtime stays out of the main bundle');
+}
 const packages = await Bun.file('package.json').json() as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
 const dependencyNames = [...Object.keys(packages.dependencies ?? {}), ...Object.keys(packages.devDependencies ?? {})];
 expect(!dependencyNames.some((name) => /avif|squoosh|sharp|wasm-vips|jsquash/i.test(name)), 'no external encoder package');

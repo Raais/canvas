@@ -1,0 +1,249 @@
+import { fileExtension } from './files';
+
+/** Manual zoom stops. Fit modes may use a smaller scale so a large page still fits. */
+export const PDF_ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3] as const;
+export const PDF_MIN_ZOOM = PDF_ZOOM_STEPS[0];
+export const PDF_MAX_ZOOM = PDF_ZOOM_STEPS[PDF_ZOOM_STEPS.length - 1];
+/** Bitmap budget for one rendered page. Layout size and this cap are separate. */
+export const PDF_MAX_PIXELS = 12_000_000;
+export const PDF_MAX_CANVAS_EDGE = 4096;
+export const PDF_SEARCH_PAGE_LIMIT = 400;
+export const PDF_PASSWORD_MESSAGE = 'This PDF is password protected and cannot be previewed here.';
+export const PDF_EMPTY_MESSAGE = 'This PDF is empty.';
+export const PDF_INVALID_MESSAGE = 'This file is not a readable PDF.';
+export const PDF_MISSING_MESSAGE = 'This PDF is missing from this browser.';
+
+export const PDF_VIEWER_GUARDS = {
+  renderAnnotationLayer: false,
+  renderForms: false,
+  enableScripting: false,
+  isEvalSupported: false,
+} as const;
+
+const PDF_MARKER = [0x25, 0x50, 0x44, 0x46, 0x2d];
+
+export function isPdfAttachment(filename: string, mimeType = ''): boolean {
+  if (fileExtension(filename) === 'pdf') return true;
+  return mimeType.trim().toLowerCase() === 'application/pdf';
+}
+
+export function pdfHeaderStatus(bytes: Uint8Array): 'empty' | 'invalid' | 'ok' {
+  if (bytes.byteLength === 0) return 'empty';
+  const window = Math.min(bytes.byteLength, 1024);
+  for (let start = 0; start <= window - PDF_MARKER.length; start += 1) {
+    let found = true;
+    for (let index = 0; index < PDF_MARKER.length; index += 1) {
+      if (bytes[start + index] !== PDF_MARKER[index]) {
+        found = false;
+        break;
+      }
+    }
+    if (found) return 'ok';
+  }
+  return 'invalid';
+}
+
+export async function inspectPdfBlob(blob: Blob): Promise<'empty' | 'invalid' | 'ok'> {
+  if (blob.size === 0) return 'empty';
+  const head = new Uint8Array(await blob.slice(0, 1024).arrayBuffer());
+  return pdfHeaderStatus(head);
+}
+
+export function pdfFailureMessage(error: unknown): string {
+  const name = error && typeof error === 'object' && 'name' in error ? String(error.name) : '';
+  const message = error instanceof Error ? error.message : '';
+  if (name === 'PasswordException' || name === 'PasswordRequiredException' || /password/i.test(message)) return PDF_PASSWORD_MESSAGE;
+  if (name === 'InvalidPDFException' || /invalid pdf/i.test(message)) return PDF_INVALID_MESSAGE;
+  return 'This PDF could not be previewed.';
+}
+
+export function clampPage(page: number, count: number): number | null {
+  if (!Number.isInteger(page) || count < 1 || page < 1 || page > count) return null;
+  return page;
+}
+
+export function parsePageInput(value: string, count: number): number | null {
+  const trimmed = value.trim();
+  if (!/^\d+$/.test(trimmed)) return null;
+  return clampPage(Number(trimmed), count);
+}
+
+export function settlePageRequest(requests: readonly number[], count: number): number {
+  let page = 1;
+  for (const request of requests) {
+    const next = clampPage(request, count);
+    if (next !== null) page = next;
+  }
+  return page;
+}
+
+export function stepZoom(current: number, direction: 1 | -1): number {
+  if (direction > 0) {
+    const higher = PDF_ZOOM_STEPS.find((step) => step > current + 0.001);
+    return higher ?? PDF_MAX_ZOOM;
+  }
+  const lower = [...PDF_ZOOM_STEPS].reverse().find((step) => step < current - 0.001);
+  return lower ?? PDF_MIN_ZOOM;
+}
+
+export function clampFitScale(scale: number): number {
+  if (!Number.isFinite(scale) || scale <= 0) return 1;
+  return Math.min(PDF_MAX_ZOOM, Math.max(0.05, scale));
+}
+
+export function fitScale(
+  pageWidth: number,
+  pageHeight: number,
+  boxWidth: number,
+  boxHeight: number,
+  mode: 'width' | 'page',
+): number {
+  if (pageWidth <= 0 || pageHeight <= 0 || boxWidth <= 0 || boxHeight <= 0) return 1;
+  const widthScale = boxWidth / pageWidth;
+  if (mode === 'width') return clampFitScale(widthScale);
+  return clampFitScale(Math.min(widthScale, boxHeight / pageHeight));
+}
+
+/** Device pixel ratio for one page, capped so the bitmap stays within the pixel budget. */
+export function renderPixelRatio(cssWidth: number, cssHeight: number, deviceRatio: number): number {
+  const wanted = Math.min(Math.max(Number.isFinite(deviceRatio) ? deviceRatio : 1, 1), 3);
+  const width = Math.max(cssWidth, 1);
+  const height = Math.max(cssHeight, 1);
+  const byArea = Math.sqrt(PDF_MAX_PIXELS / (width * height));
+  const byEdge = Math.min(PDF_MAX_CANVAS_EDGE / width, PDF_MAX_CANVAS_EDGE / height);
+  return Math.max(0.25, Math.min(wanted, byArea, byEdge));
+}
+
+export function pdfDocumentOptions(baseUrl: string) {
+  const root = `${baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`}pdfjs/`;
+  return {
+    isEvalSupported: PDF_VIEWER_GUARDS.isEvalSupported,
+    enableScripting: PDF_VIEWER_GUARDS.enableScripting,
+    enableXfa: false,
+    cMapUrl: `${root}cmaps/`,
+    cMapPacked: true,
+    standardFontDataUrl: `${root}standard_fonts/`,
+    wasmUrl: `${root}wasm/`,
+    maxImageSize: PDF_MAX_PIXELS,
+    disableAutoFetch: true,
+    disableStream: true,
+    useSystemFonts: true,
+  };
+}
+
+export function escapePdfText(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+export function renderHighlightedText(text: string, query: string): string {
+  const needle = query.trim();
+  if (!needle) return escapePdfText(text);
+  const lower = text.toLowerCase();
+  const target = needle.toLowerCase();
+  let cursor = 0;
+  let html = '';
+  while (cursor < text.length) {
+    const at = lower.indexOf(target, cursor);
+    if (at < 0) {
+      html += escapePdfText(text.slice(cursor));
+      break;
+    }
+    html += escapePdfText(text.slice(cursor, at));
+    html += `<mark class="pdf-hit">${escapePdfText(text.slice(at, at + target.length))}</mark>`;
+    cursor = at + target.length;
+  }
+  return html;
+}
+
+export type PdfMatch = { page: number; index: number };
+
+export function findInPageText(page: number, text: string, query: string): PdfMatch[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle || page < 1) return [];
+  const haystack = text.toLowerCase();
+  const matches: PdfMatch[] = [];
+  let from = 0;
+  while (from <= haystack.length) {
+    const at = haystack.indexOf(needle, from);
+    if (at < 0) break;
+    matches.push({ page, index: at });
+    from = at + needle.length;
+  }
+  return matches;
+}
+
+export type PdfSearchResult = {
+  matches: PdfMatch[];
+  extractable: boolean;
+  complete: boolean;
+  cancelled: boolean;
+  searchedPages: number;
+  pageCount: number;
+};
+
+export async function collectPdfMatches(
+  pageCount: number,
+  query: string,
+  readPage: (page: number) => Promise<string>,
+  signal: AbortSignal,
+  onProgress?: (done: number, total: number) => void,
+): Promise<PdfSearchResult> {
+  const limit = Math.min(Math.max(pageCount, 0), PDF_SEARCH_PAGE_LIMIT);
+  const matches: PdfMatch[] = [];
+  let extractable = false;
+  for (let page = 1; page <= limit; page += 1) {
+    if (signal.aborted) {
+      return { matches, extractable, complete: false, cancelled: true, searchedPages: page - 1, pageCount };
+    }
+    const text = await readPage(page);
+    if (text.trim().length > 0) extractable = true;
+    matches.push(...findInPageText(page, text, query));
+    if (page % 8 === 0) {
+      onProgress?.(page, limit);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      if (signal.aborted) {
+        return { matches, extractable, complete: false, cancelled: true, searchedPages: page, pageCount };
+      }
+    }
+  }
+  return {
+    matches,
+    extractable,
+    complete: pageCount <= PDF_SEARCH_PAGE_LIMIT,
+    cancelled: false,
+    searchedPages: limit,
+    pageCount,
+  };
+}
+
+export function acceptSearchResult(startedQuery: string, currentQuery: string): boolean {
+  return startedQuery === currentQuery;
+}
+
+export function createPdfObjectUrl(blob: Blob): { url: string; release: () => void } {
+  const url = URL.createObjectURL(blob);
+  let released = false;
+  return {
+    url,
+    release() {
+      if (released) return;
+      released = true;
+      URL.revokeObjectURL(url);
+    },
+  };
+}
+
+export function searchStatusLabel(result: PdfSearchResult, query: string): string {
+  if (!query.trim()) return '';
+  if (result.cancelled) return '';
+  if (!result.extractable) return 'This PDF has no extractable text.';
+  const count = result.matches.length === 1 ? '1 match' : `${result.matches.length} matches`;
+  if (!result.complete) return `Searched the first ${result.searchedPages} of ${result.pageCount} pages. ${count}.`;
+  if (result.matches.length === 0) return 'No matches.';
+  return count;
+}

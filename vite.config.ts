@@ -1,10 +1,55 @@
+import { cpSync, createReadStream, existsSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
+
+const PDFJS_ROOT = join(process.cwd(), 'node_modules/pdfjs-dist');
+const PDF_WASM = ['jbig2.wasm', 'openjpeg.wasm', 'qcms_bg.wasm'];
+
+function pdfjsAssets(): Plugin {
+  return {
+    name: 'pdfjs-assets',
+    configureServer(server) {
+      server.middlewares.use('/canvas/pdfjs', (request, response, next) => {
+        const url = (request.url ?? '').split('?')[0] ?? '';
+        const parts = url.split('/').filter(Boolean);
+        const kind = parts[0];
+        const file = parts.slice(1).join('/');
+        if ((kind !== 'cmaps' && kind !== 'standard_fonts' && kind !== 'wasm') || !file || file.includes('..')) {
+          next();
+          return;
+        }
+        if (kind === 'wasm' && !PDF_WASM.includes(file)) {
+          next();
+          return;
+        }
+        const disk = join(PDFJS_ROOT, kind, file);
+        if (!existsSync(disk)) {
+          next();
+          return;
+        }
+        if (file.endsWith('.wasm')) response.setHeader('Content-Type', 'application/wasm');
+        else if (file.endsWith('.pfb') || file.endsWith('.ttf')) response.setHeader('Content-Type', 'font/sfnt');
+        else response.setHeader('Content-Type', 'application/octet-stream');
+        createReadStream(disk).pipe(response);
+      });
+    },
+    closeBundle() {
+      mkdirSync(join(process.cwd(), 'dist/pdfjs/wasm'), { recursive: true });
+      cpSync(join(PDFJS_ROOT, 'cmaps'), join(process.cwd(), 'dist/pdfjs/cmaps'), { recursive: true });
+      cpSync(join(PDFJS_ROOT, 'standard_fonts'), join(process.cwd(), 'dist/pdfjs/standard_fonts'), { recursive: true });
+      for (const name of PDF_WASM) {
+        cpSync(join(PDFJS_ROOT, 'wasm', name), join(process.cwd(), 'dist/pdfjs/wasm', name));
+      }
+    },
+  };
+}
 
 export default defineConfig({
   base: '/canvas/',
   plugins: [
+    pdfjsAssets(),
     react(),
     VitePWA({
       registerType: 'prompt',
@@ -40,7 +85,7 @@ export default defineConfig({
       workbox: {
         skipWaiting: false,
         clientsClaim: true,
-        globPatterns: ['**/*.{js,css,html,ico,png,woff2,webmanifest}'],
+        globPatterns: ['**/*.{js,css,html,ico,png,woff2,webmanifest,mjs,bcmap,pfb,ttf,wasm}'],
         maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
         navigateFallback: '/canvas/index.html',
         navigateFallbackAllowlist: [/^\/canvas\/?/],

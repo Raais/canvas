@@ -24,6 +24,7 @@ A new board starts dark. Project → Canvas background can switch it to light, a
 - Press P for the pen and E for the eraser. A pen stroke becomes one drawing. The eraser removes each stroke it touches, and one sweep is one undo.
 - Add a website from the toolbar, or paste or drop a single http or https address. The card stores the address and a title. It does not load the page.
 - Record a voice note from the toolbar. The recording stays in this browser as a blob next to the board. The canvas does not transcribe it or upload it.
+- Preview a PDF attachment in the canvas. The viewer reads the file already stored in this browser. It does not upload the PDF or change the board.
 - Export the open board as a `.canvas.zip` archive, start a blank board, or import an archive in place of the current one.
 - See an approximate size for canvas data, plus the browser's estimate for this whole origin.
 

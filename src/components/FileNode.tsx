@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { NodeResizer, type Node, type NodeProps } from '@xyflow/react';
-import { Download, File } from 'lucide-react';
+import { BookOpen, Download, File } from 'lucide-react';
 import { FILE_MIN_HEIGHT, FILE_MIN_WIDTH } from '../domain/types';
 import { fileKindLabel } from '../domain/files';
 import { formatBytes } from '../project/storage';
@@ -13,6 +13,7 @@ export type FileNodeData = {
   sourcePath?: string;
   byteSize?: number;
   missing: boolean;
+  previewable?: boolean;
   lastEditedAt?: string;
 };
 
@@ -35,12 +36,25 @@ function FileNodeComponent({ id, data, selected }: NodeProps<FileFlowNode>) {
           title={data.filename}
           disabled={data.missing}
           onPointerDown={(event) => event.stopPropagation()}
-          onClick={() => actions.downloadFile(id)}
+          onClick={() => (data.previewable ? actions.openPdf(id) : actions.downloadFile(id))}
         >
           {data.filename}
         </button>
         <p className="file-meta">{label} · {size}</p>
       </div>
+      {data.previewable ? (
+        <button
+          type="button"
+          className="file-preview nodrag nopan"
+          aria-label={`Preview PDF ${data.filename}`}
+          title="Preview PDF"
+          disabled={data.missing}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={() => actions.openPdf(id)}
+        >
+          <BookOpen size={16} strokeWidth={1.75} />
+        </button>
+      ) : null}
       <button
         type="button"
         className="file-download nodrag nopan"

@@ -714,7 +714,7 @@ button:focus-visible, .title-input:focus-visible, select:focus-visible {
 .voice-error { color: var(--danger); }
 .voice-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .voice-preview { width: 100%; }
-.file-download {
+.file-download, .file-preview {
   appearance: none;
   flex: none;
   width: 32px;
@@ -728,7 +728,7 @@ button:focus-visible, .title-input:focus-visible, select:focus-visible {
   color: var(--text);
   cursor: pointer;
 }
-.file-download:hover { background: var(--pressed); color: var(--accent-ink); }
+.file-download:hover, .file-preview:hover { background: var(--pressed); color: var(--accent-ink); }
 
 .website-note {
   position: relative;
@@ -779,7 +779,9 @@ button:focus-visible, .title-input:focus-visible, select:focus-visible {
 .website-action:disabled:hover,
 .website-action.is-disabled:hover { background: var(--surface-2); color: var(--muted); }
 .file-download:disabled,
-.file-download:disabled:hover { background: var(--surface-2); color: var(--muted); opacity: 0.45; cursor: default; }
+.file-download:disabled:hover,
+.file-preview:disabled,
+.file-preview:disabled:hover { background: var(--surface-2); color: var(--muted); opacity: 0.45; cursor: default; }
 .mirror-mark {
   margin: 0;
   padding: 8px 12px 0;
@@ -1645,6 +1647,89 @@ html[data-theme='light'] .note-ink-warm { color: #8a5a32; }
 .hl-number, .hl-literal { color: #8eacc6; }
 .hl-function, .hl-type { color: #d7a3a8; }
 .image-note.is-square .image-clip, .image-note.is-square .image-missing { border-radius: 0; }
+
+.pdf-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 46;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  background: color-mix(in srgb, #000 55%, transparent);
+}
+.pdf-viewer {
+  width: min(1100px, 100%);
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  overflow: hidden;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-panel);
+  box-shadow: 0 16px 40px rgb(0 0 0 / 18%);
+}
+.pdf-head, .pdf-toolbar, .pdf-find, .pdf-head-actions { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.pdf-head { justify-content: space-between; }
+.pdf-head h2 {
+  margin: 0;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 560;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pdf-toolbar, .pdf-find { flex-wrap: wrap; }
+.pdf-viewer button, .pdf-page-field input {
+  appearance: none;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  min-height: 32px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.pdf-viewer button:hover { background: var(--pressed); }
+.pdf-viewer button:disabled { color: var(--muted); cursor: default; }
+.pdf-viewer button:focus-visible, .pdf-page-field input:focus-visible, .pdf-find input:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
+.pdf-viewer button[aria-pressed='true'] { color: var(--accent-ink); border-color: var(--accent); }
+.pdf-page-field { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+.pdf-page-field input { width: 4.5rem; cursor: text; }
+.pdf-find input { flex: 1; min-width: 8rem; border: 1px solid var(--line); border-radius: var(--radius-control); background: var(--surface); color: var(--text); font: inherit; font-size: 13px; min-height: 32px; padding: 4px 10px; }
+.pdf-find p, .pdf-foot, .pdf-note, .pdf-status p { margin: 0; color: var(--muted); font-size: 13px; }
+.pdf-zoom { min-width: 3.2rem; color: var(--muted); font-size: 13px; }
+.pdf-stage {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  background: #4d5158;
+  border-radius: 14px;
+  padding: 16px;
+}
+html[data-theme='light'] .pdf-stage { background: #d7d2cb; }
+.pdf-stage .react-pdf__Page { margin: 0 auto; }
+.pdf-stage .react-pdf__Page__canvas { background: #fff; }
+.pdf-viewer mark.pdf-hit { background: #e2b15a; color: transparent; }
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 
 @media (prefers-reduced-motion: reduce) {
   .chrome button, .rail button, .project-panel, .banner { transition: none; }
