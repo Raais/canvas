@@ -3,7 +3,7 @@ import { classifyPlainText } from '../domain/code';
 import { createEmptyBoard, createTextNode, parseBoard, setBackgroundPattern, setCornerStyle, updateText } from '../domain/board';
 import { createHistory, pushHistory, undoHistory } from '../domain/history';
 import { highlightCode } from '../domain/highlight';
-import { safeHref, toggleHighlight, toggleTask } from '../domain/markdown';
+import { safeHref, toggleBold, toggleHighlight, toggleItalic, toggleStrike, toggleTask } from '../domain/markdown';
 
 describe('markdown notes', () => {
   test('recognizes task lists without converting prose or fenced code', () => {
@@ -24,6 +24,18 @@ describe('markdown notes', () => {
     expect(toggleHighlight('hello', 1, 1)).toBeNull();
     expect(safeHref('javascript:alert(1)')).toBe(false);
     expect(safeHref('https://example.com')).toBe(true);
+  });
+
+  test('wraps and unwraps bold, italic, and strikethrough without eating a longer marker', () => {
+    expect(toggleBold('hello', 0, 5)?.text).toBe('**hello**');
+    expect(toggleBold('**hello**', 2, 7)?.text).toBe('hello');
+    expect(toggleItalic('hello', 1, 4)?.text).toBe('h*ell*o');
+    expect(toggleItalic('*hello*', 1, 6)?.text).toBe('hello');
+    expect(toggleStrike('hello', 0, 5)?.text).toBe('~~hello~~');
+    expect(toggleStrike('~~hello~~', 2, 7)?.text).toBe('hello');
+    expect(toggleBold('hello', 3, 3)).toBeNull();
+    expect(toggleItalic('**hello**', 2, 7)?.text).toBe('***hello***');
+    expect(toggleBold('***hello***', 3, 8)?.text).toBe('*hello*');
   });
 
   test('highlights code as tokens rather than executable html', () => {

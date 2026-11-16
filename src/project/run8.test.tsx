@@ -64,6 +64,10 @@ describe('contextual presentation source', () => {
     expect(note.includes('aria-label="Markdown mode"')).toBe(true);
     expect(note.includes('aria-label="Code mode"')).toBe(true);
     expect(note.includes('aria-label="Highlight selected text"')).toBe(true);
+    expect(note.includes('aria-label="Bold"')).toBe(true);
+    expect(note.includes('aria-label="Italic"')).toBe(true);
+    expect(note.includes('aria-label="Strikethrough"')).toBe(true);
+    expect(note.includes('editingMarkdown && hasSelection')).toBe(true);
     expect(note.includes('setNoteTone')).toBe(true);
     expect(note.includes('className="code-label"')).toBe(true);
     expect(image.includes("is-square")).toBe(true);

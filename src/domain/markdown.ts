@@ -80,21 +80,50 @@ export function toggleTask(source: string, taskIndex: number): string {
 }
 
 export function toggleHighlight(source: string, start: number, end: number): { text: string; start: number; end: number } | null {
-  if (start === end) return null;
+  return toggleInline(source, start, end, '==');
+}
+
+export function toggleBold(source: string, start: number, end: number): { text: string; start: number; end: number } | null {
+  return toggleInline(source, start, end, '**');
+}
+
+export function toggleItalic(source: string, start: number, end: number): { text: string; start: number; end: number } | null {
+  return toggleInline(source, start, end, '*');
+}
+
+export function toggleStrike(source: string, start: number, end: number): { text: string; start: number; end: number } | null {
+  return toggleInline(source, start, end, '~~');
+}
+
+export function toggleInline(source: string, start: number, end: number, marker: string): { text: string; start: number; end: number } | null {
+  if (start === end || marker.length === 0) return null;
   const from = Math.min(start, end);
   const to = Math.max(start, end);
   const selected = source.slice(from, to);
-  const before = source.slice(Math.max(0, from - 2), from);
-  const after = source.slice(to, to + 2);
-  if (before === '==' && after === '==') {
-    return { text: source.slice(0, from - 2) + selected + source.slice(to + 2), start: from - 2, end: to - 2 };
+  const width = marker.length;
+  const before = source.slice(Math.max(0, from - width), from);
+  const after = source.slice(to, to + width);
+  if (before === marker && after === marker && !longerMarkerAround(source, from, to, marker)) {
+    return { text: source.slice(0, from - width) + selected + source.slice(to + width), start: from - width, end: to - width };
   }
-  if (selected.startsWith('==') && selected.endsWith('==') && selected.length >= 4) {
-    const inner = selected.slice(2, -2);
+  if (ownsMarker(selected, marker)) {
+    const inner = selected.slice(width, -width);
     return { text: source.slice(0, from) + inner + source.slice(to), start: from, end: from + inner.length };
   }
-  const wrapped = `==${selected}==`;
+  const wrapped = `${marker}${selected}${marker}`;
   return { text: source.slice(0, from) + wrapped + source.slice(to), start: from, end: from + wrapped.length };
+}
+
+function longerMarkerAround(source: string, from: number, to: number, marker: string): boolean {
+  if (marker.length !== 1) return false;
+  return source[from - 2] === marker || source[to + 1] === marker;
+}
+
+function ownsMarker(selected: string, marker: string): boolean {
+  if (!selected.startsWith(marker) || !selected.endsWith(marker) || selected.length < marker.length * 2) return false;
+  if (marker.length !== 1) return true;
+  const inner = selected.slice(1, -1);
+  return !(inner.startsWith(marker) && inner.endsWith(marker));
 }
 
 export function safeHref(value: string | undefined): boolean {

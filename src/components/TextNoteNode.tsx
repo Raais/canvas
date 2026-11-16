@@ -1,11 +1,11 @@
 import { memo, useEffect, useRef, useState, type ChangeEvent, type PointerEvent, type RefObject } from 'react';
 import { Handle, NodeResizer, NodeToolbar, Position, useInternalNode, useViewport, type Node, type NodeProps } from '@xyflow/react';
-import { Code2, FileText, Highlighter, Link2, ListTodo, Lock, LockOpen, Palette, SquareStack, Type, Unlink } from 'lucide-react';
+import { Bold, Code2, FileText, Highlighter, Italic, Link2, ListTodo, Lock, LockOpen, Palette, SquareStack, Strikethrough, Type, Unlink } from 'lucide-react';
 import { useBoardActions } from './board-context';
 import { HANDLE_SIDES, visualHandleTransform } from '../editor/handles';
 import { isFinalUnmount } from '../editor/cull-edit';
 import { highlightCode, resolveHighlightLanguage } from '../domain/highlight';
-import { toggleHighlight } from '../domain/markdown';
+import { toggleBold, toggleHighlight, toggleItalic, toggleStrike } from '../domain/markdown';
 import { MarkdownView } from './MarkdownView';
 import { NodeDateLabel } from './NodeDateLabel';
 import { TEXT_MIN_WIDTH, TEXT_RESIZE_MIN_HEIGHT, type BackgroundTone, type CodeLanguage, type TextTone } from '../domain/types';
@@ -66,10 +66,14 @@ function NoteChrome({
   id,
   data,
   editorRef,
+  hasSelection,
+  onSelection,
 }: {
   id: string;
   data: TextNodeData;
   editorRef: RefObject<HTMLTextAreaElement | null>;
+  hasSelection: boolean;
+  onSelection: (selected: boolean) => void;
 }) {
   const actions = useBoardActions();
   const [menu, setMenu] = useState<'background' | 'text' | null>(null);
@@ -86,28 +90,45 @@ function NoteChrome({
     event.stopPropagation();
   }
 
-  function highlight(event: PointerEvent) {
+  function format(event: PointerEvent, apply: typeof toggleHighlight) {
     holdSelection(event);
     const editor = editorRef.current;
     if (!editor) return;
-    const next = toggleHighlight(data.text, editor.selectionStart, editor.selectionEnd);
+    const next = apply(data.text, editor.selectionStart, editor.selectionEnd);
     if (!next) return;
     actions.updateText(id, next.text);
-    requestAnimationFrame(() => editor.setSelectionRange(next.start, next.end));
+    onSelection(true);
+    requestAnimationFrame(() => {
+      editor.setSelectionRange(next.start, next.end);
+      onSelection(next.start !== next.end);
+    });
   }
 
   return (
       <NodeToolbar
         position={position}
         offset={10}
-        isVisible={data.editing && !editingMarkdown ? false : undefined}
+        isVisible={data.editing ? editingMarkdown && hasSelection : undefined}
         className={`note-toolbar nodrag nopan nowheel${position === Position.Bottom ? ' is-below' : ''}`}
       >
         <div className="note-toolbar-row" onPointerDown={holdSelection}>
           {editingMarkdown ? (
-            <button type="button" className="icon-button" aria-label="Highlight selected text" title="Highlight selected text" onPointerDown={highlight}>
-              <Highlighter size={16} strokeWidth={1.75} />
-            </button>
+            hasSelection ? (
+              <>
+                <button type="button" className="icon-button" aria-label="Bold" title="Bold" onPointerDown={(event) => format(event, toggleBold)}>
+                  <Bold size={16} strokeWidth={1.75} />
+                </button>
+                <button type="button" className="icon-button" aria-label="Italic" title="Italic" onPointerDown={(event) => format(event, toggleItalic)}>
+                  <Italic size={16} strokeWidth={1.75} />
+                </button>
+                <button type="button" className="icon-button" aria-label="Strikethrough" title="Strikethrough" onPointerDown={(event) => format(event, toggleStrike)}>
+                  <Strikethrough size={16} strokeWidth={1.75} />
+                </button>
+                <button type="button" className="icon-button" aria-label="Highlight selected text" title="Highlight selected text" onPointerDown={(event) => format(event, toggleHighlight)}>
+                  <Highlighter size={16} strokeWidth={1.75} />
+                </button>
+              </>
+            ) : null
           ) : (
             <>
               <button type="button" className="icon-button" aria-label="Text mode" title="Text" aria-pressed={data.presentation === 'text'} onClick={() => actions.setPresentation(id, 'text')}>
@@ -202,8 +223,13 @@ function TextNoteNodeComponent({ id, data, selected }: NodeProps<Node<TextNodeDa
     if (token !== null) ownedToken.current = token;
   }
   const editorRef = useRef<HTMLTextAreaElement>(null);
+  const [hasSelection, setHasSelection] = useState(false);
   const tone = `note-bg-${data.backgroundTone ?? 'default'} note-ink-${data.textTone ?? 'default'}`;
   const showChrome = selected || (data.editing && data.presentation === 'markdown');
+
+  function syncSelection(editor: HTMLTextAreaElement) {
+    setHasSelection(editor.selectionStart !== editor.selectionEnd);
+  }
 
   useEffect(() => {
     if (!data.editing) return;
@@ -229,7 +255,7 @@ function TextNoteNodeComponent({ id, data, selected }: NodeProps<Node<TextNodeDa
   return (
     <article className={`text-note ${tone}${selected ? ' is-selected' : ''}${data.mirror ? ' is-mirror' : ''}${selected || data.editing ? ' nowheel' : ''}`} onDoubleClick={() => actions.beginEditing(id)}>
       <NodeResizer isVisible={selected} minWidth={TEXT_MIN_WIDTH} minHeight={TEXT_RESIZE_MIN_HEIGHT} />
-      {showChrome ? <NoteChrome id={id} data={data} editorRef={editorRef} /> : null}
+      {showChrome ? <NoteChrome id={id} data={data} editorRef={editorRef} hasSelection={hasSelection} onSelection={setHasSelection} /> : null}
       {HANDLE_SIDES.map((side) => (
         <Handle key={side} id={side} type="source" position={side as Position} className="port nodrag nopan">
           <span className="port-dot" style={{ transform: visualHandleTransform() }} />
@@ -251,7 +277,11 @@ function TextNoteNodeComponent({ id, data, selected }: NodeProps<Node<TextNodeDa
             className="text-editor nodrag nopan"
             value={data.text}
             aria-label="Note text"
-            onChange={(event) => actions.updateText(id, event.target.value)}
+            onChange={(event) => {
+              actions.updateText(id, event.target.value);
+              syncSelection(event.currentTarget);
+            }}
+            onSelect={(event) => syncSelection(event.currentTarget)}
             onBlur={() => {
               const token = ownedToken.current;
               if (token === null) return;
