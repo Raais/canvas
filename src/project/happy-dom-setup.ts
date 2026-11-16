@@ -1,0 +1,22 @@
+import { Window } from 'happy-dom';
+
+const win = new Window({ url: 'https://canvas.test/canvas/' });
+const target = globalThis as Record<string, unknown>;
+target.window = win;
+target.document = win.document;
+target.navigator = win.navigator;
+target.HTMLElement = win.HTMLElement;
+target.Element = win.Element;
+target.Node = win.Node;
+target.DocumentFragment = win.DocumentFragment;
+target.Event = win.Event;
+target.CustomEvent = win.CustomEvent;
+target.MouseEvent = win.MouseEvent;
+target.PointerEvent = win.PointerEvent;
+target.WheelEvent = win.WheelEvent;
+target.MutationObserver = win.MutationObserver;
+target.ResizeObserver = win.ResizeObserver;
+target.getComputedStyle = win.getComputedStyle.bind(win);
+target.requestAnimationFrame = win.requestAnimationFrame.bind(win);
+target.cancelAnimationFrame = win.cancelAnimationFrame.bind(win);
+target.IS_REACT_ACT_ENVIRONMENT = true;

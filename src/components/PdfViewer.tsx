@@ -10,31 +10,26 @@ import {
   acceptSearchResult,
   activeScrollPage,
   collectPdfMatches,
-  compensateScroll,
   createPdfObjectUrl,
   initialReadingMode,
   inspectPdfBlob,
   layoutPdfPages,
   mountedPdfPages,
   pageDisplaySize,
-  pageFromUserScroll,
-  pageScrollTop,
   parsePageInput,
   pdfDocumentOptions,
   pdfFailureMessage,
   renderHighlightedText,
   renderPixelRatio,
-  scrollAnchor,
-  scrollTopForAnchor,
   searchStatusLabel,
   stepZoom,
   type PdfLayout,
   type PdfPageSize,
   type PdfReadingMode,
-  type PdfScrollIntent,
   type PdfSearchResult,
   type PdfZoomMode,
 } from '../domain/pdf-preview';
+import { usePdfReadingScroll } from './pdf-reading-scroll';
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL('pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url).toString();
 
@@ -82,11 +77,10 @@ export function PdfViewer({
   const pageRef = useRef(sessionPages.get(memoryKey) ?? 1);
   const pageCountRef = useRef(0);
   const readingRef = useRef<PdfReadingMode>(initialReadingMode());
-  const intentRef = useRef<PdfScrollIntent>('user');
-  const anchorRef = useRef<{ page: number; ratio: number } | null>(null);
-  const pendingJump = useRef<number | null>(null);
-  const programTimer = useRef(0);
-  const displayRef = useRef<(natural: PdfPageSize) => PdfPageSize>((natural) => natural);
+  const requestJumpRef = useRef<(page: number) => void>(() => {});
+  const cancelJumpRef = useRef<() => void>(() => {});
+  const restoredPage = useRef(false);
+  const sampledScroll = useRef<number | null>(null);
   const [url, setUrl] = useState<string | null>(null);
   const [header, setHeader] = useState<'checking' | 'ok' | 'bad'>(blob ? 'checking' : 'bad');
   const [failure, setFailure] = useState<string | null>(blob ? null : PDF_MISSING_MESSAGE);
@@ -110,9 +104,19 @@ export function PdfViewer({
   readingRef.current = readingMode;
 
   const display = useCallback((natural: PdfPageSize) => pageDisplaySize(natural, zoomMode, manual, box), [zoomMode, manual, box]);
-  displayRef.current = display;
   const layout = useMemo(() => layoutPdfPages(pageCount, sizes, display), [pageCount, sizes, display]);
   layoutRef.current = layout;
+  const syncScroll = useCallback((top: number) => {
+    setScrollTop((current) => (Math.abs(current - top) > 0.5 ? top : current));
+  }, []);
+  const readSampledScroll = useCallback(() => {
+    const value = sampledScroll.current;
+    sampledScroll.current = null;
+    return value;
+  }, []);
+  const readingScroll = usePdfReadingScroll(stageRef, layout, readingMode, syncScroll, readSampledScroll);
+  requestJumpRef.current = readingScroll.requestJump;
+  cancelJumpRef.current = readingScroll.cancelJump;
   const activeNatural = sizes.get(page) ?? sizes.values().next().value ?? { width: 612, height: 792 };
   const activeDisplay = pageDisplaySize(activeNatural, zoomMode, manual, box);
   const scale = activeNatural.width > 0 ? activeDisplay.width / activeNatural.width : 1;
@@ -126,36 +130,13 @@ export function PdfViewer({
     if (!(width > 0) || !(height > 0)) return;
     const current = sizesRef.current.get(pageNumber);
     if (current && Math.abs(current.width - width) < 0.5 && Math.abs(current.height - height) < 0.5) return;
-    const before = layoutRef.current;
+    if (sampledScroll.current === null && stageRef.current && readingRef.current === 'scroll') {
+      sampledScroll.current = stageRef.current.scrollTop;
+    }
     const next = new Map(sizesRef.current);
     next.set(pageNumber, { width, height });
     sizesRef.current = next;
-    const stage = stageRef.current;
-    if (readingRef.current === 'scroll' && stage && before.heights.length >= pageNumber) {
-      const nextLayout = layoutPdfPages(pageCountRef.current, next, displayRef.current);
-      stage.scrollTop = compensateScroll(
-        stage.scrollTop,
-        before.heights[pageNumber - 1] ?? 0,
-        nextLayout.heights[pageNumber - 1] ?? 0,
-        before.tops[pageNumber - 1] ?? 0,
-      );
-    }
     setSizes(next);
-  }, []);
-
-  const beginProgrammatic = useCallback(() => {
-    intentRef.current = 'program';
-    window.clearTimeout(programTimer.current);
-    programTimer.current = window.setTimeout(() => {
-      intentRef.current = 'user';
-      const stage = stageRef.current;
-      if (!stage || readingRef.current !== 'scroll') return;
-      const next = pageFromUserScroll(stage.scrollTop, stage.clientHeight, layoutRef.current, 'user');
-      if (!next || next === pageRef.current) return;
-      pageRef.current = next;
-      setPage(next);
-      setPageDraft(String(next));
-    }, 450);
   }, []);
 
   const showPage = useCallback((next: number) => {
@@ -164,17 +145,9 @@ export function PdfViewer({
     pageRef.current = pageNumber;
     setPage(pageNumber);
     setPageDraft(String(pageNumber));
-    if (readingRef.current !== 'scroll') return;
-    const top = layoutRef.current.tops[pageNumber - 1];
-    const stage = stageRef.current;
-    if (!stage || top === undefined) {
-      pendingJump.current = pageNumber;
-      return;
-    }
-    beginProgrammatic();
-    const distance = Math.abs(pageNumber - activeScrollPage(stage.scrollTop, stage.clientHeight, layoutRef.current));
-    stage.scrollTo({ top, behavior: distance > 2 ? 'auto' : 'smooth' });
-  }, [beginProgrammatic]);
+    sampledScroll.current = null;
+    requestJumpRef.current(pageNumber);
+  }, []);
   const showPageRef = useRef(showPage);
   showPageRef.current = showPage;
 
@@ -214,13 +187,9 @@ export function PdfViewer({
       const styles = getComputedStyle(stage);
       const padX = Number.parseFloat(styles.paddingLeft) + Number.parseFloat(styles.paddingRight);
       const padY = Number.parseFloat(styles.paddingTop) + Number.parseFloat(styles.paddingBottom);
-      if (readingRef.current === 'scroll' && layoutRef.current.total > 0) {
-        anchorRef.current = scrollAnchor(stage.scrollTop, layoutRef.current);
-      }
-      setBox({
-        width: Math.max(0, stage.clientWidth - padX),
-        height: Math.max(0, stage.clientHeight - padY),
-      });
+      const width = Math.max(0, stage.clientWidth - padX);
+      const height = Math.max(0, stage.clientHeight - padY);
+      setBox((current) => (Math.abs(current.width - width) < 0.5 && Math.abs(current.height - height) < 0.5 ? current : { width, height }));
     };
     measure();
     const observer = new ResizeObserver(measure);
@@ -251,7 +220,6 @@ export function PdfViewer({
 
   useEffect(() => () => {
     searchRef.current?.abort();
-    window.clearTimeout(programTimer.current);
   }, []);
 
   useLayoutEffect(() => {
@@ -260,30 +228,8 @@ export function PdfViewer({
     if (stage) stage.scrollTop = 0;
   }, [readingMode]);
 
-  useLayoutEffect(() => {
-    const stage = stageRef.current;
-    if (!stage || readingMode !== 'scroll') return;
-    const anchor = anchorRef.current;
-    if (anchor) {
-      beginProgrammatic();
-      stage.scrollTop = scrollTopForAnchor(anchor, layout);
-      anchorRef.current = null;
-      setScrollTop(stage.scrollTop);
-      return;
-    }
-    const jump = pendingJump.current;
-    if (!jump) return;
-    const top = layout.tops[jump - 1];
-    if (top === undefined) return;
-    beginProgrammatic();
-    stage.scrollTop = top;
-    pendingJump.current = null;
-    setScrollTop(stage.scrollTop);
-  }, [beginProgrammatic, layout, readingMode]);
-
   const close = useCallback(() => {
     searchRef.current?.abort();
-    window.clearTimeout(programTimer.current);
     sessionPages.set(memoryKey, pageRef.current);
     onClose();
   }, [memoryKey, onClose]);
@@ -365,15 +311,9 @@ export function PdfViewer({
     if (first) showPage(first.page);
   }, [showPage]);
 
-  function captureZoomAnchor() {
-    const stage = stageRef.current;
-    if (readingRef.current !== 'scroll' || !stage || layoutRef.current.total <= 0) return;
-    anchorRef.current = scrollAnchor(stage.scrollTop, layoutRef.current);
-  }
-
   function chooseReading(next: PdfReadingMode) {
     if (next === readingMode) return;
-    if (next === 'scroll') pendingJump.current = pageRef.current;
+    if (next === 'scroll') requestJumpRef.current(pageRef.current);
     setReadingMode(next);
   }
 
@@ -390,15 +330,7 @@ export function PdfViewer({
     const stage = stageRef.current;
     if (!stage || readingRef.current !== 'scroll') return;
     setScrollTop(stage.scrollTop);
-    if (intentRef.current === 'program') {
-      const target = pageScrollTop(pageRef.current, layoutRef.current);
-      if (Math.abs(stage.scrollTop - target) < 8) {
-        intentRef.current = 'user';
-        window.clearTimeout(programTimer.current);
-      }
-      return;
-    }
-    const next = pageFromUserScroll(stage.scrollTop, stage.clientHeight, layoutRef.current, 'user');
+    const next = activeScrollPage(stage.scrollTop, stage.clientHeight, layoutRef.current);
     if (next && next !== pageRef.current) {
       pageRef.current = next;
       setPage(next);
@@ -455,12 +387,12 @@ export function PdfViewer({
                 <span>/ {pageCount || '…'}</span>
               </label>
               <button type="button" aria-label="Next page" disabled={pageCount === 0 || page >= pageCount} onClick={() => showPage(page + 1)}>Next</button>
-              <button type="button" aria-label="Zoom out" onClick={() => { captureZoomAnchor(); setZoomMode('manual'); setManual((current) => stepZoom(zoomMode === 'manual' ? current : scale, -1)); }}>−</button>
+              <button type="button" aria-label="Zoom out" onClick={() => { setZoomMode('manual'); setManual((current) => stepZoom(zoomMode === 'manual' ? current : scale, -1)); }}>−</button>
               <span className="pdf-zoom" aria-live="polite">{percent}</span>
-              <button type="button" aria-label="Zoom in" onClick={() => { captureZoomAnchor(); setZoomMode('manual'); setManual((current) => stepZoom(zoomMode === 'manual' ? current : scale, 1)); }}>+</button>
-              <button type="button" aria-pressed={zoomMode === 'manual' && Math.abs(manual - 1) < 0.001} onClick={() => { captureZoomAnchor(); setZoomMode('manual'); setManual(1); }}>100%</button>
-              <button type="button" aria-pressed={zoomMode === 'fit-width'} onClick={() => { captureZoomAnchor(); setZoomMode('fit-width'); }}>Fit width</button>
-              <button type="button" aria-pressed={zoomMode === 'fit-page'} onClick={() => { captureZoomAnchor(); setZoomMode('fit-page'); }}>Fit page</button>
+              <button type="button" aria-label="Zoom in" onClick={() => { setZoomMode('manual'); setManual((current) => stepZoom(zoomMode === 'manual' ? current : scale, 1)); }}>+</button>
+              <button type="button" aria-pressed={zoomMode === 'manual' && Math.abs(manual - 1) < 0.001} onClick={() => { setZoomMode('manual'); setManual(1); }}>100%</button>
+              <button type="button" aria-pressed={zoomMode === 'fit-width'} onClick={() => setZoomMode('fit-width')}>Fit width</button>
+              <button type="button" aria-pressed={zoomMode === 'fit-page'} onClick={() => setZoomMode('fit-page')}>Fit page</button>
               <button type="button" aria-pressed={findOpen} onClick={() => { setFindOpen(true); requestAnimationFrame(() => findRef.current?.focus()); }}>Find</button>
             </div>
             {findOpen ? (
@@ -484,7 +416,16 @@ export function PdfViewer({
                 <p>{searching ? progress : result ? searchStatusLabel(result, query) : ''}</p>
               </form>
             ) : null}
-            <div className="pdf-stage" ref={stageRef} onScroll={onStageScroll}>
+            <div
+              className="pdf-stage"
+              ref={stageRef}
+              onScroll={onStageScroll}
+              onWheel={() => cancelJumpRef.current()}
+              onTouchMove={() => cancelJumpRef.current()}
+              onPointerDown={(event) => {
+                if (event.target === event.currentTarget) cancelJumpRef.current();
+              }}
+            >
               {url && header === 'ok' ? (
                 <Document
                   file={url}
@@ -505,7 +446,10 @@ export function PdfViewer({
                       const next = current >= 1 && current <= count ? current : 1;
                       pageRef.current = next;
                       setPageDraft(String(next));
-                      if (next > 1) pendingJump.current = next;
+                      if (next > 1 && !restoredPage.current) {
+                        restoredPage.current = true;
+                        requestJumpRef.current(next);
+                      }
                       return next;
                     });
                   }}

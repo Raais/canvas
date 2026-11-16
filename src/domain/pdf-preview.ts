@@ -265,12 +265,8 @@ export function reopenViewer(memory: { page?: number; readingMode?: PdfReadingMo
   return { page, readingMode: 'scroll' };
 }
 
-export function estimateNatural(
-  sizes: ReadonlyMap<number, PdfPageSize>,
-  fallback: PdfPageSize = PDF_FALLBACK_PAGE,
-): PdfPageSize {
-  const first = sizes.values().next().value as PdfPageSize | undefined;
-  return first ?? fallback;
+export function estimateNatural(fallback: PdfPageSize = PDF_FALLBACK_PAGE): PdfPageSize {
+  return fallback;
 }
 
 export function pageDisplaySize(
@@ -291,7 +287,7 @@ export function layoutPdfPages(
   display: (natural: PdfPageSize) => PdfPageSize,
   gap = PDF_PAGE_GAP,
 ): PdfLayout {
-  const estimate = estimateNatural(sizes);
+  const estimate = estimateNatural();
   const tops: number[] = [];
   const heights: number[] = [];
   const widths: number[] = [];
@@ -326,6 +322,13 @@ export function activeScrollPage(scrollTop: number, viewportHeight: number, layo
       bestOverlap = overlap;
       bestDistance = distance;
     }
+  }
+  if (bestOverlap <= 0) {
+    for (let index = 0; index < count; index += 1) {
+      const bottom = (layout.tops[index] ?? 0) + (layout.heights[index] ?? 0);
+      if (bottom > viewTop) return index + 1;
+    }
+    return count;
   }
   return best;
 }
@@ -393,6 +396,25 @@ export function scrollTopForAnchor(anchor: { page: number; ratio: number }, layo
   const top = layout.tops[anchor.page - 1] ?? 0;
   const height = layout.heights[anchor.page - 1] ?? 0;
   return top + anchor.ratio * height;
+}
+
+/** Preserve the visible document location after page geometry changes. */
+export function measurementScrollTop(scrollTop: number, before: PdfLayout, after: PdfLayout): number {
+  if (before.tops.length === 0 || after.tops.length === 0) return Math.max(0, scrollTop);
+  const index = Math.min(activeScrollPage(scrollTop, 1, before) - 1, after.tops.length - 1);
+  const beforeTop = before.tops[index] ?? 0;
+  const beforeHeight = before.heights[index] || 1;
+  const afterTop = after.tops[index] ?? 0;
+  const afterHeight = after.heights[index] ?? beforeHeight;
+  const aboveDelta = afterTop - beforeTop;
+  if (Math.abs(afterHeight - beforeHeight) <= 0.5) return Math.max(0, scrollTop + aboveDelta);
+  const ratio = Math.min(1, Math.max(0, (scrollTop - beforeTop) / beforeHeight));
+  return Math.max(0, afterTop + ratio * afterHeight);
+}
+
+export function consumeScrollJump(page: number | null, userMoved: boolean): number | null {
+  if (userMoved) return null;
+  return page;
 }
 
 export function compensateScroll(

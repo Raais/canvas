@@ -1712,6 +1712,7 @@ html[data-theme='light'] .note-ink-warm { color: #8a5a32; }
   flex: 1;
   min-height: 0;
   overflow: auto;
+  overflow-anchor: none;
   overscroll-behavior: contain;
   touch-action: pan-y;
   background: #4d5158;
@@ -1719,7 +1720,7 @@ html[data-theme='light'] .note-ink-warm { color: #8a5a32; }
   padding: 16px;
 }
 html[data-theme='light'] .pdf-stage { background: #d7d2cb; }
-.pdf-scroll { position: relative; width: 100%; }
+.pdf-scroll { position: relative; width: 100%; overflow-anchor: none; }
 .pdf-sheet { position: absolute; left: 0; right: 0; display: flex; justify-content: center; align-items: flex-start; }
 .pdf-stage .react-pdf__Page { margin: 0 auto; background: #fff; box-shadow: 0 8px 24px rgb(0 0 0 / 22%); }
 .pdf-stage .react-pdf__Page__canvas { background: #fff; }

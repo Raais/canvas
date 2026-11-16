@@ -21,6 +21,8 @@ import {
   PDF_VIEWER_GUARDS,
   acceptSearchResult,
   activeScrollPage,
+  consumeScrollJump,
+  measurementScrollTop,
   clampPage,
   collectPdfMatches,
   compensateScroll,
@@ -47,6 +49,7 @@ import {
   searchStatusLabel,
   settlePageRequest,
   stepZoom,
+  type PdfLayout,
   type PdfPageSize,
 } from '../domain/pdf-preview';
 import { PdfScrollWindow } from '../components/PdfScrollWindow';
@@ -297,7 +300,71 @@ describe('pdf preview', () => {
     const cancelled = await collectPdfMatches(4, 'term', async () => 'term', AbortSignal.abort());
     expect(cancelled.cancelled).toBe(true);
   });
+
+  test('keeps the reader in place when page sizes arrive out of order', () => {
+    const box = { width: 900, height: 700 };
+    const display = (natural: PdfPageSize) => pageDisplaySize(natural, 'fit-width', 1, box);
+    const before = layoutPdfPages(30, new Map(), display);
+    const scroll = pageScrollTop(10, before) + 24;
+    const landscape: PdfPageSize = { width: 2000, height: 400 };
+    const measured = layoutPdfPages(30, new Map([[10, landscape]]), display);
+    expect(measured.tops[8]).toBe(before.tops[8]);
+    expect(measured.tops[9]).toBe(before.tops[9]);
+    expect(scroll >= (measured.tops[9] ?? 0)).toBe(true);
+    expect(scroll < (measured.tops[9] ?? 0) + (measured.heights[9] ?? 0)).toBe(true);
+    const corrected = measurementScrollTop(scroll, before, measured);
+    expect(activeScrollPage(corrected, 1, measured)).toBe(10);
+    const adopted = adoptFirstMeasurement(30, landscape, display);
+    expect(scroll > adopted.total).toBe(true);
+    expect(activeScrollPage(Math.max(0, adopted.total - 1), 1, adopted)).toBe(30);
+
+    const grown = layoutPdfPages(30, new Map([[2, { width: 500, height: 1800 }]]), display);
+    const kept = measurementScrollTop(scroll, before, grown);
+    expect(kept).toBeGreaterThan(scroll);
+    expect(activeScrollPage(kept, 700, grown)).toBe(10);
+    const below = layoutPdfPages(30, new Map([[24, landscape]]), display);
+    expect(measurementScrollTop(scroll, before, below)).toBe(scroll);
+
+    let layout = before;
+    let top = scroll;
+    const known = new Map<number, PdfPageSize>();
+    for (const page of [12, 3, 10, 1, 8, 30]) {
+      known.set(page, page % 2 === 0 ? landscape : { width: 500, height: 1800 });
+      const next = layoutPdfPages(30, known, display);
+      top = measurementScrollTop(top, layout, next);
+      layout = next;
+    }
+    expect(activeScrollPage(top, 1, layout)).toBe(10);
+    expect(activeScrollPage(top, 700, layout) > 1).toBe(true);
+    const zoomed = layoutPdfPages(30, known, (natural) => pageDisplaySize(natural, 'manual', 1.5, box));
+    expect(activeScrollPage(measurementScrollTop(top, layout, zoomed), 1, zoomed)).toBe(10);
+    expect(consumeScrollJump(40, true)).toBeNull();
+    expect(consumeScrollJump(40, false)).toBe(40);
+    const gap = (before.heights[0] ?? 0) + 8;
+    expect(activeScrollPage(gap, 1, before)).toBe(2);
+    const mounted = mountedPdfPages(pageScrollTop(100, layoutPdfPages(120, new Map(), display)), 700, layoutPdfPages(120, new Map(), display));
+    expect(mounted.includes(100)).toBe(true);
+    expect(mounted.length <= PDF_MAX_MOUNTED_PAGES).toBe(true);
+  });
 });
+
+function adoptFirstMeasurement(
+  count: number,
+  measured: PdfPageSize,
+  display: (natural: PdfPageSize) => PdfPageSize,
+): PdfLayout {
+  const shown = display(measured);
+  const tops: number[] = [];
+  const heights: number[] = [];
+  let cursor = 0;
+  for (let page = 1; page <= count; page += 1) {
+    tops.push(cursor);
+    heights.push(shown.height);
+    cursor += shown.height;
+    if (page < count) cursor += 16;
+  }
+  return { tops, heights, widths: [], total: cursor };
+}
 
 function countPages(markup: string): number {
   return markup.split('data-pdf-page=').length - 1;
