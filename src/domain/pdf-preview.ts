@@ -238,6 +238,174 @@ export function createPdfObjectUrl(blob: Blob): { url: string; release: () => vo
   };
 }
 
+export type PdfReadingMode = 'scroll' | 'paged';
+export type PdfZoomMode = 'fit-width' | 'fit-page' | 'manual';
+export type PdfPageSize = { width: number; height: number };
+export type PdfScrollIntent = 'user' | 'program';
+
+export const PDF_DEFAULT_READING_MODE: PdfReadingMode = 'scroll';
+export const PDF_PAGE_GAP = 16;
+export const PDF_SCROLL_OVERSCAN = 2;
+export const PDF_MAX_MOUNTED_PAGES = 8;
+export const PDF_FALLBACK_PAGE: PdfPageSize = { width: 612, height: 792 };
+
+export type PdfLayout = {
+  tops: number[];
+  heights: number[];
+  widths: number[];
+  total: number;
+};
+
+export function initialReadingMode(): PdfReadingMode {
+  return PDF_DEFAULT_READING_MODE;
+}
+
+export function reopenViewer(memory: { page?: number; readingMode?: PdfReadingMode }): { page: number; readingMode: PdfReadingMode } {
+  const page = memory.page && memory.page >= 1 ? Math.floor(memory.page) : 1;
+  return { page, readingMode: 'scroll' };
+}
+
+export function estimateNatural(
+  sizes: ReadonlyMap<number, PdfPageSize>,
+  fallback: PdfPageSize = PDF_FALLBACK_PAGE,
+): PdfPageSize {
+  const first = sizes.values().next().value as PdfPageSize | undefined;
+  return first ?? fallback;
+}
+
+export function pageDisplaySize(
+  natural: PdfPageSize,
+  zoomMode: PdfZoomMode,
+  manual: number,
+  box: PdfPageSize,
+): PdfPageSize {
+  const scale = zoomMode === 'manual'
+    ? manual
+    : fitScale(natural.width, natural.height, box.width, box.height, zoomMode === 'fit-page' ? 'page' : 'width');
+  return { width: natural.width * scale, height: natural.height * scale };
+}
+
+export function layoutPdfPages(
+  count: number,
+  sizes: ReadonlyMap<number, PdfPageSize>,
+  display: (natural: PdfPageSize) => PdfPageSize,
+  gap = PDF_PAGE_GAP,
+): PdfLayout {
+  const estimate = estimateNatural(sizes);
+  const tops: number[] = [];
+  const heights: number[] = [];
+  const widths: number[] = [];
+  let cursor = 0;
+  for (let page = 1; page <= count; page += 1) {
+    const shown = display(sizes.get(page) ?? estimate);
+    tops.push(cursor);
+    widths.push(shown.width);
+    heights.push(shown.height);
+    cursor += shown.height;
+    if (page < count) cursor += gap;
+  }
+  return { tops, heights, widths, total: cursor };
+}
+
+export function activeScrollPage(scrollTop: number, viewportHeight: number, layout: PdfLayout): number {
+  const count = layout.tops.length;
+  if (count === 0) return 1;
+  const viewTop = Math.max(0, scrollTop);
+  const viewBottom = viewTop + Math.max(viewportHeight, 1);
+  const center = viewTop + Math.max(viewportHeight, 1) / 2;
+  let best = 1;
+  let bestOverlap = -1;
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (let index = 0; index < count; index += 1) {
+    const top = layout.tops[index] ?? 0;
+    const bottom = top + (layout.heights[index] ?? 0);
+    const overlap = Math.max(0, Math.min(bottom, viewBottom) - Math.max(top, viewTop));
+    const distance = Math.abs((top + bottom) / 2 - center);
+    if (overlap > bestOverlap + 0.5 || (Math.abs(overlap - bestOverlap) <= 0.5 && distance < bestDistance)) {
+      best = index + 1;
+      bestOverlap = overlap;
+      bestDistance = distance;
+    }
+  }
+  return best;
+}
+
+export function pageFromUserScroll(
+  scrollTop: number,
+  viewportHeight: number,
+  layout: PdfLayout,
+  intent: PdfScrollIntent,
+): number | null {
+  if (intent === 'program') return null;
+  return activeScrollPage(scrollTop, viewportHeight, layout);
+}
+
+export function mountedPdfPages(
+  scrollTop: number,
+  viewportHeight: number,
+  layout: PdfLayout,
+  overscan = PDF_SCROLL_OVERSCAN,
+  maxMounted = PDF_MAX_MOUNTED_PAGES,
+  pinnedPage: number | null = null,
+): number[] {
+  const count = layout.tops.length;
+  if (count === 0) return [];
+  const viewBottom = scrollTop + Math.max(viewportHeight, 1);
+  let first = count;
+  for (let index = 0; index < count; index += 1) {
+    const top = layout.tops[index] ?? 0;
+    const bottom = top + (layout.heights[index] ?? 0);
+    if (bottom > scrollTop && top < viewBottom) {
+      first = index + 1;
+      break;
+    }
+  }
+  if (first > count) first = count;
+  let last = first;
+  for (let page = first; page <= count; page += 1) {
+    const top = layout.tops[page - 1] ?? 0;
+    if (top >= viewBottom) break;
+    last = page;
+  }
+  first = Math.max(1, first - overscan);
+  last = Math.min(count, last + overscan);
+  const pages: number[] = [];
+  for (let page = first; page <= last; page += 1) pages.push(page);
+  if (pinnedPage && pinnedPage >= 1 && pinnedPage <= count && !pages.includes(pinnedPage)) pages.push(pinnedPage);
+  if (pages.length <= maxMounted) return pages;
+  const focus = pinnedPage ?? activeScrollPage(scrollTop, viewportHeight, layout);
+  return pages.sort((left, right) => Math.abs(left - focus) - Math.abs(right - focus) || left - right).slice(0, maxMounted).sort((left, right) => left - right);
+}
+
+export function pageScrollTop(page: number, layout: PdfLayout): number {
+  return layout.tops[page - 1] ?? 0;
+}
+
+export function scrollAnchor(scrollTop: number, layout: PdfLayout): { page: number; ratio: number } {
+  const page = activeScrollPage(scrollTop, 1, layout);
+  const top = layout.tops[page - 1] ?? 0;
+  const height = layout.heights[page - 1] || 1;
+  const ratio = Math.min(1, Math.max(0, (scrollTop - top) / height));
+  return { page, ratio };
+}
+
+export function scrollTopForAnchor(anchor: { page: number; ratio: number }, layout: PdfLayout): number {
+  const top = layout.tops[anchor.page - 1] ?? 0;
+  const height = layout.heights[anchor.page - 1] ?? 0;
+  return top + anchor.ratio * height;
+}
+
+export function compensateScroll(
+  scrollTop: number,
+  previousHeight: number,
+  nextHeight: number,
+  previousTop: number,
+): number {
+  const previousBottom = previousTop + previousHeight;
+  if (previousBottom <= scrollTop + 0.5) return scrollTop + (nextHeight - previousHeight);
+  return scrollTop;
+}
+
 export function searchStatusLabel(result: PdfSearchResult, query: string): string {
   if (!query.trim()) return '';
   if (result.cancelled) return '';

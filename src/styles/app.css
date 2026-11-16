@@ -1685,6 +1685,8 @@ html[data-theme='light'] .note-ink-warm { color: #8a5a32; }
   white-space: nowrap;
 }
 .pdf-toolbar, .pdf-find { flex-wrap: wrap; }
+.pdf-mode { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: var(--radius-control); background: var(--surface); }
+.pdf-mode button { min-height: 28px; }
 .pdf-viewer button, .pdf-page-field input {
   appearance: none;
   border: 1px solid var(--line);
@@ -1711,12 +1713,15 @@ html[data-theme='light'] .note-ink-warm { color: #8a5a32; }
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
+  touch-action: pan-y;
   background: #4d5158;
   border-radius: 14px;
   padding: 16px;
 }
 html[data-theme='light'] .pdf-stage { background: #d7d2cb; }
-.pdf-stage .react-pdf__Page { margin: 0 auto; }
+.pdf-scroll { position: relative; width: 100%; }
+.pdf-sheet { position: absolute; left: 0; right: 0; display: flex; justify-content: center; align-items: flex-start; }
+.pdf-stage .react-pdf__Page { margin: 0 auto; background: #fff; box-shadow: 0 8px 24px rgb(0 0 0 / 22%); }
 .pdf-stage .react-pdf__Page__canvas { background: #fff; }
 .pdf-viewer mark.pdf-hit { background: #e2b15a; color: transparent; }
 .sr-only {

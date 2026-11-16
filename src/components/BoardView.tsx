@@ -2885,6 +2885,7 @@ function BoardSurface({ session }: { session: SessionProps }) {
         {pdfNodeId ? (
           <Suspense fallback={<div className="pdf-layer"><div className="pdf-viewer" role="dialog" aria-label="Opening PDF"><p className="pdf-note">Opening PDF…</p></div></div>}>
             <PdfViewer
+              key={pdfNodeId}
               memoryKey={pdfNodeId}
               filename={(() => {
                 const node = board.nodes.find((entry) => entry.id === pdfNodeId);

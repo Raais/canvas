@@ -24,7 +24,7 @@ A new board starts dark. Project → Canvas background can switch it to light, a
 - Press P for the pen and E for the eraser. A pen stroke becomes one drawing. The eraser removes each stroke it touches, and one sweep is one undo.
 - Add a website from the toolbar, or paste or drop a single http or https address. The card stores the address and a title. It does not load the page.
 - Record a voice note from the toolbar. The recording stays in this browser as a blob next to the board. The canvas does not transcribe it or upload it.
-- Preview a PDF attachment in the canvas. The viewer reads the file already stored in this browser. It does not upload the PDF or change the board.
+- Preview a PDF attachment in the canvas. A newly opened PDF starts in continuous Scroll; Pages shows one page at a time for that viewing session. The viewer reads the file already stored in this browser. It does not upload the PDF or change the board.
 - Export the open board as a `.canvas.zip` archive, start a blank board, or import an archive in place of the current one.
 - See an approximate size for canvas data, plus the browser's estimate for this whole origin.
 
@@ -62,7 +62,7 @@ Add website, or paste or drop one http or https address onto the board. The card
 
 ## File attachments
 
-Add file, next to Add image, or drop files onto the board. A Markdown, plain-text, or recognized code file under 1 MiB becomes that kind of note and keeps its filename. A PNG, JPEG, WebP, GIF, or AVIF still becomes an image. Everything else, including PDF, ZIP, SVG, CSV, and `.env`, becomes a file card. The card can be moved, resized, linked, grouped, copied, and deleted like any other note. Download saves the original bytes. canvas does not open, preview, or edit the file.
+Add file, next to Add image, or drop files onto the board. A Markdown, plain-text, or recognized code file under 1 MiB becomes that kind of note and keeps its filename. A PNG, JPEG, WebP, GIF, or AVIF still becomes an image. Everything else, including ZIP, SVG, CSV, and `.env`, becomes a file card. PDF file cards open in the preview. The card can be moved, resized, linked, grouped, copied, and deleted like any other note. Download saves the original bytes. canvas does not edit the file.
 
 Each attachment must be 64 MiB or smaller. Images and file attachments share the existing 256 MiB backup limit. A recognized text file larger than 1 MiB is stored as a file attachment instead of a note. File bytes are not compressed, converted, or encrypted. They are stored in this browser and included in a project export. Do not attach secrets you would not want exposed to someone holding the archive. Password-protected notes are separate: only those notes are encrypted, and a file card cannot be locked.
 
